@@ -204,13 +204,19 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
           <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
             <div className="flex items-center gap-2">
               <div className="relative w-6 h-6">
-                <Image src="/images/logo.svg" alt="Dionix.ai" width={24} height={24} className="block dark:hidden" />
+                <Image
+                  src="/images/darklogo.svg"
+                  alt="Dionix.ai"
+                  width={24}
+                  height={24}
+                  className="block dark:hidden"
+                />
                 <Image
                   src="/images/logo.svg"
                   alt="Dionix.ai"
                   width={24}
                   height={24}
-                  className="hidden dark:block invert brightness-0 contrast-100"
+                  className="hidden dark:block"
                 />
               </div>
               <span className="text-lg font-semibold text-foreground">dionix.ai</span>
@@ -273,13 +279,19 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             {(!sidebarCollapsed || sidebarHovered) && (
               <div className="flex items-center gap-2">
                 <div className="relative w-7 h-7">
-                  <Image src="/images/logo.svg" alt="Dionix.ai" width={28} height={28} className="block dark:hidden" />
+                  <Image
+                    src="/images/darklogo.svg"
+                    alt="Dionix.ai"
+                    width={28}
+                    height={28}
+                    className="block dark:hidden"
+                  />
                   <Image
                     src="/images/logo.svg"
                     alt="Dionix.ai"
                     width={28}
                     height={28}
-                    className="hidden dark:block invert brightness-0 contrast-100"
+                    className="hidden dark:block"
                   />
                 </div>
                 <span className="text-lg font-semibold text-foreground">dionix.ai</span>
@@ -288,13 +300,19 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             {sidebarCollapsed && !sidebarHovered && (
               <div className="flex items-center justify-center w-full">
                 <div className="relative w-7 h-7">
-                  <Image src="/images/logo.svg" alt="Dionix.ai" width={28} height={28} className="block dark:hidden" />
+                  <Image
+                    src="/images/darklogo.svg"
+                    alt="Dionix.ai"
+                    width={28}
+                    height={28}
+                    className="block dark:hidden"
+                  />
                   <Image
                     src="/images/logo.svg"
                     alt="Dionix.ai"
                     width={28}
                     height={28}
-                    className="hidden dark:block invert brightness-0 contrast-100"
+                    className="hidden dark:block"
                   />
                 </div>
               </div>
@@ -374,13 +392,19 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             <div className="flex flex-1 items-center lg:hidden">
               <div className="flex items-center gap-2">
                 <div className="relative w-6 h-6">
-                  <Image src="/images/logo.svg" alt="Dionix.ai" width={24} height={24} className="block dark:hidden" />
+                  <Image
+                    src="/images/darklogo.svg"
+                    alt="Dionix.ai"
+                    width={24}
+                    height={24}
+                    className="block dark:hidden"
+                  />
                   <Image
                     src="/images/logo.svg"
                     alt="Dionix.ai"
                     width={24}
                     height={24}
-                    className="hidden dark:block invert brightness-0 contrast-100"
+                    className="hidden dark:block"
                   />
                 </div>
                 <span className="text-lg font-semibold text-foreground">dionix.ai</span>
