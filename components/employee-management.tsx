@@ -17,19 +17,18 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Mail, Edit, Trash2, Users, Search, UserPlus } from "lucide-react"
-import { createBrowserClient } from "@supabase/ssr"
 
 interface Employee {
   id: string
   email: string
-  firstName: string
-  lastName: string
+  first_name: string
+  last_name: string
   role: string
   status: string
-  createdAt: string
+  created_at: string
   department?: string
   position?: string
-  lastLogin?: string
+  last_login?: string
 }
 
 export function EmployeeManagement() {
@@ -46,108 +45,35 @@ export function EmployeeManagement() {
     position: "",
   })
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-
   useEffect(() => {
     fetchEmployees()
   }, [])
 
   const fetchEmployees = async () => {
-    const mockEmployees: Employee[] = [
-      {
-        id: "1",
-        email: "john.doe@dionix.ai",
-        firstName: "John",
-        lastName: "Doe",
-        role: "employee",
-        status: "active",
-        createdAt: "2024-01-15",
-        department: "Engineering",
-        position: "Frontend Developer",
-        lastLogin: "2024-01-20T10:30:00Z",
-      },
-      {
-        id: "2",
-        email: "jane.smith@dionix.ai",
-        firstName: "Jane",
-        lastName: "Smith",
-        role: "manager",
-        status: "active",
-        createdAt: "2024-01-20",
-        department: "Design",
-        position: "UI/UX Manager",
-        lastLogin: "2024-01-20T09:15:00Z",
-      },
-      {
-        id: "3",
-        email: "mike.johnson@dionix.ai",
-        firstName: "Mike",
-        lastName: "Johnson",
-        role: "employee",
-        status: "active",
-        createdAt: "2024-01-10",
-        department: "Engineering",
-        position: "Backend Developer",
-        lastLogin: "2024-01-19T16:45:00Z",
-      },
-      {
-        id: "4",
-        email: "sarah.wilson@dionix.ai",
-        firstName: "Sarah",
-        lastName: "Wilson",
-        role: "employee",
-        status: "inactive",
-        createdAt: "2024-01-05",
-        department: "Marketing",
-        position: "Content Specialist",
-        lastLogin: "2024-01-18T14:20:00Z",
-      },
-      {
-        id: "5",
-        email: "alex.brown@dionix.ai",
-        firstName: "Alex",
-        lastName: "Brown",
-        role: "employee",
-        status: "active",
-        createdAt: "2024-01-25",
-        department: "Sales",
-        position: "Account Executive",
-        lastLogin: "2024-01-20T11:30:00Z",
-      },
-    ]
-    setEmployees(mockEmployees)
+    const res = await fetch("/api/employees", { cache: "no-store" })
+    if (!res.ok) return
+    const data = await res.json()
+    setEmployees(data)
   }
 
   const handleCreateEmployee = async () => {
     try {
-      // Create user in Supabase Auth
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: newEmployee.email,
-        password: newEmployee.password,
-        user_metadata: {
+      const res = await fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newEmployee.email,
+          password: newEmployee.password,
           firstName: newEmployee.firstName,
           lastName: newEmployee.lastName,
           role: newEmployee.role,
           department: newEmployee.department,
           position: newEmployee.position,
-        },
+        }),
       })
+      if (!res.ok) throw new Error((await res.json()).error || "Failed")
 
-      if (error) throw error
-
-      // Reset form and close dialog
-      setNewEmployee({
-        email: "",
-        firstName: "",
-        lastName: "",
-        role: "employee",
-        password: "",
-        department: "",
-        position: "",
-      })
+      setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", password: "", department: "", position: "" })
       setIsCreateDialogOpen(false)
       fetchEmployees()
     } catch (error: any) {
@@ -157,11 +83,11 @@ export function EmployeeManagement() {
 
   const filteredEmployees = employees.filter(
     (employee) =>
-      employee.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (employee.first_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (employee.last_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.position?.toLowerCase().includes(searchTerm.toLowerCase()),
+      (employee.department || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (employee.position || "").toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   const activeEmployees = employees.filter((emp) => emp.status === "active").length
@@ -318,7 +244,7 @@ export function EmployeeManagement() {
               {filteredEmployees.map((employee) => (
                 <TableRow key={employee.id}>
                   <TableCell className="font-medium">
-                    {employee.firstName} {employee.lastName}
+                    {employee.first_name} {employee.last_name}
                   </TableCell>
                   <TableCell>{employee.email}</TableCell>
                   <TableCell>
@@ -334,17 +260,35 @@ export function EmployeeManagement() {
                     <Badge variant={employee.status === "active" ? "default" : "secondary"}>{employee.status}</Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {employee.lastLogin ? new Date(employee.lastLogin).toLocaleDateString() : "Never"}
+                    {employee.last_login ? new Date(employee.last_login).toLocaleDateString() : "Never"}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Button variant="ghost" size="sm" title="Send Email">
                         <Mail className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" title="Edit Employee">
+                      <Button variant="ghost" size="sm" title="Edit Employee" onClick={() => {
+                        setIsCreateDialogOpen(true)
+                        setNewEmployee({
+                          email: employee.email,
+                          firstName: employee.first_name || "",
+                          lastName: employee.last_name || "",
+                          role: (employee.role as any) || "employee",
+                          password: "",
+                          department: employee.department || "",
+                          position: employee.position || "",
+                        })
+                      }}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" title="Deactivate">
+                      <Button variant="ghost" size="sm" title="Deactivate" onClick={async () => {
+                        await fetch(`/api/employees/${employee.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ status: "inactive" }),
+                        })
+                        fetchEmployees()
+                      }}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>

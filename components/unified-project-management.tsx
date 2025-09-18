@@ -15,6 +15,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar, Users, Plus, Edit, Trash2, Eye, Search, FolderOpen, CheckSquare, Clock, User, Paperclip, Upload, MessageSquare } from "lucide-react"
 import { getProjects as storeGetProjects, saveProjects as storeSaveProjects, upsertProject as storeUpsertProject, type Project as StoreProject } from "@/lib/project-store"
+import { useToast } from "@/components/ui/use-toast"
+import { Skeleton } from "@/components/ui/skeleton"
+import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage"
+import { createClient } from "@/lib/supabase"
 
 interface Project {
   id: string
@@ -84,11 +88,7 @@ export function UnifiedProjectManagement() {
   const [activeTab, setActiveTab] = useState("overview")
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
-  const [employees] = useState<Employee[]>([
-    { id: "1", name: "John Doe", email: "john@dionix.ai", role: "Developer" },
-    { id: "2", name: "Jane Smith", email: "jane@dionix.ai", role: "Designer" },
-    { id: "3", name: "Mike Johnson", email: "mike@dionix.ai", role: "Manager" },
-  ])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -122,6 +122,27 @@ export function UnifiedProjectManagement() {
   const [bankSwift, setBankSwift] = useState("")
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [tryAdvance, setTryAdvance] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const supabase = createClient()
+  const { toast } = useToast()
+
+  async function fetchEmployees() {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name, role, status")
+    if (error) return
+    const list = (data || [])
+      .filter((p: any) => (p.role || '').toLowerCase() === 'employee')
+      .filter((p: any) => (p.status ?? 'active') === 'active')
+      .map((p: any) => ({
+        id: p.id,
+        name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
+        email: '',
+        role: 'employee',
+      })) as Employee[]
+    setEmployees(list)
+  }
 
   const mockProjects: Project[] = [
     {
@@ -211,14 +232,118 @@ export function UnifiedProjectManagement() {
   })
 
   useEffect(() => {
-    const persisted = storeGetProjects()
-    const initial = persisted.length ? persisted : mockProjects
-    setProjects(initial)
-    setTasks(initial.flatMap((p) => p.tasks))
-    if (!persisted.length) {
-      storeSaveProjects(initial as unknown as StoreProject[])
+    // initial fetch
+    ;(async () => {
+      await fetchEmployees()
+      const { data, error } = await supabase
+        .from("projects")
+        .select(
+          `id, name, description, status, priority, start_date, end_date, budget, client_name, company_number, company_email, company_address, about_company, social_links, public_contacts, media_links, bank_details, service_specific, type,
+           tasks ( id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
+           attachments ( id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
+           comments ( id, project_id, task_id, body, file_refs, created_by, created_at ),
+           project_members ( user_id )`
+        )
+        .order("created_at", { ascending: false })
+      if (!error && data) {
+        const mapped = (data as any[]).map((p) => {
+          const taskList = (p.tasks || []).map((t: any) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            assignee: t.assignee_id || "",
+            due_date: t.due_date || "",
+            priority: t.priority,
+            project_id: t.project_id,
+          })) as Task[]
+          const completed = taskList.filter((t) => t.status === "completed").length
+          const progress = taskList.length ? Math.round((completed / taskList.length) * 100) : 0
+          const members = (p.project_members || []).map((m: any) => m.user_id)
+          const attachments = (p.attachments || []).map((a: any) => ({
+            id: a.id,
+            file_name: a.file_name,
+            file_size: a.file_size,
+            content_type: a.content_type,
+            version: a.version,
+            uploaded_by: a.uploaded_by || "",
+            uploaded_at: a.uploaded_at,
+            task_id: a.task_id || undefined,
+            client_visible: a.client_visible || false,
+          })) as ProjectAttachment[]
+          const comments = (p.comments || []).map((c: any) => ({
+            id: c.id,
+            body: c.body,
+            created_by: c.created_by || "",
+            created_at: c.created_at,
+          })) as ProjectComment[]
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description || "",
+            status: p.status,
+            priority: p.priority,
+            start_date: p.start_date || "",
+            end_date: p.end_date || "",
+            assigned_employees: members,
+            progress,
+            budget: Number(p.budget || 0),
+            client: p.client_name || "",
+            tasks: taskList,
+            service_type: p.type || undefined,
+            company_number: p.company_number || undefined,
+            company_email: p.company_email || undefined,
+            company_address: p.company_address || undefined,
+            about_company: p.about_company || undefined,
+            social_links: p.social_links || [],
+            public_contacts: p.public_contacts || {},
+            media_links: p.media_links || [],
+            bank_details: p.bank_details || {},
+            service_specific: p.service_specific || {},
+            attachments,
+            comments,
+          } as Project
+        })
+        setProjects(mapped)
+        setTasks(mapped.flatMap((p) => p.tasks))
+      }
+      setLoading(false)
+    })()
+
+    // realtime subscriptions
+    const channel = supabase
+      .channel("projects-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, () => {
+        // refetch on insert for simplicity
+        ;(async () => {
+          const { data } = await supabase.from("projects").select("id, name, status, priority, client_name")
+          if (data) {
+            // minimal update (names/status) to avoid heavy mapping; full refetch could be done similarly as above
+            setProjects((prev) => {
+              const map = new Map(prev.map((p) => [p.id, p]))
+              for (const r of data as any[]) {
+                const existing = map.get(r.id)
+                if (existing) {
+                  map.set(r.id, { ...existing, name: r.name, status: r.status, priority: r.priority, client: r.client_name })
+                }
+              }
+              return Array.from(map.values())
+            })
+          }
+        })()
+      })
+      .subscribe()
+
+    const channelEmployees = supabase
+      .channel("employees-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, fetchEmployees)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, fetchEmployees)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+      supabase.removeChannel(channelEmployees)
     }
-    setLoading(false)
   }, [])
 
   const filteredProjects = projects.filter(
@@ -394,6 +519,8 @@ export function UnifiedProjectManagement() {
     return employees.find((e) => e.id === id)?.name || "Unknown"
   }
 
+  const teamEmployees = employees.filter((e) => e.email !== "admin@dionix.ai")
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto px-4">
       <div className="flex items-center justify-between">
@@ -511,6 +638,17 @@ export function UnifiedProjectManagement() {
           </div>
 
           <div className="grid gap-4">
+            {loading && (
+              <>
+                <Skeleton className="h-28 w-full" />
+                <Skeleton className="h-28 w-full" />
+              </>
+            )}
+            {!loading && filteredProjects.length === 0 && (
+              <Card>
+                <CardContent className="p-6 text-sm text-muted-foreground">No projects yet. Click "New Project" to create one.</CardContent>
+              </Card>
+            )}
             {filteredProjects.map((project) => (
               <Card
                 key={project.id}
@@ -653,18 +791,41 @@ export function UnifiedProjectManagement() {
                                     </div>
                                     <div className="md:col-span-2 flex justify-end">
                                       <Button
-                                        onClick={() => {
+                                        onClick={async () => {
                                           if (!selectedProject) return
                                           if (!newTaskTitle.trim() || !newTaskAssignee) return
-                                          const task: Task = {
-                                            id: `${Date.now()}`,
+                                          const insertPayload: any = {
+                                            project_id: selectedProject.id,
                                             title: newTaskTitle.trim(),
                                             description: newTaskDescription.trim(),
                                             status: newTaskStatus,
-                                            assignee: newTaskAssignee,
-                                            due_date: newTaskDueDate,
                                             priority: newTaskPriority,
-                                            project_id: selectedProject.id,
+                                            assignee_id: newTaskAssignee,
+                                            due_date: newTaskDueDate || null,
+                                          }
+                                          const { data: inserted, error } = await supabase
+                                            .from("tasks")
+                                            .insert(insertPayload)
+                                            .select("id, project_id, title, description, status, priority, assignee_id, due_date, created_at")
+                                            .single()
+                                          if (error) return
+
+                                          // Ensure member is listed in project_members
+                                          await supabase
+                                            .from("project_members")
+                                            .upsert({ project_id: selectedProject.id, user_id: newTaskAssignee, role: "member" } as any, { onConflict: "project_id,user_id" as any })
+                                            .select("project_id")
+                                            .maybeSingle()
+
+                                          const task: Task = {
+                                            id: inserted.id,
+                                            title: inserted.title,
+                                            description: inserted.description || "",
+                                            status: inserted.status,
+                                            assignee: inserted.assignee_id || "",
+                                            due_date: inserted.due_date || "",
+                                            priority: inserted.priority,
+                                            project_id: inserted.project_id,
                                           }
                                           setTasks((prev) => [...prev, task])
                                           setProjects((prev) => prev.map((p) => p.id === selectedProject.id ? { ...p, tasks: [...p.tasks, task], assigned_employees: p.assigned_employees.includes(newTaskAssignee) ? p.assigned_employees : [...p.assigned_employees, newTaskAssignee] } : p))
@@ -709,38 +870,90 @@ export function UnifiedProjectManagement() {
                             </TabsContent>
                             <TabsContent value="attachments" className="space-y-4">
                               <div className="flex items-center gap-3">
-                                <Input type="file" multiple onChange={(e) => {
-                                  const files = Array.from(e.target.files || [])
-                                  if (!selectedProject) return
-                                  setProjects((prev) => prev.map((p) => {
-                                    if (p.id !== selectedProject.id) return p
-                                    const nextVersion = (p.attachments?.[0]?.version || 0) + 1
-                                    const newAtts: ProjectAttachment[] = files.map((f, idx) => ({
-                                      id: `${Date.now()}-${idx}`,
-                                      file_name: f.name,
-                                      file_size: f.size,
-                                      content_type: f.type,
-                                      version: nextVersion,
-                                      uploaded_by: "admin",
-                                      uploaded_at: new Date().toISOString(),
-                                    }))
-                                    return { ...p, attachments: [...(p.attachments || []), ...newAtts] }
-                                  }))
-                                }} />
-                                <Upload className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                              <div className="space-y-2">
-                                {(project.attachments || []).map((att) => (
-                                  <div key={att.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
-                                    <div className="flex items-center gap-2">
-                                      <Paperclip className="h-4 w-4" />
-                                      <span>{att.file_name}</span>
-                                      <span className="text-muted-foreground">v{att.version}</span>
-                          </div>
-                                    <span className="text-muted-foreground">{new Date(att.uploaded_at).toLocaleString()}</span>
-                                  </div>
-                                ))}
+                                <Input
+                                  type="file"
+                                  onChange={async (e) => {
+                                    const f = (e.target.files || [])[0]
+                                    if (!selectedProject || !f) return
+                                    const current = projects.find((p) => p.id === selectedProject.id)
+                                    const nextVersion = ((current?.attachments || []).reduce((max, a) => Math.max(max, a.version || 0), 0)) + 1
+                                    try {
+                                      setIsUploading(true)
+                                      setUploadProgress(10)
+                                      const uploaded = await uploadProjectFile({ projectId: selectedProject.id, file: f })
+                                      setUploadProgress(60)
+                                      const { data, error } = await supabase
+                                        .from("attachments")
+                                        .insert({
+                                          project_id: selectedProject.id,
+                                          storage_path: uploaded.path,
+                                          file_name: f.name,
+                                          file_size: f.size,
+                                          content_type: f.type,
+                                          version: nextVersion,
+                                        })
+                                        .select("id, uploaded_at")
+                                        .single()
+                                      if (error) throw error
+                                      setUploadProgress(90)
+                                      setProjects((prev) => prev.map((p) => {
+                                        if (p.id !== selectedProject.id) return p
+                                        const newAtt: ProjectAttachment = {
+                                          id: data?.id || `${Date.now()}`,
+                                          file_name: f.name,
+                                          file_size: f.size,
+                                          content_type: f.type,
+                                          version: nextVersion,
+                                          uploaded_by: "",
+                                          uploaded_at: (data?.uploaded_at as any) || new Date().toISOString(),
+                                        }
+                                        return { ...p, attachments: [...(p.attachments || []), newAtt] }
+                                      }))
+                                      setUploadProgress(100)
+                                      setTimeout(() => setUploadProgress(null), 500)
+                                    } catch (err) {
+                                      setUploadProgress(null)
+                                    } finally {
+                                      setIsUploading(false)
+                                      e.currentTarget.value = ""
+                                    }
+                                  }}
+                                  disabled={isUploading}
+                                />
+                                <Upload className={`h-4 w-4 ${isUploading ? 'animate-pulse text-primary' : 'text-muted-foreground'}`} />
+                                {uploadProgress !== null && (
+                                  <div className="text-xs text-muted-foreground">{uploadProgress}%</div>
+                                )}
                               </div>
+                                <div className="space-y-2">
+                                  {(project.attachments || []).map((att) => (
+                                    <div key={att.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
+                                      <div className="flex items-center gap-2">
+                                        <Paperclip className="h-4 w-4" />
+                                        <span>{att.file_name}</span>
+                                        <span className="text-muted-foreground">v{att.version}</span>
+                                      </div>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={async () => {
+                                          const row = await supabase
+                                            .from("attachments")
+                                            .select("storage_path")
+                                            .eq("id", att.id)
+                                            .single()
+                                          const url = await createSignedUrlByPath(row.data?.storage_path || "")
+                                          window.open(url, "_blank")
+                                        }}
+                                      >
+                                        View
+                                      </Button>
+                                      <span className="text-muted-foreground">{new Date(att.uploaded_at).toLocaleString()}</span>
+                                    </div>
+                                    </div>
+                                  ))}
+                                </div>
                             </TabsContent>
                             <TabsContent value="comments" className="space-y-3">
                               <div className="flex items-center gap-2">
@@ -803,7 +1016,9 @@ export function UnifiedProjectManagement() {
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation()
+                          if (!confirm("Delete this project?")) return
                           deleteProject(project.id)
+                          toast({ title: "Project deleted" })
                         }}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -864,7 +1079,7 @@ export function UnifiedProjectManagement() {
 
         <TabsContent value="team" className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {employees.map((employee) => {
+            {teamEmployees.map((employee) => {
               const employeeTasks = tasks.filter((t) => t.assignee === employee.id)
               const employeeProjects = projects.filter((p) => p.assigned_employees.includes(employee.id))
 
@@ -945,12 +1160,12 @@ export function UnifiedProjectManagement() {
                           key={opt.key}
                           data-selected={selected}
                           onClick={() => setServiceType(opt.key as any)}
-                          className={`group w-full rounded-lg border p-4 text-left transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/50 ${selected ? 'border-primary bg-primary/5' : 'border-border'}`}
+                          className={`group w-full rounded-lg border p-4 text-left transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/50 min-h-[120px] ${selected ? 'border-primary bg-primary/5' : 'border-border'}`}
                         >
                           <div className="flex items-start gap-3">
                             <div className="text-base leading-none">{opt.emoji}</div>
-                            <div>
-                              <div className="font-medium text-foreground text-sm md:text-base leading-tight break-words whitespace-normal">{opt.label}</div>
+                            <div className="flex flex-col">
+                              <div className="font-medium text-foreground text-sm md:text-base leading-tight break-words whitespace-normal min-h-[40px] flex items-center">{opt.label}</div>
                               <div className="text-xs text-muted-foreground mt-0.5">{opt.desc}</div>
                             </div>
                           </div>

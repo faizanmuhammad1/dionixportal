@@ -3,7 +3,7 @@ import { createClient } from "./supabase"
 export interface User {
   id: string
   email: string
-  role: "admin" | "employee"
+  role: "admin" | "manager" | "employee" | "client"
   firstName: string
   lastName: string
 }
@@ -38,30 +38,7 @@ export interface JobApplication {
   created_at: string
 }
 
-// Single admin bypass (for development convenience only)
-const ADMIN_BYPASS_EMAIL = process.env.NEXT_PUBLIC_ADMIN_BYPASS_EMAIL || "admin@dionix.ai"
-const ADMIN_BYPASS_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_BYPASS_PASSWORD || "admin123"
-let bypassCurrentUser: User | null = null
-
 export async function signInWithEmail(email: string, password: string) {
-  // Allow one admin bypass without hitting Supabase
-  if (email === ADMIN_BYPASS_EMAIL && password === ADMIN_BYPASS_PASSWORD) {
-    bypassCurrentUser = {
-      id: "bypass-admin-id",
-      email: ADMIN_BYPASS_EMAIL,
-      role: "admin",
-      firstName: "Admin",
-      lastName: "User",
-    }
-    return {
-      user: {
-        id: bypassCurrentUser.id,
-        email: bypassCurrentUser.email,
-        user_metadata: { firstName: bypassCurrentUser.firstName, lastName: bypassCurrentUser.lastName, role: "admin" },
-      },
-    }
-  }
-
   const supabase = createClient()
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
@@ -95,17 +72,12 @@ export async function signUpWithEmail(email: string, password: string) {
 
 export async function signOut() {
   const supabase = createClient()
-  // Clear bypass session if present
-  bypassCurrentUser = null
   const { error } = await supabase.auth.signOut()
   // Do not throw; allow UI to clear state regardless
   if (error) console.error("Supabase signOut error:", error.message)
 }
 
 export async function getCurrentUser(): Promise<User | null> {
-  // Return bypass admin if active
-  if (bypassCurrentUser) return bypassCurrentUser
-
   const supabase = createClient()
 
   const {
@@ -120,7 +92,7 @@ export async function getCurrentUser(): Promise<User | null> {
   if (!user) return null
 
   // Try to load profile for role and names; fallback to auth metadata
-  let role: "admin" | "employee" = (user.user_metadata?.role as any) || "employee"
+  let role: "admin" | "manager" | "employee" | "client" = (user.user_metadata?.role as any) || "employee"
   let firstName: string = user.user_metadata?.firstName || "User"
   let lastName: string = user.user_metadata?.lastName || ""
 

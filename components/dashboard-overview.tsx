@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { MessageSquare, Clock, AlertCircle, Mail, FolderOpen, Briefcase, Plus, Eye, ArrowRight } from "lucide-react"
 import type { User, FormSubmission, ClientProject, JobApplication } from "@/lib/auth"
 import { getFormSubmissions, getClientProjects, getJobApplications } from "@/lib/auth"
+import { createClient } from "@/lib/supabase"
 
 interface DashboardOverviewProps {
   user: User
@@ -18,6 +19,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
   const [clientProjects, setClientProjects] = useState<ClientProject[]>([])
   const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
   const [loading, setLoading] = useState(true)
+  const supabase = createClient()
 
   const isAdmin = user.role === "admin"
 
@@ -41,6 +43,26 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     }
 
     fetchData()
+
+    if (!isAdmin) return
+
+    // Realtime subscriptions to keep KPIs live
+    const channel = supabase
+      .channel("dashboard-overview-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "client_project_details" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_project_details" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "client_project_details" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, fetchData)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [isAdmin])
 
   const stats = {

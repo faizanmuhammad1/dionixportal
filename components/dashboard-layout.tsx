@@ -30,11 +30,12 @@ import {
 import Image from "next/image"
 import { ThemeToggle } from "@/components/theme-toggle"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { User } from "@/lib/auth"
+import { createClient } from "@/lib/supabase"
 
 interface DashboardLayoutProps {
   user: User
@@ -49,6 +50,8 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarHovered, setSidebarHovered] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [notifCount, setNotifCount] = useState(0)
+  const supabase = createClient()
 
   const navigation = [
     // Core Dashboard
@@ -194,6 +197,26 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
     onNavigate(href)
     setSidebarOpen(false) // Close mobile sidebar on navigation
   }
+
+  useEffect(() => {
+    // Initial count: use contact_submissions as notifications source (extend as needed)
+    ;(async () => {
+      const { data } = await supabase
+        .from("form_submissions")
+        .select("id", { count: "exact", head: true })
+      setNotifCount((data as any)?.length ?? 0)
+    })()
+
+    const channel = supabase
+      .channel("navbar-notifications")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, () => setNotifCount((c) => c + 1))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, () => setNotifCount((c) => Math.max(0, c - 1)))
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -413,6 +436,15 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             <div className="hidden lg:flex lg:flex-1" />
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
+            <Button variant="ghost" size="icon" onClick={() => onNavigate("notifications")}
+              className="relative">
+              <Bell className="h-5 w-5" />
+              {notifCount > 0 && (
+                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] h-4 min-w-4 px-1">
+                  {notifCount}
+                </span>
+              )}
+            </Button>
               <ThemeToggle />
               <DropdownMenu open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
                 <DropdownMenuTrigger asChild>
