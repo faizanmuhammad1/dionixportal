@@ -43,6 +43,16 @@ export function JobManagement() {
   const [creating, setCreating] = useState(false)
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
   const [deletingAppId, setDeletingAppId] = useState<string | null>(null)
+
+  const formatSalaryText = (input?: string | null) => {
+    if (!input) return "N/A"
+    const format = (n: string) =>
+      new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
+        Number(n.replace(/,/g, "")) || 0,
+      )
+    const replaced = input.replace(/\d+(?:[.,]\d+)?/g, (m) => format(m))
+    return replaced
+  }
   const [newJob, setNewJob] = useState({
     title: "",
     department: "",
@@ -486,7 +496,9 @@ export function JobManagement() {
                 <TableRow>
                   <TableHead>Applicant</TableHead>
                   <TableHead>Position</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead className="whitespace-nowrap">Applied</TableHead>
+                  <TableHead>Experience</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -538,7 +550,9 @@ export function JobManagement() {
                       </div>
                     </TableCell>
                     <TableCell>{application.position}</TableCell>
+                    <TableCell>{application.location || "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">{new Date(application.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="capitalize">{application.experience_level}</TableCell>
                     <TableCell>
                       <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
                     </TableCell>
@@ -665,6 +679,18 @@ export function JobManagement() {
                 <div>
                   <span className="font-medium">Date:</span> {new Date(selectedApplication.created_at).toLocaleString()}
                 </div>
+                <div>
+                  <span className="font-medium">Location:</span> {selectedApplication.location || "N/A"}
+                </div>
+                <div>
+                  <span className="font-medium">Salary:</span> {formatSalaryText(selectedApplication.salary)}
+                </div>
+                <div>
+                  <span className="font-medium">Availability:</span> {selectedApplication.availability || "N/A"}
+                </div>
+                <div>
+                  <span className="font-medium">Referral:</span> {selectedApplication.referral_source || "N/A"}
+                </div>
               </div>
               <div>
                 <div className="font-medium mb-1">Cover Letter</div>
@@ -692,6 +718,13 @@ export function JobManagement() {
                   )}
                 </div>
                 <div>
+                  <span className="font-medium">GitHub:</span> {selectedApplication.github_url ? (
+                    <a className="underline" href={selectedApplication.github_url} target="_blank" rel="noreferrer">Open</a>
+                  ) : (
+                    "N/A"
+                  )}
+                </div>
+                <div>
                   <span className="font-medium">Portfolio:</span> {selectedApplication.portfolio_url ? (
                     <a className="underline" href={selectedApplication.portfolio_url} target="_blank" rel="noreferrer">Open</a>
                   ) : (
@@ -699,6 +732,19 @@ export function JobManagement() {
                   )}
                 </div>
               </div>
+
+              {selectedApplication.portfolio_files && selectedApplication.portfolio_files.length > 0 && (
+                <div>
+                  <div className="font-medium mb-1">Portfolio Files</div>
+                  <ul className="list-disc pl-5 text-sm">
+                    {selectedApplication.portfolio_files.map((f, i) => (
+                      <li key={`pf-${i}`}>
+                        <a className="underline" href={f} target="_blank" rel="noreferrer">File {i + 1}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </UIDialogContent>
