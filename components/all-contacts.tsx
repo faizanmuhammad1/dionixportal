@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Users, Search, Mail, Phone, Calendar, MessageSquare } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { getFormSubmissions } from "@/lib/auth"
 import type { FormSubmission } from "@/lib/auth"
 
@@ -14,6 +15,8 @@ export function AllContacts() {
   const [contacts, setContacts] = useState<FormSubmission[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<FormSubmission | null>(null)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     async function fetchContacts() {
@@ -134,7 +137,19 @@ export function AllContacts() {
                         {contact.form_type || "General"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate">{getContactMessage(contact)}</TableCell>
+                    <TableCell className="max-w-md">
+                      <button
+                        type="button"
+                        className="w-full text-left line-clamp-2 break-words text-muted-foreground hover:underline"
+                        title="Click to view message"
+                        onClick={() => {
+                          setSelected(contact)
+                          setOpen(true)
+                        }}
+                      >
+                        {getContactMessage(contact)}
+                      </button>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={getStatusColor(contact.status || "pending")}>{contact.status || "pending"}</Badge>
                     </TableCell>
@@ -150,7 +165,15 @@ export function AllContacts() {
                         <Button variant="ghost" size="sm" title="Schedule Meeting">
                           <Calendar className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" title="View Details">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="View Details"
+                          onClick={() => {
+                            setSelected(contact)
+                            setOpen(true)
+                          }}
+                        >
                           <MessageSquare className="h-4 w-4" />
                         </Button>
                       </div>
@@ -162,6 +185,52 @@ export function AllContacts() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Contact Details</DialogTitle>
+            <DialogDescription>Full submission data for this contact.</DialogDescription>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">ID: {selected.id}</div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="font-medium">Type:</span> {selected.form_type || "contact_form"}
+                </div>
+                <div>
+                  <span className="font-medium">Email:</span> {selected.contact_email || "N/A"}
+                </div>
+                <div>
+                  <span className="font-medium">Status:</span> {selected.status || "new"}
+                </div>
+                <div>
+                  <span className="font-medium">Date:</span> {new Date(selected.created_at).toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="font-medium mb-1">Message</div>
+                <div className="rounded-md border p-3 text-sm whitespace-pre-wrap break-words overflow-auto max-h-64">
+                  {(() => {
+                    const d: any = selected.form_data || {}
+                    return (
+                      d.message || d.description || JSON.stringify(selected.form_data, null, 2)
+                    )
+                  })()}
+                </div>
+              </div>
+
+              <div>
+                <div className="font-medium mb-1">All Fields</div>
+                <pre className="rounded-md border p-3 text-xs overflow-auto max-h-80">
+{JSON.stringify(selected.form_data, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

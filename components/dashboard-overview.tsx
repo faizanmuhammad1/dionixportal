@@ -18,6 +18,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([])
   const [clientProjects, setClientProjects] = useState<ClientProject[]>([])
   const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
+  const [activeEmployees, setActiveEmployees] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -27,14 +28,22 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     async function fetchData() {
       if (isAdmin) {
         try {
-          const [submissions, projects, applications] = await Promise.all([
+          const [submissions, projects, applications, employees] = await Promise.all([
             getFormSubmissions(),
             getClientProjects(),
             getJobApplications(),
+            supabase
+              .from("profiles")
+              .select("id", { count: "exact", head: true })
+              .eq("status", "active")
+              .neq("role", "admin"),
           ])
           setFormSubmissions(submissions)
           setClientProjects(projects)
           setJobApplications(applications)
+          if (employees && (employees as any).count !== undefined) {
+            setActiveEmployees((employees as any).count as number)
+          }
         } catch (error) {
           console.error("Error fetching dashboard data:", error)
         }
@@ -157,8 +166,8 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">12</div>
-                <p className="text-xs text-muted-foreground">3 new this month</p>
+                <div className="text-2xl font-bold">{activeEmployees}</div>
+                <p className="text-xs text-muted-foreground">Active employees (excluding admins)</p>
               </CardContent>
             </Card>
           </div>

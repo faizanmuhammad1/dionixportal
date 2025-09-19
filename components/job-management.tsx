@@ -15,163 +15,111 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogClose,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Search, Eye, Edit, Users, Briefcase, Calendar, MapPin } from "lucide-react"
+import { Plus, Search, Eye, Edit, Users, Briefcase, Calendar, MapPin, FileText, ExternalLink, Link as LinkIcon, Loader2 } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from "@/components/ui/use-toast"
+import { Dialog as UIDialog, DialogContent as UIDialogContent, DialogHeader as UIDialogHeader, DialogTitle as UIDialogTitle, DialogDescription as UIDialogDescription } from "@/components/ui/dialog"
+import { getJobs, getJobApplications, createJob, updateJob, updateJobApplication, deleteJob, deleteJobApplication, type Job, type JobApplication as DBJobApplication } from "@/lib/auth"
 
-interface JobOpening {
-  id: string
-  title: string
-  department: string
-  location: string
-  type: string
-  status: string
-  description: string
-  requirements: string
-  salary_range: string
-  posted_date: string
-  applications_count: number
-}
-
-interface JobApplication {
-  id: string
-  job_id: string
-  applicant_name: string
-  applicant_email: string
-  phone: string
-  resume_url: string
-  cover_letter: string
-  status: string
-  applied_date: string
-  job_title: string
-}
+// Types are sourced from lib/auth
 
 export function JobManagement() {
-  const [jobOpenings, setJobOpenings] = useState<JobOpening[]>([])
-  const [applications, setApplications] = useState<JobApplication[]>([])
+  const { toast } = useToast()
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [applications, setApplications] = useState<DBJobApplication[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [selectedJob, setSelectedJob] = useState<JobOpening | null>(null)
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [applicationDialogOpen, setApplicationDialogOpen] = useState(false)
+  const [selectedApplication, setSelectedApplication] = useState<DBJobApplication | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
+  const [deletingAppId, setDeletingAppId] = useState<string | null>(null)
   const [newJob, setNewJob] = useState({
     title: "",
     department: "",
     location: "",
-    type: "full-time",
+    employment_type: "full-time",
+    experience: "",
     description: "",
     requirements: "",
-    salary_range: "",
+    skills: "",
+    is_active: true,
   })
 
-  // Mock data for demonstration
+  // Load from Supabase
   useEffect(() => {
-    // Mock job openings
-    const mockJobs: JobOpening[] = [
-      {
-        id: "1",
-        title: "Senior Frontend Developer",
-        department: "Engineering",
-        location: "Remote",
-        type: "Full-time",
-        status: "Active",
-        description: "We're looking for a senior frontend developer to join our team...",
-        requirements: "5+ years React experience, TypeScript, Next.js",
-        salary_range: "$80,000 - $120,000",
-        posted_date: "2024-01-15",
-        applications_count: 12,
-      },
-      {
-        id: "2",
-        title: "Product Manager",
-        department: "Product",
-        location: "New York, NY",
-        type: "Full-time",
-        status: "Active",
-        description: "Lead product strategy and development...",
-        requirements: "3+ years product management, MBA preferred",
-        salary_range: "$90,000 - $130,000",
-        posted_date: "2024-01-10",
-        applications_count: 8,
-      },
-      {
-        id: "3",
-        title: "UX Designer",
-        department: "Design",
-        location: "San Francisco, CA",
-        type: "Contract",
-        status: "Draft",
-        description: "Create beautiful and intuitive user experiences...",
-        requirements: "Portfolio required, Figma expertise",
-        salary_range: "$70,000 - $100,000",
-        posted_date: "2024-01-20",
-        applications_count: 5,
-      },
-    ]
-
-    // Mock applications
-    const mockApplications: JobApplication[] = [
-      {
-        id: "1",
-        job_id: "1",
-        applicant_name: "John Smith",
-        applicant_email: "john.smith@email.com",
-        phone: "+1 (555) 123-4567",
-        resume_url: "/resumes/john-smith.pdf",
-        cover_letter: "I am excited to apply for the Senior Frontend Developer position...",
-        status: "Under Review",
-        applied_date: "2024-01-16",
-        job_title: "Senior Frontend Developer",
-      },
-      {
-        id: "2",
-        job_id: "1",
-        applicant_name: "Sarah Johnson",
-        applicant_email: "sarah.j@email.com",
-        phone: "+1 (555) 987-6543",
-        resume_url: "/resumes/sarah-johnson.pdf",
-        cover_letter: "With over 6 years of React experience...",
-        status: "Interview Scheduled",
-        applied_date: "2024-01-17",
-        job_title: "Senior Frontend Developer",
-      },
-      {
-        id: "3",
-        job_id: "2",
-        applicant_name: "Mike Chen",
-        applicant_email: "mike.chen@email.com",
-        phone: "+1 (555) 456-7890",
-        resume_url: "/resumes/mike-chen.pdf",
-        cover_letter: "I have been following your company's growth...",
-        status: "New",
-        applied_date: "2024-01-18",
-        job_title: "Product Manager",
-      },
-    ]
-
-    setJobOpenings(mockJobs)
-    setApplications(mockApplications)
+    ;(async () => {
+      try {
+        const [jobsRes, appsRes] = await Promise.all([getJobs(), getJobApplications()])
+        setJobs(jobsRes)
+        setApplications(appsRes)
+      } catch (e: any) {
+        toast({ title: "Failed to load data", description: e?.message || "Try again later.", variant: "destructive" as any })
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [])
 
-  const handleCreateJob = () => {
-    const job: JobOpening = {
-      id: Date.now().toString(),
-      ...newJob,
-      status: "Draft",
-      posted_date: new Date().toISOString().split("T")[0],
-      applications_count: 0,
+  const handleCreateJob = async () => {
+    if (!newJob.title.trim()) {
+      toast({ title: "Title is required", description: "Please add a job title.", variant: "destructive" as any })
+      return
     }
-    setJobOpenings([...jobOpenings, job])
+    if (!newJob.employment_type) {
+      toast({ title: "Employment type required", description: "Please select a type.", variant: "destructive" as any })
+      return
+    }
+    setCreating(true)
+    const parseList = (s: string) =>
+      s
+        .split(/\n|,/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+
+    const payload = {
+      title: newJob.title,
+      department: newJob.department || null,
+      location: newJob.location || null,
+      employment_type: newJob.employment_type || null,
+      experience: newJob.experience || null,
+      description: newJob.description || null,
+      requirements: parseList(newJob.requirements),
+      skills: parseList(newJob.skills),
+      is_active: newJob.is_active,
+    } as Omit<Job, "id" | "created_at">
+
+    let created: Job
+    try {
+      created = await createJob(payload)
+      setJobs([created, ...jobs])
+      toast({ title: "Job created", description: `${created.title} is now live.` })
+    } catch (e: any) {
+      toast({ title: "Failed to create job", description: e?.message || "Try again later.", variant: "destructive" as any })
+      return
+    }
     setNewJob({
       title: "",
       department: "",
       location: "",
-      type: "full-time",
+      employment_type: "full-time",
+      experience: "",
       description: "",
       requirements: "",
-      salary_range: "",
+      skills: "",
+      is_active: true,
     })
     setIsCreateDialogOpen(false)
+    setCreating(false)
   }
 
   const getStatusColor = (status: string) => {
@@ -197,16 +145,15 @@ export function JobManagement() {
     }
   }
 
-  const filteredJobs = jobOpenings.filter(
-    (job) =>
-      job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.department.toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredJobs = jobs.filter((job) =>
+    (job.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    ((job.department || "").toLowerCase().includes(searchTerm.toLowerCase())),
   )
 
   const filteredApplications = applications.filter(
     (app) =>
-      app.applicant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.job_title.toLowerCase().includes(searchTerm.toLowerCase()),
+      (app.full_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (app.position || "").toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   return (
@@ -223,7 +170,7 @@ export function JobManagement() {
               Create Job Opening
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Job Opening</DialogTitle>
               <DialogDescription>Fill in the details to create a new job posting</DialogDescription>
@@ -261,7 +208,7 @@ export function JobManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="type">Employment Type</Label>
-                  <Select value={newJob.type} onValueChange={(value) => setNewJob({ ...newJob, type: value })}>
+                  <Select value={newJob.employment_type} onValueChange={(value) => setNewJob({ ...newJob, employment_type: value })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -275,12 +222,12 @@ export function JobManagement() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="salary">Salary Range</Label>
+                <Label htmlFor="experience">Experience</Label>
                 <Input
-                  id="salary"
-                  value={newJob.salary_range}
-                  onChange={(e) => setNewJob({ ...newJob, salary_range: e.target.value })}
-                  placeholder="e.g. $80,000 - $120,000"
+                  id="experience"
+                  value={newJob.experience}
+                  onChange={(e) => setNewJob({ ...newJob, experience: e.target.value })}
+                  placeholder="e.g. 2-4 years"
                 />
               </div>
               <div className="space-y-2">
@@ -294,21 +241,41 @@ export function JobManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="requirements">Requirements</Label>
+                <Label htmlFor="requirements">Requirements (comma or newline separated)</Label>
                 <Textarea
                   id="requirements"
                   value={newJob.requirements}
                   onChange={(e) => setNewJob({ ...newJob, requirements: e.target.value })}
-                  placeholder="List the required skills and qualifications..."
+                  placeholder="e.g. React, TypeScript, UX..."
                   rows={3}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="skills">Skills (comma or newline separated)</Label>
+                <Textarea
+                  id="skills"
+                  value={newJob.skills}
+                  onChange={(e) => setNewJob({ ...newJob, skills: e.target.value })}
+                  placeholder="e.g. Figma, Research, Prototyping"
+                  rows={2}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox id="active" checked={newJob.is_active} onCheckedChange={(v) => setNewJob({ ...newJob, is_active: Boolean(v) })} />
+                <Label htmlFor="active">Active</Label>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateJob}>Create Job Opening</Button>
+              <Button onClick={handleCreateJob} disabled={creating}>
+                {creating ? (
+                  <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Creating...</span>
+                ) : (
+                  "Create Job Opening"
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -318,7 +285,7 @@ export function JobManagement() {
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="openings" className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" />
-            Job Openings ({jobOpenings.length})
+            Job Openings ({jobs.length})
           </TabsTrigger>
           <TabsTrigger value="applications" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
@@ -340,8 +307,34 @@ export function JobManagement() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredJobs.map((job) => (
-              <Card key={job.id} className="hover:shadow-md transition-shadow">
+            {loading && (
+              <>
+                {[...Array(3)].map((_, i) => (
+                  <Card key={i}>
+                    <CardHeader>
+                      <Skeleton className="h-5 w-40" />
+                      <Skeleton className="h-4 w-24 mt-2" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {[...Array(5)].map((__, j) => (
+                          <Skeleton key={j} className="h-4 w-full" />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </>
+            )}
+            {!loading && filteredJobs.length === 0 && (
+              <Card className="md:col-span-2 lg:col-span-3">
+                <CardContent className="py-16 text-center text-muted-foreground">
+                  No job openings match your search.
+                </CardContent>
+              </Card>
+            )}
+            {!loading && filteredJobs.map((job) => (
+              <Card key={job.id} className="hover:shadow-md transition-shadow h-full flex flex-col">
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
@@ -351,47 +344,122 @@ export function JobManagement() {
                         {job.location}
                       </CardDescription>
                     </div>
-                    <Badge className={getStatusColor(job.status)}>{job.status}</Badge>
+                    <Badge className={getStatusColor(job.is_active ? "active" : "closed")}>{job.is_active ? "Active" : "Closed"}</Badge>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
+                <CardContent className="flex-1 flex flex-col">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Department:</span>
-                      <span>{job.department}</span>
+                      <span className="text-muted-foreground">Department</span>
+                      <span className="text-right">{job.department || "—"}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Type:</span>
-                      <span>{job.type}</span>
+                      <span className="text-muted-foreground">Type</span>
+                      <span className="text-right capitalize">{job.employment_type || "—"}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Salary:</span>
-                      <span>{job.salary_range}</span>
+                      <span className="text-muted-foreground">Experience</span>
+                      <span className="text-right">{job.experience || "—"}</span>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Applications:</span>
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {job.applications_count}
-                      </span>
+
+                    {(job.skills && job.skills.length > 0) && (
+                      <div className="text-sm">
+                        <div className="text-muted-foreground mb-1">Skills</div>
+                        <div className="flex flex-wrap gap-1">
+                          {job.skills.slice(0, 8).map((s, i) => (
+                            <Badge key={`${job.id}-skill-${i}`} variant="secondary" className="capitalize">
+                              {s}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(job.requirements && job.requirements.length > 0) && (
+                      <div className="text-sm">
+                        <div className="text-muted-foreground mb-1">Requirements</div>
+                        <ul className="list-disc pl-5 space-y-1 text-muted-foreground/90 max-h-24 overflow-hidden">
+                          {job.requirements.slice(0, 4).map((r, i) => (
+                            <li key={`${job.id}-req-${i}`}>{r}</li>
+                          ))}
+                        </ul>
                     </div>
+                    )}
+
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Posted:</span>
+                      <span className="text-muted-foreground">Posted</span>
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
-                        {new Date(job.posted_date).toLocaleDateString()}
+                        {new Date(job.created_at).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-4">
+                  <div className="flex gap-2 mt-auto pt-2 border-t">
+                    <Dialog>
+                      <DialogTrigger asChild>
                     <Button variant="outline" size="sm" className="flex-1 bg-transparent">
                       <Eye className="h-3 w-3 mr-1" />
                       View
                     </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>{job.title}</DialogTitle>
+                          <DialogDescription>Job details</DialogDescription>
+                        </DialogHeader>
+                        <JobDetails job={job} />
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
                     <Button variant="outline" size="sm" className="flex-1 bg-transparent">
                       <Edit className="h-3 w-3 mr-1" />
                       Edit
                     </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Edit Job</DialogTitle>
+                          <DialogDescription>Update job details and save changes</DialogDescription>
+                        </DialogHeader>
+                        <EditJobForm job={job} onSaved={(updated) => {
+                          setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)))
+                        }} />
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="destructive" size="sm" className="flex-1">Delete</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Delete job?</DialogTitle>
+                          <DialogDescription>This action cannot be undone.</DialogDescription>
+                        </DialogHeader>
+                        <div className="flex justify-end gap-2">
+                          <DialogClose asChild>
+                            <Button variant="outline">Cancel</Button>
+                          </DialogClose>
+                          <Button
+                            variant="destructive"
+                            onClick={async () => {
+                              try {
+                                setDeletingJobId(job.id)
+                                await deleteJob(job.id)
+                                setJobs((prev) => prev.filter((j) => j.id !== job.id))
+                                toast({ title: "Job deleted" })
+                              } catch (e: any) {
+                                toast({ title: "Failed to delete job", description: e?.message || "Try again later.", variant: "destructive" as any })
+                              } finally {
+                                setDeletingJobId(null)
+                              }
+                            }}
+                          >
+                            {deletingJobId === job.id ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Deleting...</span> : "Delete"}
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </CardContent>
               </Card>
@@ -418,33 +486,148 @@ export function JobManagement() {
                 <TableRow>
                   <TableHead>Applicant</TableHead>
                   <TableHead>Position</TableHead>
-                  <TableHead>Applied Date</TableHead>
+                  <TableHead className="whitespace-nowrap">Applied</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredApplications.map((application) => (
-                  <TableRow key={application.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{application.applicant_name}</div>
-                        <div className="text-sm text-muted-foreground">{application.applicant_email}</div>
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <div className="grid grid-cols-4 gap-4">
+                        {[...Array(4)].map((_, i) => (
+                          <Skeleton key={i} className="h-4 w-full" />
+                        ))}
                       </div>
                     </TableCell>
-                    <TableCell>{application.job_title}</TableCell>
-                    <TableCell>{new Date(application.applied_date).toLocaleDateString()}</TableCell>
+                  </TableRow>
+                )}
+                {!loading && filteredApplications.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                      No applications found.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!loading && filteredApplications.map((application) => (
+                  <TableRow key={application.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback>
+                            {application.full_name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      <div>
+                          <div className="font-medium leading-tight">{application.full_name}</div>
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:underline"
+                            onClick={() => navigator.clipboard.writeText(application.email || "")}
+                            title="Copy email"
+                          >
+                            {application.email}
+                          </button>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>{application.position}</TableCell>
+                    <TableCell className="whitespace-nowrap">{new Date(application.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
+                    <TableCell className="text-right">
+                      <div className="flex gap-2 justify-end">
+                        {application.resume_url && (
+                          <Button asChild variant="outline" size="sm" title="Open resume">
+                            <a href={application.resume_url || "#"} target="_blank" rel="noreferrer">
+                              <FileText className="h-3 w-3" />
+                            </a>
+                          </Button>
+                        )}
+                        {application.linkedin_url && (
+                          <Button asChild variant="outline" size="sm" title="Open LinkedIn">
+                            <a href={application.linkedin_url || "#"} target="_blank" rel="noreferrer">
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </Button>
+                        )}
+                        {application.portfolio_url && (
+                          <Button asChild variant="outline" size="sm" title="Open portfolio">
+                            <a href={application.portfolio_url || "#"} target="_blank" rel="noreferrer">
+                              <LinkIcon className="h-3 w-3" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedApplication(application)
+                            setApplicationDialogOpen(true)
+                          }}
+                          title="View details"
+                        >
                           <Eye className="h-3 w-3" />
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" title="Update status">
                           <Edit className="h-3 w-3" />
                         </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Update Application Status</DialogTitle>
+                              <DialogDescription>Change the status of this application</DialogDescription>
+                            </DialogHeader>
+                            <UpdateApplicationStatusForm
+                              application={application}
+                              onSaved={(updated) => {
+                                setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+                              }}
+                            />
+                          </DialogContent>
+                        </Dialog>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="destructive" size="sm" title="Delete application">Delete</Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Delete application?</DialogTitle>
+                              <DialogDescription>This action cannot be undone.</DialogDescription>
+                            </DialogHeader>
+                            <div className="flex justify-end gap-2">
+                              <DialogClose asChild>
+                                <Button variant="outline">Cancel</Button>
+                              </DialogClose>
+                              <Button
+                                variant="destructive"
+                                onClick={async () => {
+                                  try {
+                                    setDeletingAppId(application.id)
+                                    await deleteJobApplication(application.id)
+                                    setApplications((prev) => prev.filter((a) => a.id !== application.id))
+                                    toast({ title: "Application deleted" })
+                                  } catch (e: any) {
+                                    toast({ title: "Failed to delete application", description: e?.message || "Try again later.", variant: "destructive" as any })
+                                  } finally {
+                                    setDeletingAppId(null)
+                                  }
+                                }}
+                              >
+                                {deletingAppId === application.id ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Deleting...</span> : "Delete"}
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -454,6 +637,257 @@ export function JobManagement() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <UIDialog open={applicationDialogOpen} onOpenChange={setApplicationDialogOpen}>
+        <UIDialogContent className="sm:max-w-lg">
+          <UIDialogHeader>
+            <UIDialogTitle>Application Details</UIDialogTitle>
+            <UIDialogDescription>Review candidate information and materials.</UIDialogDescription>
+          </UIDialogHeader>
+          {selectedApplication && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="font-medium">Name:</span> {selectedApplication.full_name}
+                </div>
+                <div>
+                  <span className="font-medium">Email:</span> {selectedApplication.email}
+                </div>
+                <div>
+                  <span className="font-medium">Position:</span> {selectedApplication.position}
+                </div>
+                <div>
+                  <span className="font-medium">Experience:</span> {selectedApplication.experience_level}
+                </div>
+                <div>
+                  <span className="font-medium">Status:</span> {selectedApplication.status}
+                </div>
+                <div>
+                  <span className="font-medium">Date:</span> {new Date(selectedApplication.created_at).toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="font-medium mb-1">Cover Letter</div>
+                <div className="rounded-md border p-3 text-sm whitespace-pre-wrap break-words break-all overflow-auto max-h-64">
+                  {selectedApplication.cover_letter || "No cover letter provided."}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="font-medium">Phone:</span> {selectedApplication.phone || "N/A"}
+                </div>
+                <div>
+                  <span className="font-medium">Resume:</span> {selectedApplication.resume_url ? (
+                    <a className="underline" href={selectedApplication.resume_url} target="_blank" rel="noreferrer">Open</a>
+                  ) : (
+                    "N/A"
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium">LinkedIn:</span> {selectedApplication.linkedin_url ? (
+                    <a className="underline" href={selectedApplication.linkedin_url} target="_blank" rel="noreferrer">Open</a>
+                  ) : (
+                    "N/A"
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium">Portfolio:</span> {selectedApplication.portfolio_url ? (
+                    <a className="underline" href={selectedApplication.portfolio_url} target="_blank" rel="noreferrer">Open</a>
+                  ) : (
+                    "N/A"
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </UIDialogContent>
+      </UIDialog>
+    </div>
+  )
+}
+
+function EditJobForm({ job, onSaved }: { job: Job; onSaved: (j: Job) => void }) {
+  const { toast } = useToast()
+  const [form, setForm] = useState({
+    title: job.title || "",
+    department: job.department || "",
+    location: job.location || "",
+    employment_type: job.employment_type || "",
+    experience: job.experience || "",
+    description: job.description || "",
+    requirements: (job.requirements || []).join("\n"),
+    skills: (job.skills || []).join(", "),
+    is_active: Boolean(job.is_active),
+  })
+
+  const parseList = (s: string) =>
+    s
+      .split(/\n|,/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+
+  const handleSave = async () => {
+    try {
+      const updates: any = {
+        title: form.title || undefined,
+        department: form.department || undefined,
+        location: form.location || undefined,
+        employment_type: form.employment_type || undefined,
+        experience: form.experience || undefined,
+        description: form.description || undefined,
+        requirements: parseList(form.requirements),
+        skills: parseList(form.skills),
+        is_active: form.is_active,
+      }
+      const updated = await updateJob(job.id, updates)
+      toast({ title: "Job updated", description: `${updated.title} saved.` })
+      onSaved(updated)
+    } catch (e: any) {
+      toast({ title: "Failed to update job", description: e?.message || "Try again later.", variant: "destructive" as any })
+    }
+  }
+
+  return (
+    <div className="grid gap-4 py-2">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Job Title</Label>
+          <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Department</Label>
+          <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Location</Label>
+          <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Employment Type</Label>
+          <Input value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })} />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label>Experience</Label>
+        <Input value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Textarea rows={3} value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Requirements (comma or newline separated)</Label>
+        <Textarea rows={3} value={form.requirements} onChange={(e) => setForm({ ...form, requirements: e.target.value })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Skills (comma or newline separated)</Label>
+        <Textarea rows={2} value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} />
+      </div>
+      <div className="flex items-center gap-2">
+        <Checkbox id={`edit-active-${job.id}`} checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: Boolean(v) })} />
+        <Label htmlFor={`edit-active-${job.id}`}>Active</Label>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={handleSave}>Save</Button>
+      </div>
+    </div>
+  )
+}
+
+function JobDetails({ job }: { job: Job }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <span className="text-muted-foreground">Department</span>
+          <div>{job.department || "—"}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Location</span>
+          <div>{job.location || "—"}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Type</span>
+          <div className="capitalize">{job.employment_type || "—"}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Experience</span>
+          <div>{job.experience || "—"}</div>
+        </div>
+      </div>
+      {job.description && (
+        <div>
+          <div className="font-medium mb-1">Description</div>
+          <div className="text-sm whitespace-pre-wrap">{job.description}</div>
+        </div>
+      )}
+      {(job.skills && job.skills.length > 0) && (
+        <div>
+          <div className="font-medium mb-1">Skills</div>
+          <div className="flex flex-wrap gap-1">
+            {job.skills.map((s, i) => (
+              <Badge key={`details-skill-${i}`} variant="secondary" className="capitalize">{s}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+      {(job.requirements && job.requirements.length > 0) && (
+        <div>
+          <div className="font-medium mb-1">Requirements</div>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+            {job.requirements.map((r, i) => (
+              <li key={`details-req-${i}`}>{r}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UpdateApplicationStatusForm({
+  application,
+  onSaved,
+}: {
+  application: DBJobApplication
+  onSaved: (a: DBJobApplication) => void
+}) {
+  const { toast } = useToast()
+  const [status, setStatus] = useState(application.status)
+
+  const handleSave = async () => {
+    try {
+      const updated = await updateJobApplication(application.id, { status })
+      toast({ title: "Application updated", description: `${application.full_name} is now ${updated.status}.` })
+      onSaved(updated)
+    } catch (e: any) {
+      toast({ title: "Failed to update application", description: e?.message || "Try again later.", variant: "destructive" as any })
+    }
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="space-y-2">
+        <Label>Status</Label>
+        <Select value={status} onValueChange={(v) => setStatus(v as any)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="reviewing">Reviewing</SelectItem>
+            <SelectItem value="interview">Interview</SelectItem>
+            <SelectItem value="accepted">Accepted</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={handleSave}>Save</Button>
+      </div>
     </div>
   )
 }

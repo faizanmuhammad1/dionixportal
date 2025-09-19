@@ -13,6 +13,7 @@ export interface FormSubmission {
   form_type: string
   form_data: any
   contact_email: string | null
+  status?: string
   created_at: string
 }
 
@@ -34,7 +35,31 @@ export interface JobApplication {
   phone: string | null
   position: string
   experience_level: "entry" | "mid" | "senior" | "lead" | "executive"
+  portfolio_url: string | null
+  linkedin_url: string | null
+  resume_url: string | null
+  cover_letter: string | null
   status: "pending" | "reviewing" | "interview" | "accepted" | "rejected"
+  location?: string | null
+  salary?: string | null
+  availability?: string | null
+  github_url?: string | null
+  referral_source?: string | null
+  portfolio_files?: string[] | null
+  created_at: string
+}
+
+export interface Job {
+  id: string
+  title: string
+  department: string | null
+  location: string | null
+  employment_type: string | null
+  experience: string | null
+  description: string | null
+  requirements: string[] | null
+  skills: string[] | null
+  is_active: boolean | null
   created_at: string
 }
 
@@ -174,4 +199,66 @@ export async function getJobApplications(): Promise<JobApplication[]> {
   } catch (error) {
     return []
   }
+}
+
+export async function getJobs(): Promise<Job[]> {
+  try {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("*")
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Error fetching jobs:", error)
+      return []
+    }
+
+    return data || []
+  } catch (error) {
+    return []
+  }
+}
+
+export async function createJob(payload: Omit<Job, "id" | "created_at">) {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("jobs").insert(payload).select().single()
+  if (error) throw new Error(error.message)
+  return data as Job
+}
+
+export async function updateJob(id: string, updates: Partial<Omit<Job, "id" | "created_at">>) {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("jobs").update(updates).eq("id", id).select().single()
+  if (error) throw new Error(error.message)
+  return data as Job
+}
+
+export async function applyToJob(payload: Omit<JobApplication, "id" | "created_at">) {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("job_applications").insert(payload).select().single()
+  if (error) throw new Error(error.message)
+  return data as JobApplication
+}
+
+export async function updateJobApplication(
+  id: string,
+  updates: Partial<Omit<JobApplication, "id" | "created_at">>,
+) {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("job_applications").update(updates).eq("id", id).select().single()
+  if (error) throw new Error(error.message)
+  return data as JobApplication
+}
+
+export async function deleteJob(id: string) {
+  const supabase = createClient()
+  const { error } = await supabase.from("jobs").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteJobApplication(id: string) {
+  const supabase = createClient()
+  const { error } = await supabase.from("job_applications").delete().eq("id", id)
+  if (error) throw new Error(error.message)
 }
