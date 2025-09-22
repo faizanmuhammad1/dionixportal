@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Mail, Search, Star, Archive, Trash2, Reply, Forward, Plus, Send, Paperclip, X } from "lucide-react"
+import { Mail, Search, Star, Archive, Trash2, Reply, Forward, Plus, Send, Paperclip, X, RefreshCcw } from "lucide-react"
+import dynamic from "next/dynamic"
+import { useToast } from "@/components/ui/use-toast"
 
 interface Email {
   id: string
@@ -35,41 +37,85 @@ export function EnhancedEmailCenter() {
   const [composeOpen, setComposeOpen] = useState(false)
   const [replyOpen, setReplyOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("inbox")
+  const [loadingInbox, setLoadingInbox] = useState(false)
+  const [inboxError, setInboxError] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [composeTo, setComposeTo] = useState("")
+  const [composeSubject, setComposeSubject] = useState("")
+  const [composeText, setComposeText] = useState("")
+  const { toast } = useToast()
+  const topRef = useRef<HTMLDivElement | null>(null)
+  const isLoadingRef = useRef(false)
 
-  useEffect(() => {
-    const mockEmails: Email[] = [
-      {
-        id: "1",
-        from: "client@example.com",
-        to: "admin@dionix.ai",
-        subject: "Project Update Required",
-        content:
-          "Hi,\n\nI need an update on the current project status. Could you please provide a detailed report on the progress made so far?\n\nBest regards,\nJohn Client",
-        preview: "Hi, I need an update on the current project status. Could you please provide...",
-        timestamp: "2024-01-15T10:30:00Z",
+  const CACHE_KEY = "dionix.email.inbox.cache.v1"
+  const STALE_MS = 2 * 60 * 1000 // 2 minutes
+
+  const onSelectEmail = (email: Email) => {
+    setSelectedEmail(email)
+    markAsRead(email.id)
+    // Smooth scroll to top where the preview is rendered
+    if (typeof window !== "undefined") {
+      ;(topRef.current?.scrollIntoView ? topRef.current.scrollIntoView({ behavior: "smooth", block: "start" }) : window.scrollTo({ top: 0, behavior: "smooth" }))
+    }
+  }
+
+  const ReactQuill: any = useMemo(() => dynamic(() => import("react-quill" as any), { ssr: false }) as any, [])
+  const quillModules = useMemo(
+    () => ({ toolbar: [["bold", "italic", "underline"], [{ list: "ordered" }, { list: "bullet" }], ["link"], ["clean"]] }),
+    [],
+  )
+  const quillFormats = useMemo(() => ["bold", "italic", "underline", "list", "bullet", "link"], [])
+
+  const loadInbox = async (force = false) => {
+    if (isLoadingRef.current) return
+    setInboxError(null)
+
+    // Fast-path: cached
+    if (!force) {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY)
+        if (raw) {
+          const cached = JSON.parse(raw) as { ts: number; data: Email[] }
+          if (cached && Date.now() - cached.ts < STALE_MS && Array.isArray(cached.data)) {
+            setEmails(cached.data)
+            return
+          }
+        }
+      } catch {}
+    }
+
+    setLoadingInbox(true)
+    isLoadingRef.current = true
+    try {
+      const res = await fetch("/api/email/inbox")
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to fetch inbox")
+      const data = await res.json()
+      const mapped: Email[] = (Array.isArray(data) ? data : []).map((m: any) => ({
+        id: m.id,
+        from: m.from,
+        to: m.to,
+        subject: m.subject,
+        content: m.content,
+        preview: m.preview,
+        timestamp: m.timestamp,
         isRead: false,
-        isStarred: true,
-        priority: "high",
-        category: "Client",
-        attachments: ["project_requirements.pdf"],
-      },
-      {
-        id: "2",
-        from: "team@dionix.ai",
-        to: "admin@dionix.ai",
-        subject: "Weekly Team Meeting",
-        content:
-          "Reminder: Our weekly team meeting is scheduled for tomorrow at 2 PM. Please prepare your status updates.\n\nAgenda:\n1. Project updates\n2. New assignments\n3. Q&A",
-        preview: "Reminder: Our weekly team meeting is scheduled for tomorrow at 2 PM...",
-        timestamp: "2024-01-15T09:15:00Z",
-        isRead: true,
         isStarred: false,
         priority: "normal",
-        category: "Internal",
-      },
-      // Add more mock emails...
-    ]
-    setEmails(mockEmails)
+        category: "Inbox",
+      }))
+      setEmails(mapped)
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: mapped })) } catch {}
+    } catch (e: any) {
+      setInboxError(e?.message || "Unable to load inbox")
+    } finally {
+      isLoadingRef.current = false
+      setLoadingInbox(false)
+    }
+  }
+
+  useEffect(() => {
+    loadInbox()
   }, [])
 
   const filteredEmails = emails.filter(
@@ -97,19 +143,77 @@ export function EnhancedEmailCenter() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div ref={topRef} className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Email Center</h1>
           <p className="text-muted-foreground">Manage all your business communications in one place</p>
         </div>
         <div className="flex items-center gap-4">
           <Badge variant="secondary">{unreadCount} Unread</Badge>
+          <Button variant="outline" size="sm" onClick={() => loadInbox(true)} disabled={loadingInbox}>
+            <RefreshCcw className={`h-4 w-4 mr-2 ${loadingInbox ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <Button onClick={() => setComposeOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Compose Email
           </Button>
         </div>
       </div>
+
+      {selectedEmail && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>{selectedEmail.subject}</CardTitle>
+                <CardDescription>
+                  From: {selectedEmail.from} • {new Date(selectedEmail.timestamp).toLocaleString()}
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedEmail(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <pre className="whitespace-pre-wrap text-sm font-sans">{selectedEmail.content}</pre>
+            </div>
+            {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Attachments:</p>
+                <div className="flex gap-2">
+                  {selectedEmail.attachments.map((attachment, index) => (
+                    <Badge key={index} variant="outline" className="cursor-pointer">
+                      <Paperclip className="h-3 w-3 mr-1" />
+                      {attachment}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={() => setReplyOpen(true)}>
+                <Reply className="h-4 w-4 mr-2" />
+                Reply
+              </Button>
+              <Button variant="outline">
+                <Forward className="h-4 w-4 mr-2" />
+                Forward
+              </Button>
+              <Button variant="outline">
+                <Archive className="h-4 w-4 mr-2" />
+                Archive
+              </Button>
+              <Button variant="destructive">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
@@ -139,6 +243,12 @@ export function EnhancedEmailCenter() {
               <CardDescription>All incoming emails and messages</CardDescription>
             </CardHeader>
             <CardContent>
+              {inboxError && (
+                <div className="text-sm text-destructive mb-3">{inboxError}</div>
+              )}
+              {loadingInbox && (
+                <div className="text-sm text-muted-foreground mb-3">Loading inbox…</div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -157,10 +267,7 @@ export function EnhancedEmailCenter() {
                     <TableRow
                       key={email.id}
                       className={`cursor-pointer hover:bg-muted/50 ${!email.isRead ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}
-                      onClick={() => {
-                        setSelectedEmail(email)
-                        markAsRead(email.id)
-                      }}
+                      onClick={() => onSelectEmail(email)}
                     >
                       <TableCell>
                         <Button
@@ -321,7 +428,7 @@ export function EnhancedEmailCenter() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="to">To</Label>
-                <Input id="to" placeholder="recipient@example.com" />
+                <Input id="to" placeholder="recipient@example.com" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} />
               </div>
               <div>
                 <Label htmlFor="priority">Priority</Label>
@@ -339,24 +446,67 @@ export function EnhancedEmailCenter() {
             </div>
             <div>
               <Label htmlFor="subject">Subject</Label>
-              <Input id="subject" placeholder="Email subject" />
+              <Input id="subject" placeholder="Email subject" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} />
             </div>
             <div>
               <Label htmlFor="content">Message</Label>
-              <Textarea id="content" placeholder="Type your message here..." rows={8} />
+              <div className="min-h-[180px] quill-editor">
+                {ReactQuill ? (
+                  <ReactQuill theme="snow" value={composeText} onChange={setComposeText as any} modules={quillModules as any} formats={quillFormats as any} />
+                ) : (
+                  <Textarea id="content" placeholder="Type your message here..." rows={8} value={composeText} onChange={(e) => setComposeText(e.target.value)} />
+                )}
+              </div>
             </div>
+            {sendError && <div className="text-sm text-destructive">{sendError}</div>}
+            <div id="compose-files-chips" className="flex flex-wrap gap-1" />
             <div className="flex items-center justify-between">
-              <Button variant="outline">
-                <Paperclip className="h-4 w-4 mr-2" />
-                Attach Files
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" asChild>
+                  <label className="cursor-pointer">
+                    <input id="compose-files" type="file" multiple className="hidden" onChange={(e) => {
+                      const files = Array.from(e.currentTarget.files || [])
+                      const el = document.getElementById("compose-files-count")
+                      if (el) el.textContent = files.length ? `${files.length} file(s) selected` : ""
+                      const chips = document.getElementById("compose-files-chips")
+                      if (chips) {
+                        chips.innerHTML = files.map((f) => `<span class='px-2 py-1 text-xs border rounded mr-1'>${f.name}</span>`).join("")
+                      }
+                    }} />
+                    <span className="inline-flex items-center"><Paperclip className="h-4 w-4 mr-2" /> Attach Files</span>
+                  </label>
+                </Button>
+                <span className="text-xs text-muted-foreground" id="compose-files-count"></span>
+              </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setComposeOpen(false)}>
                   Cancel
                 </Button>
-                <Button>
+                <Button disabled={sending || !composeTo || !composeSubject || !composeText}
+                  onClick={async () => {
+                    setSendError(null)
+                    setSending(true)
+                    try {
+                      const filesInput = document.getElementById("compose-files") as HTMLInputElement | null
+                      const files = Array.from(filesInput?.files || [])
+                      // For now send HTML body; attachments upload pipeline can be added later
+                      const body = { to: composeTo, subject: composeSubject, html: composeText }
+                      const res = await fetch("/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+                      if (!res.ok) throw new Error((await res.json()).error || "Failed to send email")
+                      toast({ title: "Email sent" })
+                      setComposeOpen(false)
+                      setComposeTo("")
+                      setComposeSubject("")
+                      setComposeText("")
+                      if (filesInput) filesInput.value = ""
+                    } catch (e: any) {
+                      setSendError(e?.message || "Failed to send email")
+                    } finally {
+                      setSending(false)
+                    }
+                  }}>
                   <Send className="h-4 w-4 mr-2" />
-                  Send Email
+                  {sending ? "Sending..." : "Send Email"}
                 </Button>
               </div>
             </div>

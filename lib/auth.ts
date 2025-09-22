@@ -63,6 +63,53 @@ export interface Job {
   created_at: string
 }
 
+export interface Project {
+  id: string
+  created_at: string
+  updated_at: string | null
+  created_by: string | null
+  manager_id: string | null
+  type: "web" | "branding" | "marketing" | "ai" | "custom"
+  name: string
+  description: string | null
+  status: "planning" | "active" | "completed" | "on-hold"
+  priority: "low" | "medium" | "high"
+  start_date: string | null
+  end_date: string | null
+  budget: number | null
+  client_name: string | null
+  company_number: string | null
+  company_email: string | null
+  company_address: string | null
+  about_company: string | null
+  social_links: any[] | null
+  public_contacts: Record<string, any> | null
+  media_links: any[] | null
+  bank_details: Record<string, any> | null
+  service_specific: Record<string, any> | null
+  selected_service: string | null
+  public_business_number: string | null
+  public_company_email: string | null
+  public_company_address: string | null
+  domain_suggestions: string | null
+  website_references: string | null
+  features_requirements: string | null
+  budget_timeline: string | null
+  logo_ideas_concepts: string | null
+  color_brand_theme: string | null
+  design_assets_needed: string[] | null
+  target_audience_industry: string | null
+  marketing_goals: string | null
+  channels_of_interest: string[] | null
+  budget_range_monthly: string | null
+  ai_solution_type: string[] | null
+  business_challenge_use_case: string | null
+  data_availability: string | null
+  budget_range: string | null
+  service_description: string | null
+  expected_outcome: string | null
+}
+
 export async function signInWithEmail(email: string, password: string) {
   const supabase = createClient()
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -168,7 +215,9 @@ export async function getClientProjects(): Promise<ClientProject[]> {
     const supabase = createClient()
     const { data, error } = await supabase
       .from("client_project_details")
-      .select("*")
+      .select(
+        "id, created_at, contact_email, contact_phone, company_details, services_details, status",
+      )
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -176,7 +225,34 @@ export async function getClientProjects(): Promise<ClientProject[]> {
       return []
     }
 
-    return data || []
+    const toUiStatus = (status: string | null | undefined): ClientProject["status"] => {
+      switch ((status || "").toLowerCase()) {
+        case "received":
+        case "in_review":
+          return "pending"
+        case "in_progress":
+          return "processing"
+        case "completed":
+          return "completed"
+        case "rejected":
+          return "rejected"
+        case "archived":
+          return "completed"
+        default:
+          return "pending"
+      }
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      company_details: row.company_details ?? "",
+      contact_email: row.contact_email ?? "",
+      contact_phone: row.contact_phone ?? "",
+      services_details: row.services_details ?? "",
+      status: toUiStatus(row.status),
+      created_at: row.created_at,
+      submitted_at: row.created_at,
+    }))
   } catch (error) {
     return []
   }
@@ -251,6 +327,43 @@ export async function updateJobApplication(
   return data as JobApplication
 }
 
+export async function getProjects(): Promise<Project[]> {
+  try {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from("projects")
+      .select("*")
+      .order("created_at", { ascending: false })
+    if (error) {
+      console.error("Error fetching projects:", error)
+      return []
+    }
+    return data || []
+  } catch {
+    return []
+  }
+}
+
+export async function createProject(payload: Omit<Project, "id" | "created_at" | "updated_at">) {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("projects").insert(payload).select().single()
+  if (error) throw new Error(error.message)
+  return data as Project
+}
+
+export async function updateProject(id: string, updates: Partial<Omit<Project, "id" | "created_at" | "updated_at">>) {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("projects").update(updates).eq("id", id).select().single()
+  if (error) throw new Error(error.message)
+  return data as Project
+}
+
+export async function deleteProject(id: string) {
+  const supabase = createClient()
+  const { error } = await supabase.from("projects").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
 export async function deleteJob(id: string) {
   const supabase = createClient()
   const { error } = await supabase.from("jobs").delete().eq("id", id)
@@ -260,5 +373,83 @@ export async function deleteJob(id: string) {
 export async function deleteJobApplication(id: string) {
   const supabase = createClient()
   const { error } = await supabase.from("job_applications").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+// =====================
+// Client submissions → Admin approval flow (Supabase-direct)
+// =====================
+
+type ApproveProjectDraft = Pick<Project, "name" | "type"> & Partial<Project>
+
+export async function setClientSubmissionInReview(submissionId: string) {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("client_project_details")
+    .update({ status: "in_review" })
+    .eq("id", submissionId)
+  if (error) throw new Error(error.message)
+}
+
+export async function approveClientProject(
+  submissionId: string,
+  projectDraft: ApproveProjectDraft,
+): Promise<Project> {
+  const supabase = createClient()
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser()
+  if (userErr) throw new Error(userErr.message)
+  if (!user) throw new Error("Not authenticated")
+
+  const insertPayload: any = {
+    ...projectDraft,
+    status: projectDraft.status || "planning",
+    created_by: projectDraft.created_by || user.id,
+  }
+
+  const { data: createdProject, error: insertErr } = await supabase
+    .from("projects")
+    .insert(insertPayload)
+    .select()
+    .single()
+  if (insertErr) throw new Error(insertErr.message)
+
+  const { error: linkErr } = await supabase
+    .from("client_project_details")
+    .update({
+      status: "in_progress",
+      approved_project_id: createdProject.id,
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+      rejection_reason: null,
+    })
+    .eq("id", submissionId)
+  if (linkErr) throw new Error(linkErr.message)
+
+  return createdProject as Project
+}
+
+export async function rejectClientProject(submissionId: string, reason: string) {
+  const supabase = createClient()
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser()
+  if (userErr) throw new Error(userErr.message)
+  if (!user) throw new Error("Not authenticated")
+
+  const { error } = await supabase
+    .from("client_project_details")
+    .update({
+      status: "rejected",
+      rejection_reason: reason,
+      approved_project_id: null,
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+    })
+    .eq("id", submissionId)
   if (error) throw new Error(error.message)
 }

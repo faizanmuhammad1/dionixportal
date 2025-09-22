@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar, Users, Plus, Edit, Trash2, Eye, Search, FolderOpen, CheckSquare, Clock, User, Paperclip, Upload, MessageSquare } from "lucide-react"
 import { getProjects as storeGetProjects, saveProjects as storeSaveProjects, upsertProject as storeUpsertProject, type Project as StoreProject } from "@/lib/project-store"
@@ -19,6 +20,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Skeleton } from "@/components/ui/skeleton"
 import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage"
 import { createClient } from "@/lib/supabase"
+import { deleteProject as deleteProjectApi } from "@/lib/auth"
 
 interface Project {
   id: string
@@ -95,6 +97,8 @@ export function UnifiedProjectManagement() {
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [newTaskTitle, setNewTaskTitle] = useState("")
   const [newTaskDescription, setNewTaskDescription] = useState("")
   const [newTaskAssignee, setNewTaskAssignee] = useState("")
@@ -126,6 +130,81 @@ export function UnifiedProjectManagement() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const supabase = createClient()
   const { toast } = useToast()
+
+  async function refetchAllProjects() {
+    const { data, error } = await supabase
+      .from("projects")
+      .select(
+        `id, name, description, status, priority, start_date, end_date, budget, client_name, company_number, company_email, company_address, about_company, social_links, public_contacts, media_links, bank_details, service_specific, type,
+         tasks ( id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
+         attachments ( id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
+         comments ( id, project_id, task_id, body, file_refs, created_by, created_at ),
+         project_members ( user_id )`
+      )
+      .order("created_at", { ascending: false })
+    if (!error && data) {
+      const mapped = (data as any[]).map((p) => {
+        const taskList = (p.tasks || []).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          assignee: t.assignee_id || "",
+          due_date: t.due_date || "",
+          priority: t.priority,
+          project_id: t.project_id,
+        })) as Task[]
+        const completed = taskList.filter((t) => t.status === "completed").length
+        const progress = taskList.length ? Math.round((completed / taskList.length) * 100) : 0
+        const members = (p.project_members || []).map((m: any) => m.user_id)
+        const attachments = (p.attachments || []).map((a: any) => ({
+          id: a.id,
+          file_name: a.file_name,
+          file_size: a.file_size,
+          content_type: a.content_type,
+          version: a.version,
+          uploaded_by: a.uploaded_by || "",
+          uploaded_at: a.uploaded_at,
+          task_id: a.task_id || undefined,
+          client_visible: a.client_visible || false,
+        })) as ProjectAttachment[]
+        const comments = (p.comments || []).map((c: any) => ({
+          id: c.id,
+          body: c.body,
+          created_by: c.created_by || "",
+          created_at: c.created_at,
+        })) as ProjectComment[]
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description || "",
+          status: p.status,
+          priority: p.priority,
+          start_date: p.start_date || "",
+          end_date: p.end_date || "",
+          assigned_employees: members,
+          progress,
+          budget: Number(p.budget || 0),
+          client: p.client_name || "",
+          tasks: taskList,
+          service_type: p.type || undefined,
+          company_number: p.company_number || undefined,
+          company_email: p.company_email || undefined,
+          company_address: p.company_address || undefined,
+          about_company: p.about_company || undefined,
+          social_links: p.social_links || [],
+          public_contacts: p.public_contacts || {},
+          media_links: p.media_links || [],
+          bank_details: p.bank_details || {},
+          service_specific: p.service_specific || {},
+          attachments,
+          comments,
+        } as Project
+      })
+      setProjects(mapped)
+      setTasks(mapped.flatMap((p) => p.tasks))
+    }
+  }
 
   async function fetchEmployees() {
     const { data, error } = await supabase
@@ -235,103 +314,19 @@ export function UnifiedProjectManagement() {
     // initial fetch
     ;(async () => {
       await fetchEmployees()
-      const { data, error } = await supabase
-        .from("projects")
-        .select(
-          `id, name, description, status, priority, start_date, end_date, budget, client_name, company_number, company_email, company_address, about_company, social_links, public_contacts, media_links, bank_details, service_specific, type,
-           tasks ( id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
-           attachments ( id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
-           comments ( id, project_id, task_id, body, file_refs, created_by, created_at ),
-           project_members ( user_id )`
-        )
-        .order("created_at", { ascending: false })
-      if (!error && data) {
-        const mapped = (data as any[]).map((p) => {
-          const taskList = (p.tasks || []).map((t: any) => ({
-            id: t.id,
-            title: t.title,
-            description: t.description,
-            status: t.status,
-            assignee: t.assignee_id || "",
-            due_date: t.due_date || "",
-            priority: t.priority,
-            project_id: t.project_id,
-          })) as Task[]
-          const completed = taskList.filter((t) => t.status === "completed").length
-          const progress = taskList.length ? Math.round((completed / taskList.length) * 100) : 0
-          const members = (p.project_members || []).map((m: any) => m.user_id)
-          const attachments = (p.attachments || []).map((a: any) => ({
-            id: a.id,
-            file_name: a.file_name,
-            file_size: a.file_size,
-            content_type: a.content_type,
-            version: a.version,
-            uploaded_by: a.uploaded_by || "",
-            uploaded_at: a.uploaded_at,
-            task_id: a.task_id || undefined,
-            client_visible: a.client_visible || false,
-          })) as ProjectAttachment[]
-          const comments = (p.comments || []).map((c: any) => ({
-            id: c.id,
-            body: c.body,
-            created_by: c.created_by || "",
-            created_at: c.created_at,
-          })) as ProjectComment[]
-          return {
-            id: p.id,
-            name: p.name,
-            description: p.description || "",
-            status: p.status,
-            priority: p.priority,
-            start_date: p.start_date || "",
-            end_date: p.end_date || "",
-            assigned_employees: members,
-            progress,
-            budget: Number(p.budget || 0),
-            client: p.client_name || "",
-            tasks: taskList,
-            service_type: p.type || undefined,
-            company_number: p.company_number || undefined,
-            company_email: p.company_email || undefined,
-            company_address: p.company_address || undefined,
-            about_company: p.about_company || undefined,
-            social_links: p.social_links || [],
-            public_contacts: p.public_contacts || {},
-            media_links: p.media_links || [],
-            bank_details: p.bank_details || {},
-            service_specific: p.service_specific || {},
-            attachments,
-            comments,
-          } as Project
-        })
-        setProjects(mapped)
-        setTasks(mapped.flatMap((p) => p.tasks))
-      }
+      await refetchAllProjects()
       setLoading(false)
     })()
 
     // realtime subscriptions
     const channel = supabase
       .channel("projects-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, () => {
-        // refetch on insert for simplicity
-        ;(async () => {
-          const { data } = await supabase.from("projects").select("id, name, status, priority, client_name")
-          if (data) {
-            // minimal update (names/status) to avoid heavy mapping; full refetch could be done similarly as above
-            setProjects((prev) => {
-              const map = new Map(prev.map((p) => [p.id, p]))
-              for (const r of data as any[]) {
-                const existing = map.get(r.id)
-                if (existing) {
-                  map.set(r.id, { ...existing, name: r.name, status: r.status, priority: r.priority, client: r.client_name })
-                }
-              }
-              return Array.from(map.values())
-            })
-          }
-        })()
-      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, refetchAllProjects)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "projects" }, refetchAllProjects)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "projects" }, refetchAllProjects)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "tasks" }, refetchAllProjects)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tasks" }, refetchAllProjects)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "tasks" }, refetchAllProjects)
       .subscribe()
 
     const channelEmployees = supabase
@@ -476,6 +471,8 @@ export function UnifiedProjectManagement() {
   }
 
   const startEdit = (project: Project) => {
+    // Ensure any details dialog is closed before opening editor
+    setDetailsOpen(false)
     setEditingProject(project)
     setFormData({
       name: project.name,
@@ -508,7 +505,7 @@ export function UnifiedProjectManagement() {
     setWizardStep(2)
   }
 
-  const deleteProject = (id: string) => {
+  const deleteProjectLocal = (id: string) => {
     const nextProjects = projects.filter((p) => p.id !== id)
     setProjects(nextProjects)
     setTasks(tasks.filter((t) => t.project_id !== id))
@@ -1016,9 +1013,8 @@ export function UnifiedProjectManagement() {
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (!confirm("Delete this project?")) return
-                          deleteProject(project.id)
-                          toast({ title: "Project deleted" })
+                          setDeleteTarget(project)
+                          setDeleteOpen(true)
                         }}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1345,6 +1341,38 @@ export function UnifiedProjectManagement() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Delete confirmation modal */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the project
+              {deleteTarget ? ` "${deleteTarget.name}"` : ""} and its tasks/attachments metadata. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!deleteTarget) return
+                try {
+                  await deleteProjectApi(deleteTarget.id)
+                } catch (err) {
+                  // ignore API failure; proceed with local removal to keep UI responsive
+                }
+                deleteProjectLocal(deleteTarget.id)
+                setDeleteTarget(null)
+                setDeleteOpen(false)
+                toast({ title: "Project deleted" })
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

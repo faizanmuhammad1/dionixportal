@@ -4,9 +4,11 @@ import { useState, useEffect } from "react"
 import { LoginForm } from "@/components/login-form"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { DashboardOverview } from "@/components/dashboard-overview"
+import { ClientProjectSubmissions } from "@/components/client-project-submissions"
 import { EmployeeManagement } from "@/components/employee-management"
 import { EnhancedEmailCenter } from "@/components/enhanced-email-center"
 import { AllContacts } from "@/components/all-contacts"
+import { ContactSubmissions } from "@/components/contact-submissions"
 import { EmployeeDashboard } from "@/components/employee-dashboard"
 import { JobManagement } from "@/components/job-management"
 import { UnifiedProjectManagement } from "@/components/unified-project-management"
@@ -38,6 +40,7 @@ export default function HomePage() {
     | "performance"
     | "my-documents"
     | "employee-support"
+    | "client-submissions"
     | "settings"
   >("dashboard")
 
@@ -214,7 +217,7 @@ export default function HomePage() {
   }
 
   return (
-    <DashboardLayout user={user} onLogout={handleLogout} onNavigate={handleNavigation} currentView={currentView}>
+    <DashboardLayout user={user} onLogout={handleLogout} onNavigate={(v) => handleNavigation(v as any)} currentView={currentView}>
       {currentView === "dashboard" &&
         (user.role === "admin" ? (
           <DashboardOverview user={user} onNavigate={handleDashboardNavigation} />
@@ -226,33 +229,62 @@ export default function HomePage() {
       {currentView === "contact-center" && user.role === "admin" && <AllContacts />}
       {currentView === "email-center" && user.role === "admin" && <EnhancedEmailCenter />}
       {currentView === "project-center" && user.role === "admin" && <UnifiedProjectManagement />}
+      {currentView === "client-submissions" && user.role === "admin" && <ClientProjectSubmissions />}
       {currentView === "team-directory" && user.role === "admin" && <EmployeeManagement />}
       {currentView === "career-hub" && user.role === "admin" && <JobManagement />}
 
       {/* Coming soon components for incomplete features */}
-      {currentView === "activity-log" && user.role === "admin" && <ComingSoon feature="Activity Log" />}
-      {currentView === "support" && user.role === "admin" && <ComingSoon feature="Support Center" />}
-      {currentView === "time-tracking" && user.role === "admin" && <ComingSoon feature="Time Tracker" />}
-      {currentView === "attendance" && user.role === "admin" && <ComingSoon feature="Attendance Hub" />}
-      {currentView === "clients" && user.role === "admin" && <ComingSoon feature="Client Portal" />}
-      {currentView === "invoicing" && user.role === "admin" && <ComingSoon feature="Finance Center" />}
-      {currentView === "analytics" && user.role === "admin" && <ComingSoon feature="Analytics Hub" />}
-      {currentView === "documents" && user.role === "admin" && <ComingSoon feature="Document Library" />}
-      {currentView === "knowledge" && user.role === "admin" && <ComingSoon feature="Knowledge Hub" />}
-      {currentView === "notifications" && user.role === "admin" && <ComingSoon feature="Notifications" />}
-      {currentView === "data" && user.role === "admin" && <ComingSoon feature="Data Center" />}
+      {currentView === "activity-log" && user.role === "admin" && (
+        <ComingSoon title="Activity Log" />
+      )}
+      {currentView === "support" && user.role === "admin" && (
+        <ComingSoon title="Support Center" />
+      )}
+      {currentView === "time-tracking" && user.role === "admin" && (
+        <ComingSoon title="Time Tracker" />
+      )}
+      {currentView === "attendance" && user.role === "admin" && (
+        <ComingSoon title="Attendance Hub" />
+      )}
+      {currentView === "clients" && user.role === "admin" && (
+        <ComingSoon title="Client Portal" />
+      )}
+      {currentView === "invoicing" && user.role === "admin" && (
+        <ComingSoon title="Finance Center" />
+      )}
+      {currentView === "analytics" && user.role === "admin" && (
+        <ComingSoon title="Analytics Hub" />
+      )}
+      {currentView === "documents" && user.role === "admin" && (
+        <ComingSoon title="Document Library" />
+      )}
+      {currentView === "knowledge" && user.role === "admin" && (
+        <ComingSoon title="Knowledge Hub" />
+      )}
+      {currentView === "notifications" && user.role === "admin" && (
+        <ComingSoon title="Notifications" />
+      )}
+      {currentView === "data" && user.role === "admin" && (
+        <ComingSoon title="Data Center" />
+      )}
 
       {/* Employee views */}
       {currentView === "email-center" && user.role === "employee" && <EnhancedEmailCenter />}
       {currentView === "project-center" && user.role === "employee" && <UnifiedProjectManagement />}
 
       {/* Coming soon components for employee features */}
-      {currentView === "my-time" && user.role === "employee" && <ComingSoon feature="Time Tracker" />}
-      {currentView === "performance" && user.role === "employee" && <ComingSoon feature="Performance Dashboard" />}
-      {currentView === "my-documents" && user.role === "employee" && <ComingSoon feature="My Documents" />}
-      {currentView === "employee-support" && user.role === "employee" && <ComingSoon feature="Help Desk" />}
+      {currentView === "my-time" && user.role === "employee" && <ComingSoon title="Time Tracker" />}
+      {currentView === "performance" && user.role === "employee" && (
+        <ComingSoon title="Performance Dashboard" />
+      )}
+      {currentView === "my-documents" && user.role === "employee" && (
+        <ComingSoon title="My Documents" />
+      )}
+      {currentView === "employee-support" && user.role === "employee" && (
+        <ComingSoon title="Help Desk" />
+      )}
 
-      {currentView === "settings" && <ComingSoon feature="Settings Panel" />}
+      {currentView === "settings" && <ComingSoon title="Settings Panel" />}
     </DashboardLayout>
   )
 }

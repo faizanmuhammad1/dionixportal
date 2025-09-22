@@ -83,6 +83,12 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             current: currentView === "project-center",
           },
           {
+            name: "Client Submissions",
+            href: "client-submissions",
+            icon: FileText,
+            current: currentView === "client-submissions",
+          },
+          {
             name: "Task Board",
             href: "task-management",
             icon: CheckSquare,
