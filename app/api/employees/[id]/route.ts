@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminSupabaseClient } from "@/lib/supabase-server"
 
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const supa = createAdminSupabaseClient()
   const { data, error } = await supa
@@ -22,7 +25,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (role) {
       await supa.from("profiles").update({ role }).eq("id", params.id)
       // also ensure user_roles table reflects change (optional + idempotent)
-      await supa.from("user_roles").insert({ user_id: params.id, role }).onConflict("user_id,role").ignore()
+      try {
+        await supa.from("user_roles").insert({ user_id: params.id, role })
+      } catch {}
     }
 
     const { data, error } = await supa

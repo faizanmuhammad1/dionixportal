@@ -205,15 +205,24 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
   }
 
   useEffect(() => {
-    // Initial count: use contact_submissions as notifications source (extend as needed)
+    // Initial count: use form_submissions count as notifications source
     ;(async () => {
-      const { data } = await supabase
+      const { count, error } = await supabase
         .from("form_submissions")
         .select("id", { count: "exact", head: true })
-      setNotifCount((data as any)?.length ?? 0)
+      if (error) {
+        console.error("Error fetching notif count:", error)
+      }
+      setNotifCount(typeof count === "number" ? count : 0)
     })()
 
+    // Also subscribe to live unread email badge updates via broadcast webhook
     const channel = supabase
+      .channel("emails-inbox")
+      .on("broadcast", { event: "new-email" }, () => setNotifCount((c) => c + 1))
+      .subscribe()
+
+    const channel2 = supabase
       .channel("navbar-notifications")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, () => setNotifCount((c) => c + 1))
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, () => setNotifCount((c) => Math.max(0, c - 1)))
@@ -221,6 +230,7 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
 
     return () => {
       supabase.removeChannel(channel)
+      supabase.removeChannel(channel2)
     }
   }, [])
 

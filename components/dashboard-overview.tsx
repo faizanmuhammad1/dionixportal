@@ -17,6 +17,7 @@ interface DashboardOverviewProps {
 export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) {
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([])
   const [clientProjects, setClientProjects] = useState<ClientProject[]>([])
+  const [activeProjectsCount, setActiveProjectsCount] = useState<number>(0)
   const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
   const [activeEmployees, setActiveEmployees] = useState<number>(0)
   const [loading, setLoading] = useState(true)
@@ -28,21 +29,30 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     async function fetchData() {
       if (isAdmin) {
         try {
-          const [submissions, projects, applications, employees] = await Promise.all([
+          const [submissions, applications, employees, activeProjects] = await Promise.all([
             getFormSubmissions(),
-            getClientProjects(),
             getJobApplications(),
             supabase
               .from("profiles")
               .select("id", { count: "exact", head: true })
               .eq("status", "active")
               .neq("role", "admin"),
+            supabase
+              .from("projects")
+              .select("id", { count: "exact", head: true })
+              .eq("status", "active"),
           ])
+          // submissions here refers to form submissions; keep client submissions list separate
           setFormSubmissions(submissions)
-          setClientProjects(projects)
+          // Load recent client project submissions for activity stream
+          const submissionsList = await getClientProjects()
+          setClientProjects(submissionsList)
           setJobApplications(applications)
           if (employees && (employees as any).count !== undefined) {
             setActiveEmployees((employees as any).count as number)
+          }
+          if (activeProjects && (activeProjects as any).count !== undefined) {
+            setActiveProjectsCount((activeProjects as any).count as number)
           }
         } catch (error) {
           console.error("Error fetching dashboard data:", error)
@@ -67,6 +77,12 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, fetchData)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, fetchData)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "projects" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "projects" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, fetchData)
       .subscribe()
 
     return () => {
@@ -76,7 +92,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
 
   const stats = {
     totalSubmissions: formSubmissions.length,
-    clientProjects: clientProjects.length,
+    activeProjects: activeProjectsCount,
     jobApplications: jobApplications.length,
     pendingProjects: clientProjects.filter((p) => p.status === "pending").length,
     newApplications: jobApplications.filter((a) => a.status === "pending").length,
@@ -126,11 +142,11 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
               onClick={() => onNavigate("project-center")}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Client Projects</CardTitle>
+                <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{loading ? "..." : stats.clientProjects}</div>
+                <div className="text-2xl font-bold">{loading ? "..." : stats.activeProjects}</div>
                 <p className="text-xs text-muted-foreground">{stats.pendingProjects} pending review</p>
               </CardContent>
             </Card>
@@ -293,9 +309,9 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                   >
                     <div className="flex items-center space-x-3">
                       <FolderOpen className="h-4 w-4" />
-                      <span className="text-sm font-medium">Manage Projects</span>
+                      <span className="text-sm font-medium">Active Projects</span>
                     </div>
-                    <Badge variant="outline">{stats.clientProjects}</Badge>
+                    <Badge variant="outline">{stats.activeProjects}</Badge>
                   </Button>
                   <Button
                     variant="ghost"

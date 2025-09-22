@@ -453,3 +453,9 @@ export async function rejectClientProject(submissionId: string, reason: string) 
     .eq("id", submissionId)
   if (error) throw new Error(error.message)
 }
+
+export async function deleteClientSubmission(id: string) {
+  const supabase = createClient()
+  const { error } = await supabase.from("client_project_details").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}

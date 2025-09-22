@@ -91,6 +91,14 @@ export function EmployeeManagement() {
   )
 
   const activeEmployees = employees.filter((emp) => emp.status === "active").length
+  const newThisMonth = (() => {
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    return employees.filter((emp) => {
+      const created = emp.created_at ? new Date(emp.created_at) : null
+      return !!created && created >= monthStart
+    }).length
+  })()
   const totalEmployees = employees.length
 
   return (
@@ -333,7 +341,7 @@ export function EmployeeManagement() {
             <CardTitle className="text-sm font-medium">New This Month</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2</div>
+            <div className="text-2xl font-bold">{newThisMonth}</div>
             <p className="text-xs text-muted-foreground">Recent hires</p>
           </CardContent>
         </Card>

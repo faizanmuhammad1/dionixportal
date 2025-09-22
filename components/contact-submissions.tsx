@@ -15,12 +15,14 @@ import {
   type ClientProject,
   type JobApplication,
 } from "@/lib/auth"
+import { createClient } from "@/lib/supabase"
 
 export function ContactSubmissions() {
   const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([])
   const [clientProjects, setClientProjects] = useState<ClientProject[]>([])
   const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
   const [loading, setLoading] = useState(true)
+  const supabase = createClient()
 
   useEffect(() => {
     async function fetchData() {
@@ -41,6 +43,24 @@ export function ContactSubmissions() {
     }
 
     fetchData()
+
+    // Realtime: refresh when any relevant table changes
+    const channel = supabase
+      .channel("contact-submissions-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "client_project_details" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_project_details" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "client_project_details" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, fetchData)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   const formatDate = (dateString: string) => {

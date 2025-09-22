@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Eye, MoreHorizontal, CheckCircle2, XCircle } from "lucide-react"
+import { Eye, MoreHorizontal, CheckCircle2, XCircle, Trash2 } from "lucide-react"
 import {
   getClientProjects,
   approveClientProject,
@@ -18,6 +18,7 @@ import {
   setClientSubmissionInReview,
   type Project,
   type ClientProject,
+  deleteClientSubmission,
 } from "@/lib/auth"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase"
@@ -32,6 +33,7 @@ export function ClientProjectSubmissions() {
   const [viewLoading, setViewLoading] = useState(false)
   const [approveOpen, setApproveOpen] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null)
   const [projectName, setProjectName] = useState("")
   const [projectType, setProjectType] = useState<ProjectType>("custom")
@@ -265,6 +267,11 @@ export function ClientProjectSubmissions() {
     setRejectOpen(true)
   }
 
+  const openDelete = (s: ClientProject) => {
+    setActiveSubmissionId(s.id)
+    setDeleteOpen(true)
+  }
+
   const confirmReject = async () => {
     if (!activeSubmissionId) return
     try {
@@ -275,6 +282,19 @@ export function ClientProjectSubmissions() {
       await refresh()
     } catch (e: any) {
       toast({ title: "Reject failed", description: e?.message || String(e), variant: "destructive" })
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!activeSubmissionId) return
+    try {
+      await deleteClientSubmission(activeSubmissionId)
+      toast({ title: "Submission deleted" })
+      setDeleteOpen(false)
+      setActiveSubmissionId(null)
+      await refresh()
+    } catch (e: any) {
+      toast({ title: "Delete failed", description: e?.message || String(e), variant: "destructive" })
     }
   }
 
@@ -352,6 +372,9 @@ export function ClientProjectSubmissions() {
                               <XCircle className="mr-2 h-4 w-4" /> Reject
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuItem onClick={() => openDelete(s)} className="text-destructive">
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -834,6 +857,21 @@ export function ClientProjectSubmissions() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={confirmReject}>Reject</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Submission</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-sm text-muted-foreground">This permanently removes the client project submission. This action cannot be undone.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

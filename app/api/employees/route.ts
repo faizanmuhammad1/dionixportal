@@ -1,14 +1,51 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminSupabaseClient } from "@/lib/supabase-server"
 
-export async function GET() {
-  const supa = createAdminSupabaseClient()
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
-  // Join profiles with auth.users basic info
-  const { data, error } = await supa.rpc("auth_users_with_profiles")
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const filtered = (data as any[]).filter((u) => (u.email || "").toLowerCase() !== "admin@dionix.ai")
-  return NextResponse.json(filtered)
+export async function GET() {
+  try {
+    const supa = createAdminSupabaseClient()
+    // Try RPC first (fast path if SQL view exists)
+    const { data, error } = await supa.rpc("auth_users_with_profiles")
+    if (!error && Array.isArray(data)) {
+      const filtered = (data as any[]).filter((u) => (u.email || "").toLowerCase() !== "admin@dionix.ai")
+      return NextResponse.json(filtered)
+    }
+
+    // Fallback: list users via Admin API and join with profiles
+    const usersRes = await supa.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    const users = usersRes?.data?.users || []
+    const userIds = users.map((u: any) => u.id)
+    const { data: profiles = [] } = await supa
+      .from("profiles")
+      .select("id, role, first_name, last_name, department, position, status")
+      .in("id", userIds)
+
+    const combined = users
+      .map((u: any) => {
+        const p = (profiles as any[]).find((x) => x.id === u.id) || {}
+        return {
+          id: u.id,
+          email: u.email,
+          role: p.role || u.user_metadata?.role || "employee",
+          first_name: p.first_name || u.user_metadata?.firstName || null,
+          last_name: p.last_name || u.user_metadata?.lastName || null,
+          department: p.department || null,
+          position: p.position || null,
+          status: p.status || "active",
+          last_login: u.last_sign_in_at,
+          created_at: u.created_at,
+        }
+      })
+      .filter((u: any) => (u.email || "").toLowerCase() !== "admin@dionix.ai")
+
+    return NextResponse.json(combined)
+  } catch (e: any) {
+    // Surface a helpful message for missing envs
+    return NextResponse.json({ error: e?.message || "Internal error (employees list)" }, { status: 500 })
+  }
 }
 
 export async function POST(req: NextRequest) {

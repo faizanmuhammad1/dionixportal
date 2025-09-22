@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Mail, Search, Star, Archive, Trash2, Reply, Forward, Plus, Send, Paperclip, X, RefreshCcw } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useToast } from "@/components/ui/use-toast"
+import { createClient } from "@/lib/supabase"
 
 interface Email {
   id: string
@@ -47,6 +48,8 @@ export function EnhancedEmailCenter() {
   const { toast } = useToast()
   const topRef = useRef<HTMLDivElement | null>(null)
   const isLoadingRef = useRef(false)
+  const isPollingRef = useRef(false)
+  const supabase = createClient()
 
   const CACHE_KEY = "dionix.email.inbox.cache.v1"
   const STALE_MS = 2 * 60 * 1000 // 2 minutes
@@ -54,6 +57,8 @@ export function EnhancedEmailCenter() {
   const onSelectEmail = (email: Email) => {
     setSelectedEmail(email)
     markAsRead(email.id)
+    // Sync seen flag to Hostinger mailbox
+    fetch("/api/email/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: email.id }) }).catch(() => {})
     // Smooth scroll to top where the preview is rendered
     if (typeof window !== "undefined") {
       ;(topRef.current?.scrollIntoView ? topRef.current.scrollIntoView({ behavior: "smooth", block: "start" }) : window.scrollTo({ top: 0, behavior: "smooth" }))
@@ -88,10 +93,14 @@ export function EnhancedEmailCenter() {
     setLoadingInbox(true)
     isLoadingRef.current = true
     try {
-      const res = await fetch("/api/email/inbox")
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 15000)
+      const res = await fetch("/api/email/inbox", { signal: controller.signal })
+      clearTimeout(timer)
       if (!res.ok) throw new Error((await res.json()).error || "Failed to fetch inbox")
       const data = await res.json()
-      const mapped: Email[] = (Array.isArray(data) ? data : []).map((m: any) => ({
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
+      const mapped: Email[] = (Array.isArray(list) ? list : []).map((m: any) => ({
         id: m.id,
         from: m.from,
         to: m.to,
@@ -104,8 +113,32 @@ export function EnhancedEmailCenter() {
         priority: "normal",
         category: "Inbox",
       }))
-      setEmails(mapped)
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: mapped })) } catch {}
+      setEmails((prev) => {
+        const idSet = new Set(prev.map((e) => e.id))
+        // Load cached state to preserve read/star flags across sessions
+        let cachedState: Record<string, { isRead: boolean; isStarred: boolean }> = {}
+        try {
+          const raw = localStorage.getItem(CACHE_KEY)
+          if (raw) {
+            const cached = JSON.parse(raw) as { ts: number; data: Email[] }
+            if (cached && Array.isArray(cached.data)) {
+              cachedState = Object.fromEntries(
+                cached.data.map((e) => [e.id, { isRead: !!e.isRead, isStarred: !!e.isStarred }]),
+              )
+            }
+          }
+        } catch {}
+
+        const newOnly = mapped
+          .filter((m) => !idSet.has(m.id))
+          .map((m) => {
+            const flags = cachedState[m.id]
+            return flags ? { ...m, ...flags } : m
+          })
+        const merged = [...newOnly, ...prev]
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: merged })) } catch {}
+        return merged
+      })
     } catch (e: any) {
       setInboxError(e?.message || "Unable to load inbox")
     } finally {
@@ -116,6 +149,83 @@ export function EnhancedEmailCenter() {
 
   useEffect(() => {
     loadInbox()
+  }, [])
+
+  // Subscribe to realtime broadcast push for new emails
+  useEffect(() => {
+    const channel = supabase
+      .channel("emails-inbox")
+      .on("broadcast", { event: "new-email" }, (payload: any) => {
+        const m = payload?.payload
+        if (!m || !m.id) return
+        setEmails((prev) => {
+          if (prev.some((e) => e.id === m.id)) return prev
+          const newEmail: Email = {
+            id: String(m.id),
+            from: m.from || "",
+            to: m.to || "",
+            subject: m.subject || "(no subject)",
+            content: m.content || "",
+            preview: m.preview || (m.content ? String(m.content).slice(0, 120) : ""),
+            timestamp: m.timestamp || new Date().toISOString(),
+            isRead: false,
+            isStarred: false,
+            priority: "normal" as const,
+            category: "Inbox",
+          }
+          const next: Email[] = [newEmail, ...prev]
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: next })) } catch {}
+          return next
+        })
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  // Background polling: append only new emails silently, keep read/star states
+  useEffect(() => {
+    const poll = async () => {
+      if (isPollingRef.current) return
+      isPollingRef.current = true
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 12000)
+        const res = await fetch("/api/email/inbox", { signal: controller.signal })
+        clearTimeout(timer)
+        if (!res.ok) return
+        const data = await res.json()
+        const list = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
+        const mapped: Email[] = (Array.isArray(list) ? list : []).map((m: any) => ({
+          id: m.id,
+          from: m.from,
+          to: m.to,
+          subject: m.subject,
+          content: m.content,
+          preview: m.preview,
+          timestamp: m.timestamp,
+          isRead: false,
+          isStarred: false,
+          priority: "normal",
+          category: "Inbox",
+        }))
+        setEmails((prev) => {
+          const idSet = new Set(prev.map((e) => e.id))
+          const newOnly = mapped.filter((m) => !idSet.has(m.id))
+          if (newOnly.length === 0) return prev
+          const merged = [...newOnly, ...prev]
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: merged })) } catch {}
+          return merged
+        })
+      } catch {}
+      finally {
+        isPollingRef.current = false
+      }
+    }
+    const interval = setInterval(poll, 60000)
+    return () => clearInterval(interval)
   }, [])
 
   const filteredEmails = emails.filter(
@@ -129,11 +239,19 @@ export function EnhancedEmailCenter() {
   const starredEmails = emails.filter((email) => email.isStarred)
 
   const toggleStar = (emailId: string) => {
-    setEmails(emails.map((email) => (email.id === emailId ? { ...email, isStarred: !email.isStarred } : email)))
+    setEmails((prev) => {
+      const next = prev.map((email) => (email.id === emailId ? { ...email, isStarred: !email.isStarred } : email))
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: next })) } catch {}
+      return next
+    })
   }
 
   const markAsRead = (emailId: string) => {
-    setEmails(emails.map((email) => (email.id === emailId ? { ...email, isRead: true } : email)))
+    setEmails((prev) => {
+      const next = prev.map((email) => (email.id === emailId ? { ...email, isRead: true } : email))
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: next })) } catch {}
+      return next
+    })
   }
 
   const handleReply = (email: Email) => {
@@ -178,7 +296,7 @@ export function EnhancedEmailCenter() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="p-4 bg-muted rounded-lg">
-              <pre className="whitespace-pre-wrap text-sm font-sans">{selectedEmail.content}</pre>
+              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: selectedEmail.content }} />
             </div>
             {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
               <div>
@@ -206,7 +324,32 @@ export function EnhancedEmailCenter() {
                 <Archive className="h-4 w-4 mr-2" />
                 Archive
               </Button>
-              <Button variant="destructive">
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  try {
+                    const uid = selectedEmail?.id
+                    if (!uid) return
+                    const res = await fetch("/api/email/delete", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ uid }),
+                    })
+                    if (!res.ok) throw new Error((await res.json()).error || "Failed to delete")
+                    setEmails((prev) => prev.filter((e) => e.id !== uid))
+                    try {
+                      const raw = localStorage.getItem(CACHE_KEY)
+                      const cached = raw ? (JSON.parse(raw) as any) : null
+                      const next = cached?.data ? cached.data.filter((e: Email) => e.id !== uid) : []
+                      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: next }))
+                    } catch {}
+                    setSelectedEmail(null)
+                    toast({ title: "Email deleted" })
+                  } catch (e: any) {
+                    toast({ title: "Delete failed", description: e?.message || String(e), variant: "destructive" })
+                  }
+                }}
+              >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
               </Button>
@@ -459,20 +602,14 @@ export function EnhancedEmailCenter() {
               </div>
             </div>
             {sendError && <div className="text-sm text-destructive">{sendError}</div>}
-            <div id="compose-files-chips" className="flex flex-wrap gap-1" />
+            <div className="space-y-2">
+              <input id="compose-files" type="file" multiple className="hidden" />
+              <div id="compose-files-chips" className="flex flex-wrap gap-1" />
+            </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Button variant="outline" asChild>
-                  <label className="cursor-pointer">
-                    <input id="compose-files" type="file" multiple className="hidden" onChange={(e) => {
-                      const files = Array.from(e.currentTarget.files || [])
-                      const el = document.getElementById("compose-files-count")
-                      if (el) el.textContent = files.length ? `${files.length} file(s) selected` : ""
-                      const chips = document.getElementById("compose-files-chips")
-                      if (chips) {
-                        chips.innerHTML = files.map((f) => `<span class='px-2 py-1 text-xs border rounded mr-1'>${f.name}</span>`).join("")
-                      }
-                    }} />
+                  <label className="cursor-pointer" htmlFor="compose-files">
                     <span className="inline-flex items-center"><Paperclip className="h-4 w-4 mr-2" /> Attach Files</span>
                   </label>
                 </Button>
@@ -489,9 +626,12 @@ export function EnhancedEmailCenter() {
                     try {
                       const filesInput = document.getElementById("compose-files") as HTMLInputElement | null
                       const files = Array.from(filesInput?.files || [])
-                      // For now send HTML body; attachments upload pipeline can be added later
-                      const body = { to: composeTo, subject: composeSubject, html: composeText }
-                      const res = await fetch("/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+                      const form = new FormData()
+                      form.append("to", composeTo)
+                      form.append("subject", composeSubject)
+                      form.append("html", composeText)
+                      files.forEach((f, idx) => form.append(`file${idx}`, f))
+                      const res = await fetch("/api/email/send", { method: "POST", body: form })
                       if (!res.ok) throw new Error((await res.json()).error || "Failed to send email")
                       toast({ title: "Email sent" })
                       setComposeOpen(false)
@@ -523,18 +663,45 @@ export function EnhancedEmailCenter() {
           <div className="space-y-4">
             <div>
               <Label htmlFor="reply-content">Your Reply</Label>
-              <Textarea id="reply-content" placeholder="Type your reply here..." rows={6} />
+              <div className="min-h-[160px] quill-editor">
+                {ReactQuill ? (
+                  <ReactQuill theme="snow" value={composeText} onChange={setComposeText as any} modules={quillModules as any} formats={quillFormats as any} />
+                ) : (
+                  <Textarea id="reply-content" placeholder="Type your reply here..." rows={6} />
+                )}
+              </div>
             </div>
             <div className="flex items-center justify-between">
-              <Button variant="outline">
-                <Paperclip className="h-4 w-4 mr-2" />
-                Attach Files
-              </Button>
+              <div>
+                <input id="reply-files" type="file" multiple className="hidden" />
+                <Button variant="outline" asChild>
+                  <label className="cursor-pointer" htmlFor="reply-files">
+                    <Paperclip className="h-4 w-4 mr-2" /> Attach Files
+                  </label>
+                </Button>
+              </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setReplyOpen(false)}>
                   Cancel
                 </Button>
-                <Button>
+                <Button onClick={async () => {
+                  if (!selectedEmail) return
+                  try {
+                    const replyInput = document.getElementById("reply-files") as HTMLInputElement | null
+                    const files = Array.from(replyInput?.files || [])
+                    const form = new FormData()
+                    form.append("to", selectedEmail.from)
+                    form.append("subject", `Re: ${selectedEmail.subject}`)
+                    form.append("html", composeText)
+                    files.forEach((f, idx) => form.append(`file${idx}`, f))
+                    const res = await fetch("/api/email/send", { method: "POST", body: form })
+                    if (!res.ok) throw new Error((await res.json()).error || "Failed to send reply")
+                    setReplyOpen(false)
+                    toast({ title: "Reply sent" })
+                  } catch (e: any) {
+                    toast({ title: "Reply failed", description: e?.message || String(e), variant: "destructive" })
+                  }
+                }}>
                   <Send className="h-4 w-4 mr-2" />
                   Send Reply
                 </Button>
