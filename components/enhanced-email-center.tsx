@@ -32,6 +32,7 @@ interface Email {
 }
 
 export function EnhancedEmailCenter() {
+  const EMAIL_CENTER_DISABLED = (process.env.NEXT_PUBLIC_EMAIL_CENTER_DISABLED || "").toLowerCase() === "true"
   const [emails, setEmails] = useState<Email[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null)
@@ -73,6 +74,7 @@ export function EnhancedEmailCenter() {
   const quillFormats = useMemo(() => ["bold", "italic", "underline", "list", "bullet", "link"], [])
 
   const loadInbox = async (force = false) => {
+    if (EMAIL_CENTER_DISABLED) return
     if (isLoadingRef.current) return
     setInboxError(null)
 
@@ -112,6 +114,7 @@ export function EnhancedEmailCenter() {
         isStarred: false,
         priority: "normal",
         category: "Inbox",
+        attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
       }))
       setEmails((prev) => {
         const idSet = new Set(prev.map((e) => e.id))
@@ -148,11 +151,13 @@ export function EnhancedEmailCenter() {
   }
 
   useEffect(() => {
+    if (EMAIL_CENTER_DISABLED) return
     loadInbox()
   }, [])
 
   // Subscribe to realtime broadcast push for new emails
   useEffect(() => {
+    if (EMAIL_CENTER_DISABLED) return
     const channel = supabase
       .channel("emails-inbox")
       .on("broadcast", { event: "new-email" }, (payload: any) => {
@@ -187,6 +192,7 @@ export function EnhancedEmailCenter() {
 
   // Background polling: append only new emails silently, keep read/star states
   useEffect(() => {
+    if (EMAIL_CENTER_DISABLED) return
     const poll = async () => {
       if (isPollingRef.current) return
       isPollingRef.current = true
@@ -210,6 +216,7 @@ export function EnhancedEmailCenter() {
           isStarred: false,
           priority: "normal",
           category: "Inbox",
+          attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
         }))
         setEmails((prev) => {
           const idSet = new Set(prev.map((e) => e.id))
@@ -237,6 +244,8 @@ export function EnhancedEmailCenter() {
 
   const unreadCount = emails.filter((email) => !email.isRead).length
   const starredEmails = emails.filter((email) => email.isStarred)
+  const sentEmails = emails.filter((email) => email.category === "Sent")
+  const archivedEmails = emails.filter((email) => email.category === "Archived")
 
   const toggleStar = (emailId: string) => {
     setEmails((prev) => {
@@ -261,6 +270,11 @@ export function EnhancedEmailCenter() {
 
   return (
     <div className="space-y-6">
+      {EMAIL_CENTER_DISABLED && (
+        <div className="p-3 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 text-sm">
+          Email Center connectivity is disabled. Set <code>NEXT_PUBLIC_EMAIL_CENTER_DISABLED=false</code> to enable.
+        </div>
+      )}
       <div ref={topRef} className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Email Center</h1>
@@ -268,7 +282,7 @@ export function EnhancedEmailCenter() {
         </div>
         <div className="flex items-center gap-4">
           <Badge variant="secondary">{unreadCount} Unread</Badge>
-          <Button variant="outline" size="sm" onClick={() => loadInbox(true)} disabled={loadingInbox}>
+          <Button variant="outline" size="sm" onClick={() => loadInbox(true)} disabled={loadingInbox || EMAIL_CENTER_DISABLED}>
             <RefreshCcw className={`h-4 w-4 mr-2 ${loadingInbox ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -362,8 +376,8 @@ export function EnhancedEmailCenter() {
         <TabsList>
           <TabsTrigger value="inbox">Inbox ({emails.length})</TabsTrigger>
           <TabsTrigger value="starred">Starred ({starredEmails.length})</TabsTrigger>
-          <TabsTrigger value="sent">Sent</TabsTrigger>
-          <TabsTrigger value="archived">Archived</TabsTrigger>
+          <TabsTrigger value="sent">Sent ({sentEmails.length})</TabsTrigger>
+          <TabsTrigger value="archived">Archived ({archivedEmails.length})</TabsTrigger>
         </TabsList>
 
         <div className="flex items-center space-x-2">
@@ -507,59 +521,7 @@ export function EnhancedEmailCenter() {
         </TabsContent>
       </Tabs>
 
-      {selectedEmail && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>{selectedEmail.subject}</CardTitle>
-                <CardDescription>
-                  From: {selectedEmail.from} • {new Date(selectedEmail.timestamp).toLocaleString()}
-                </CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedEmail(null)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="p-4 bg-muted rounded-lg">
-              <pre className="whitespace-pre-wrap text-sm font-sans">{selectedEmail.content}</pre>
-            </div>
-            {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
-              <div>
-                <p className="text-sm font-medium mb-2">Attachments:</p>
-                <div className="flex gap-2">
-                  {selectedEmail.attachments.map((attachment, index) => (
-                    <Badge key={index} variant="outline" className="cursor-pointer">
-                      <Paperclip className="h-3 w-3 mr-1" />
-                      {attachment}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button onClick={() => handleReply(selectedEmail)}>
-                <Reply className="h-4 w-4 mr-2" />
-                Reply
-              </Button>
-              <Button variant="outline">
-                <Forward className="h-4 w-4 mr-2" />
-                Forward
-              </Button>
-              <Button variant="outline">
-                <Archive className="h-4 w-4 mr-2" />
-                Archive
-              </Button>
-              <Button variant="destructive">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Removed duplicate selected email detail block to avoid double rendering */}
 
       <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
         <DialogContent className="max-w-2xl">
