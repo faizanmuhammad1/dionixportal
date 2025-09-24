@@ -1,23 +1,23 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { LoginForm } from "@/components/login-form"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { DashboardOverview } from "@/components/dashboard-overview"
-import { ClientProjectSubmissions } from "@/components/client-project-submissions"
-import { EmployeeManagement } from "@/components/employee-management"
-import { EnhancedEmailCenter } from "@/components/enhanced-email-center"
-import { AllContacts } from "@/components/all-contacts"
-import { ContactSubmissions } from "@/components/contact-submissions"
-import { EmployeeDashboard } from "@/components/employee-dashboard"
-import { JobManagement } from "@/components/job-management"
-import { UnifiedProjectManagement } from "@/components/unified-project-management"
-import { ComingSoon } from "@/components/coming-soon"
-import { getCurrentUser, signOut, type User } from "@/lib/auth"
+import { useState, useEffect } from "react";
+import { LoginForm } from "@/components/login-form";
+import { DashboardLayout } from "@/components/dashboard-layout";
+import { DashboardOverview } from "@/components/dashboard-overview";
+import { ClientProjectSubmissions } from "@/components/client-project-submissions";
+import { EmployeeManagement } from "@/components/employee-management";
+import { EnhancedEmailCenter } from "@/components/enhanced-email-center";
+import { AllContacts } from "@/components/all-contacts";
+import { ContactSubmissions } from "@/components/contact-submissions";
+import { EmployeeDashboard } from "@/components/employee-dashboard";
+import { JobManagement } from "@/components/job-management";
+import { UnifiedProjectManagement } from "@/components/unified-project-management";
+import { ComingSoon } from "@/components/coming-soon";
+import { getCurrentUser, signOut, type User } from "@/lib/auth";
 
 export default function HomePage() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<
     | "dashboard"
     | "contact-center"
@@ -42,7 +42,7 @@ export default function HomePage() {
     | "employee-support"
     | "client-submissions"
     | "settings"
-  >("dashboard")
+  >("dashboard");
 
   const [projects, setProjects] = useState([
     {
@@ -71,7 +71,7 @@ export default function HomePage() {
       budget: 75000,
       client: "StartupXYZ",
     },
-  ])
+  ]);
 
   const [tasks, setTasks] = useState([
     {
@@ -97,94 +97,98 @@ export default function HomePage() {
       created_at: "2024-01-10T09:00:00Z",
       completed_at: "2024-01-18T15:30:00Z",
     },
-  ])
+  ]);
 
   const [employees] = useState([
     { id: "emp1", name: "John Smith", email: "john@dionix.ai" },
     { id: "emp2", name: "Sarah Johnson", email: "sarah@dionix.ai" },
     { id: "emp3", name: "Mike Chen", email: "mike@dionix.ai" },
-  ])
+  ]);
 
   const handleCreateProject = (project: any) => {
-    const newProject = { ...project, id: Date.now().toString() }
-    setProjects([...projects, newProject])
-  }
+    const newProject = { ...project, id: Date.now().toString() };
+    setProjects([...projects, newProject]);
+  };
 
   const handleUpdateProject = (id: string, updates: any) => {
-    setProjects(projects.map((p) => (p.id === id ? { ...p, ...updates } : p)))
-  }
+    setProjects(projects.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+  };
 
   const handleDeleteProject = (id: string) => {
-    setProjects(projects.filter((p) => p.id !== id))
-    setTasks(tasks.filter((t) => t.project_id !== id))
-  }
+    setProjects(projects.filter((p) => p.id !== id));
+    setTasks(tasks.filter((t) => t.project_id !== id));
+  };
 
   const handleViewProject = (project: any) => {
-    console.log("[v0] Viewing project:", project)
-  }
+    console.log("[v0] Viewing project:", project);
+  };
 
   const handleCreateTask = (task: any) => {
     const newTask = {
       ...task,
       id: Date.now().toString(),
       created_at: new Date().toISOString(),
-    }
-    setTasks([...tasks, newTask])
-  }
+    };
+    setTasks([...tasks, newTask]);
+  };
 
   const handleUpdateTask = (id: string, updates: any) => {
-    setTasks(tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)))
-  }
+    setTasks(tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+  };
 
   const handleDeleteTask = (id: string) => {
-    setTasks(tasks.filter((t) => t.id !== id))
-  }
+    setTasks(tasks.filter((t) => t.id !== id));
+  };
 
   const handleSendEmail = (email: any) => {
-    console.log("[v0] Sending email:", email)
+    console.log("[v0] Sending email:", email);
     // Here you would integrate with your email service
-  }
+  };
 
   const handleSaveEmailDraft = (email: any) => {
-    console.log("[v0] Saving email draft:", email)
+    console.log("[v0] Saving email draft:", email);
     // Here you would save to your database
-  }
+  };
 
   useEffect(() => {
     async function checkAuth() {
       try {
-        const currentUser = await getCurrentUser()
+        const currentUser = await getCurrentUser();
         if (currentUser) {
-          setUser(currentUser)
+          setUser(currentUser);
         }
       } catch (error) {
-        console.error("Error checking auth:", error)
+        console.error("Error checking auth:", error);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
 
-    checkAuth()
-  }, [])
+    checkAuth();
+  }, []);
 
   const handleLogin = (loggedInUser: User) => {
-    setUser(loggedInUser)
-  }
+    setUser(loggedInUser);
+    // Default employee landing to project center (tasks/projects)
+    if (loggedInUser.role === "employee") {
+      setCurrentView("project-center");
+    }
+  };
 
   const handleLogout = async () => {
     try {
-      await signOut()
+      await signOut();
     } catch (error) {
-      console.error("Error signing out:", error)
+      console.error("Error signing out:", error);
     } finally {
-      setUser(null)
-      setCurrentView("dashboard")
+      setUser(null);
+      setCurrentView("dashboard");
     }
-  }
+  };
 
   const handleNavigation = (view: typeof currentView) => {
-    setCurrentView(view)
-  }
+    setCurrentView(view);
+  };
 
   const handleDashboardNavigation = (section: string) => {
     // Map dashboard sections to view names
@@ -195,11 +199,11 @@ export default function HomePage() {
       "team-directory": "team-directory",
       "career-hub": "career-hub",
       "activity-log": "activity-log",
-    }
+    };
 
-    const mappedView = sectionMap[section] || "dashboard"
-    setCurrentView(mappedView)
-  }
+    const mappedView = sectionMap[section] || "dashboard";
+    setCurrentView(mappedView);
+  };
 
   if (loading) {
     return (
@@ -209,29 +213,49 @@ export default function HomePage() {
           <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!user) {
-    return <LoginForm onLogin={handleLogin} />
+    return <LoginForm onLogin={handleLogin} />;
   }
 
   return (
-    <DashboardLayout user={user} onLogout={handleLogout} onNavigate={(v) => handleNavigation(v as any)} currentView={currentView}>
+    <DashboardLayout
+      user={user}
+      onLogout={handleLogout}
+      onNavigate={(v) => handleNavigation(v as any)}
+      currentView={currentView}
+    >
       {currentView === "dashboard" &&
         (user.role === "admin" ? (
-          <DashboardOverview user={user} onNavigate={handleDashboardNavigation} />
+          <DashboardOverview
+            user={user}
+            onNavigate={handleDashboardNavigation}
+          />
         ) : (
           <EmployeeDashboard user={user} />
         ))}
 
       {/* Admin Views */}
-      {currentView === "contact-center" && user.role === "admin" && <AllContacts />}
-      {currentView === "email-center" && user.role === "admin" && <EnhancedEmailCenter />}
-      {currentView === "project-center" && user.role === "admin" && <UnifiedProjectManagement />}
-      {currentView === "client-submissions" && user.role === "admin" && <ClientProjectSubmissions />}
-      {currentView === "team-directory" && user.role === "admin" && <EmployeeManagement />}
-      {currentView === "career-hub" && user.role === "admin" && <JobManagement />}
+      {currentView === "contact-center" && user.role === "admin" && (
+        <AllContacts />
+      )}
+      {currentView === "email-center" && user.role === "admin" && (
+        <EnhancedEmailCenter />
+      )}
+      {currentView === "project-center" && user.role === "admin" && (
+        <UnifiedProjectManagement />
+      )}
+      {currentView === "client-submissions" && user.role === "admin" && (
+        <ClientProjectSubmissions />
+      )}
+      {currentView === "team-directory" && user.role === "admin" && (
+        <EmployeeManagement />
+      )}
+      {currentView === "career-hub" && user.role === "admin" && (
+        <JobManagement />
+      )}
 
       {/* Coming soon components for incomplete features */}
       {currentView === "activity-log" && user.role === "admin" && (
@@ -269,11 +293,15 @@ export default function HomePage() {
       )}
 
       {/* Employee views */}
-      {currentView === "email-center" && user.role === "employee" && <EnhancedEmailCenter />}
-      {currentView === "project-center" && user.role === "employee" && <UnifiedProjectManagement />}
+      {/* Email center disabled for employees */}
+      {currentView === "project-center" && user.role === "employee" && (
+        <UnifiedProjectManagement />
+      )}
 
       {/* Coming soon components for employee features */}
-      {currentView === "my-time" && user.role === "employee" && <ComingSoon title="Time Tracker" />}
+      {currentView === "my-time" && user.role === "employee" && (
+        <ComingSoon title="Time Tracker" />
+      )}
       {currentView === "performance" && user.role === "employee" && (
         <ComingSoon title="Performance Dashboard" />
       )}
@@ -286,5 +314,5 @@ export default function HomePage() {
 
       {currentView === "settings" && <ComingSoon title="Settings Panel" />}
     </DashboardLayout>
-  )
+  );
 }

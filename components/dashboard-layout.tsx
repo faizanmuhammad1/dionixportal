@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 import {
   Mail,
   FolderOpen,
@@ -26,41 +26,62 @@ import {
   Headphones,
   ChevronLeft,
   ChevronRight,
-} from "lucide-react"
-import Image from "next/image"
-import { ThemeToggle } from "@/components/theme-toggle"
+} from "lucide-react";
+import Image from "next/image";
+import { ThemeToggle } from "@/components/theme-toggle";
 
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import type { User } from "@/lib/auth"
-import { createClient } from "@/lib/supabase"
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { User } from "@/lib/auth";
+import { createClient } from "@/lib/supabase";
 
 interface DashboardLayoutProps {
-  user: User
-  children: React.ReactNode
-  onLogout: () => void
-  onNavigate: (view: string) => void
-  currentView: string
+  user: User;
+  children: React.ReactNode;
+  onLogout: () => void;
+  onNavigate: (view: string) => void;
+  currentView: string;
 }
 
-export function DashboardLayout({ user, children, onLogout, onNavigate, currentView }: DashboardLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [sidebarHovered, setSidebarHovered] = useState(false)
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const [notifCount, setNotifCount] = useState(0)
-  const supabase = createClient()
+export function DashboardLayout({
+  user,
+  children,
+  onLogout,
+  onNavigate,
+  currentView,
+}: DashboardLayoutProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
+  const supabase = createClient();
 
   const navigation = [
     // Core Dashboard
-    { name: "Overview", href: "dashboard", icon: LayoutDashboard, current: currentView === "dashboard" },
+    {
+      name: "Overview",
+      href: "dashboard",
+      icon: LayoutDashboard,
+      current: currentView === "dashboard",
+    },
 
     ...(user.role === "admin"
       ? [
           // Communication Hub
-          { name: "Email Center", href: "email-center", icon: Mail, current: currentView === "email-center" },
+          {
+            name: "Email Center",
+            href: "email-center",
+            icon: Mail,
+            current: currentView === "email-center",
+          },
           {
             name: "Contact Directory",
             href: "contact-center",
@@ -104,8 +125,18 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
           },
 
           // Team Management
-          { name: "Career Portal", href: "career-hub", icon: Briefcase, current: currentView === "career-hub" },
-          { name: "Team Directory", href: "team-directory", icon: Users, current: currentView === "team-directory" },
+          {
+            name: "Career Portal",
+            href: "career-hub",
+            icon: Briefcase,
+            current: currentView === "career-hub",
+          },
+          {
+            name: "Team Directory",
+            href: "team-directory",
+            icon: Users,
+            current: currentView === "team-directory",
+          },
           {
             name: "Attendance Hub",
             href: "attendance",
@@ -161,14 +192,35 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             current: currentView === "notifications",
             comingSoon: true,
           },
-          { name: "Data Center", href: "data", icon: Database, current: currentView === "data", comingSoon: true },
+          {
+            name: "Data Center",
+            href: "data",
+            icon: Database,
+            current: currentView === "data",
+            comingSoon: true,
+          },
         ]
       : [
           // Employee Dashboard
-          { name: "My Tasks", href: "project-center", icon: CheckSquare, current: currentView === "project-center" },
-          { name: "My Projects", href: "project-center", icon: FolderOpen, current: currentView === "project-center" },
-          { name: "My Inbox", href: "email-center", icon: Mail, current: currentView === "email-center" },
-          { name: "Time Tracker", href: "my-time", icon: Clock, current: currentView === "my-time", comingSoon: true },
+          {
+            name: "My Tasks",
+            href: "project-center",
+            icon: CheckSquare,
+            current: currentView === "project-center",
+          },
+          {
+            name: "My Projects",
+            href: "project-center",
+            icon: FolderOpen,
+            current: currentView === "project-center",
+          },
+          {
+            name: "Time Tracker",
+            href: "my-time",
+            icon: Clock,
+            current: currentView === "my-time",
+            comingSoon: true,
+          },
           {
             name: "Performance",
             href: "performance",
@@ -193,52 +245,75 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
         ]),
 
     // Settings (always last)
-    { name: "Settings", href: "settings", icon: Settings, current: currentView === "settings", comingSoon: true },
-  ]
+    {
+      name: "Settings",
+      href: "settings",
+      icon: Settings,
+      current: currentView === "settings",
+      comingSoon: true,
+    },
+  ];
 
-  const availableNav = navigation.filter((item) => !item.comingSoon)
-  const comingSoonNav = navigation.filter((item) => item.comingSoon)
+  const availableNav = navigation.filter((item) => !item.comingSoon);
+  const comingSoonNav = navigation.filter((item) => item.comingSoon);
 
   const handleNavClick = (href: string) => {
-    onNavigate(href)
-    setSidebarOpen(false) // Close mobile sidebar on navigation
-  }
+    onNavigate(href);
+    setSidebarOpen(false); // Close mobile sidebar on navigation
+  };
 
   useEffect(() => {
     // Initial count: use form_submissions count as notifications source
-    ;(async () => {
+    (async () => {
       const { count, error } = await supabase
         .from("form_submissions")
-        .select("id", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true });
       if (error) {
-        console.error("Error fetching notif count:", error)
+        console.error("Error fetching notif count:", error);
       }
-      setNotifCount(typeof count === "number" ? count : 0)
-    })()
+      setNotifCount(typeof count === "number" ? count : 0);
+    })();
 
     // Also subscribe to live unread email badge updates via broadcast webhook
     const channel = supabase
       .channel("emails-inbox")
-      .on("broadcast", { event: "new-email" }, () => setNotifCount((c) => c + 1))
-      .subscribe()
+      .on("broadcast", { event: "new-email" }, () =>
+        setNotifCount((c) => c + 1)
+      )
+      .subscribe();
 
     const channel2 = supabase
       .channel("navbar-notifications")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, () => setNotifCount((c) => c + 1))
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, () => setNotifCount((c) => Math.max(0, c - 1)))
-      .subscribe()
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "form_submissions" },
+        () => setNotifCount((c) => c + 1)
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "form_submissions" },
+        () => setNotifCount((c) => Math.max(0, c - 1))
+      )
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel)
-      supabase.removeChannel(channel2)
-    }
-  }, [])
+      supabase.removeChannel(channel);
+      supabase.removeChannel(channel2);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Mobile sidebar */}
-      <div className={`fixed inset-0 z-50 lg:hidden ${sidebarOpen ? "block" : "hidden"}`}>
-        <div className="fixed inset-0 bg-black/20 dark:bg-black/50" onClick={() => setSidebarOpen(false)} />
+      <div
+        className={`fixed inset-0 z-50 lg:hidden ${
+          sidebarOpen ? "block" : "hidden"
+        }`}
+      >
+        <div
+          className="fixed inset-0 bg-black/20 dark:bg-black/50"
+          onClick={() => setSidebarOpen(false)}
+        />
         <div className="fixed left-0 top-0 h-full w-64 bg-card border-r border-border shadow-lg flex flex-col">
           <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -258,9 +333,15 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                   className="hidden dark:block"
                 />
               </div>
-              <span className="text-lg font-semibold text-foreground">dionix.ai</span>
+              <span className="text-lg font-semibold text-foreground">
+                dionix.ai
+              </span>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSidebarOpen(false)}
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -282,7 +363,9 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
             ))}
             {comingSoonNav.length > 0 && (
               <div className="mt-4">
-                <div className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Coming soon</div>
+                <div className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">
+                  Coming soon
+                </div>
                 <div className="mt-1 space-y-2">
                   {comingSoonNav.map((item) => (
                     <Button
@@ -295,7 +378,9 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                     >
                       <item.icon className="mr-2 h-4 w-4" />
                       {item.name}
-                      <span className="ml-auto text-xs bg-muted text-muted-foreground px-2 py-1 rounded">Soon</span>
+                      <span className="ml-auto text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
+                        Soon
+                      </span>
                     </Button>
                   ))}
                 </div>
@@ -333,7 +418,9 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                     className="hidden dark:block"
                   />
                 </div>
-                <span className="text-lg font-semibold text-foreground">dionix.ai</span>
+                <span className="text-lg font-semibold text-foreground">
+                  dionix.ai
+                </span>
               </div>
             )}
             {sidebarCollapsed && !sidebarHovered && (
@@ -363,23 +450,33 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                 key={item.name}
                 variant={item.current ? "default" : "ghost"}
                 className={`w-full transition-all duration-200 ${
-                  sidebarCollapsed && !sidebarHovered ? "justify-center px-2" : "justify-start"
+                  sidebarCollapsed && !sidebarHovered
+                    ? "justify-center px-2"
+                    : "justify-start"
                 } ${
                   item.current
                     ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
                     : "text-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
                 onClick={() => handleNavClick(item.href)}
-                title={sidebarCollapsed && !sidebarHovered ? item.name : undefined}
+                title={
+                  sidebarCollapsed && !sidebarHovered ? item.name : undefined
+                }
               >
-                <item.icon className={`h-4 w-4 ${sidebarCollapsed && !sidebarHovered ? "" : "mr-2"}`} />
+                <item.icon
+                  className={`h-4 w-4 ${
+                    sidebarCollapsed && !sidebarHovered ? "" : "mr-2"
+                  }`}
+                />
                 {(!sidebarCollapsed || sidebarHovered) && item.name}
               </Button>
             ))}
             {comingSoonNav.length > 0 && (
               <div className="mt-4">
                 {(!sidebarCollapsed || sidebarHovered) && (
-                  <div className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Coming soon</div>
+                  <div className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">
+                    Coming soon
+                  </div>
                 )}
                 <div className="mt-1 space-y-2">
                   {comingSoonNav.map((item) => (
@@ -387,17 +484,29 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                       key={item.name}
                       variant="ghost"
                       className={`w-full transition-all duration-200 ${
-                        sidebarCollapsed && !sidebarHovered ? "justify-center px-2" : "justify-start"
+                        sidebarCollapsed && !sidebarHovered
+                          ? "justify-center px-2"
+                          : "justify-start"
                       } text-foreground hover:bg-accent hover:text-accent-foreground`}
                       onClick={() => {}}
                       disabled
-                      title={sidebarCollapsed && !sidebarHovered ? item.name : "Coming soon"}
+                      title={
+                        sidebarCollapsed && !sidebarHovered
+                          ? item.name
+                          : "Coming soon"
+                      }
                     >
-                      <item.icon className={`h-4 w-4 ${sidebarCollapsed && !sidebarHovered ? "" : "mr-2"}`} />
+                      <item.icon
+                        className={`h-4 w-4 ${
+                          sidebarCollapsed && !sidebarHovered ? "" : "mr-2"
+                        }`}
+                      />
                       {(!sidebarCollapsed || sidebarHovered) && (
                         <>
                           {item.name}
-                          <span className="ml-auto text-xs bg-muted text-muted-foreground px-2 py-1 rounded">Soon</span>
+                          <span className="ml-auto text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
+                            Soon
+                          </span>
                         </>
                       )}
                     </Button>
@@ -413,17 +522,30 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="w-full justify-center hover:bg-accent hover:text-accent-foreground"
             >
-              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              {sidebarCollapsed ? (
+                <ChevronRight className="h-4 w-4" />
+              ) : (
+                <ChevronLeft className="h-4 w-4" />
+              )}
             </Button>
           </div>
         </div>
       </div>
 
       {/* Main content */}
-      <div className={`transition-all duration-300 ${sidebarCollapsed && !sidebarHovered ? "lg:pl-16" : "lg:pl-64"}`}>
+      <div
+        className={`transition-all duration-300 ${
+          sidebarCollapsed && !sidebarHovered ? "lg:pl-16" : "lg:pl-64"
+        }`}
+      >
         {/* Top navigation */}
         <div className="sticky top-0 z-40 flex h-16 items-center gap-x-4 border-b border-border bg-card px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
-          <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="lg:hidden"
+            onClick={() => setSidebarOpen(true)}
+          >
             <Menu className="h-4 w-4" />
           </Button>
 
@@ -446,23 +568,32 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                     className="hidden dark:block"
                   />
                 </div>
-                <span className="text-lg font-semibold text-foreground">dionix.ai</span>
+                <span className="text-lg font-semibold text-foreground">
+                  dionix.ai
+                </span>
               </div>
             </div>
             <div className="hidden lg:flex lg:flex-1" />
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
-            <Button variant="ghost" size="icon" onClick={() => onNavigate("notifications")}
-              className="relative">
-              <Bell className="h-5 w-5" />
-              {notifCount > 0 && (
-                <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] h-4 min-w-4 px-1">
-                  {notifCount}
-                </span>
-              )}
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onNavigate("notifications")}
+                className="relative"
+              >
+                <Bell className="h-5 w-5" />
+                {notifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] h-4 min-w-4 px-1">
+                    {notifCount}
+                  </span>
+                )}
+              </Button>
               <ThemeToggle />
-              <DropdownMenu open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
+              <DropdownMenu
+                open={profileMenuOpen}
+                onOpenChange={setProfileMenuOpen}
+              >
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
@@ -478,14 +609,21 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56 bg-card border-border" align="end">
+                <DropdownMenuContent
+                  className="w-56 bg-card border-border"
+                  align="end"
+                >
                   <div className="flex items-center justify-start gap-2 p-2">
                     <div className="flex flex-col space-y-1 leading-none">
                       <p className="font-medium text-foreground">
                         {user.firstName} {user.lastName}
                       </p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {user.email}
+                      </p>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {user.role}
+                      </p>
                     </div>
                   </div>
                   <DropdownMenuItem
@@ -507,5 +645,5 @@ export function DashboardLayout({ user, children, onLogout, onNavigate, currentV
         </main>
       </div>
     </div>
-  )
+  );
 }
