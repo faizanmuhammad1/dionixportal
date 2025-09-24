@@ -26,6 +26,7 @@ export interface ClientProject {
   status: "pending" | "processing" | "completed" | "rejected";
   created_at: string;
   submitted_at: string;
+  approved_project_id?: string | null;
 }
 
 export interface JobApplication {
@@ -219,7 +220,7 @@ export async function getClientProjects(): Promise<ClientProject[]> {
     const { data, error } = await supabase
       .from("client_project_details")
       .select(
-        "id, created_at, contact_email, contact_phone, company_details, services_details, status"
+        "id, created_at, contact_email, contact_phone, company_details, services_details, status, approved_project_id"
       )
       .order("created_at", { ascending: false });
 
@@ -257,6 +258,7 @@ export async function getClientProjects(): Promise<ClientProject[]> {
       status: toUiStatus(row.status),
       created_at: row.created_at,
       submitted_at: row.created_at,
+      approved_project_id: row.approved_project_id ?? null,
     }));
   } catch (error) {
     return [];

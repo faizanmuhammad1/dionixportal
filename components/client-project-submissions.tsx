@@ -1138,7 +1138,7 @@ export function ClientProjectSubmissions() {
         </DialogContent>
       </Dialog>
 
-      {/* View details dialog */}
+      {/* View details dialog (unified) */}
       <Dialog
         open={!!viewingId}
         onOpenChange={(open) => {
@@ -1389,6 +1389,116 @@ export function ClientProjectSubmissions() {
                           value={pick("bankDetails", "bank_details")}
                         />
                       </Section>
+
+                      {/* Comprehensive field render to ensure no fields are missed */}
+                      {(() => {
+                        const fields: Array<{ key: string; label: string }> = [
+                          { key: "id", label: "Submission ID" },
+                          { key: "status", label: "Status" },
+                          {
+                            key: "selected_service",
+                            label: "Selected service",
+                          },
+                          {
+                            key: "services_details",
+                            label: "Services details (raw)",
+                          },
+                          {
+                            key: "service_specific",
+                            label: "Service specific (JSON)",
+                          },
+                          { key: "company_details", label: "Company details" },
+                          { key: "business_phone", label: "Business phone" },
+                          { key: "company_email", label: "Company email" },
+                          { key: "company_address", label: "Company address" },
+                          { key: "social_links", label: "Social links" },
+                          { key: "contact_phone", label: "Contact phone" },
+                          { key: "contact_email", label: "Contact email" },
+                          { key: "contact_address", label: "Contact address" },
+                          { key: "media_links", label: "Media links" },
+                          { key: "bank_details", label: "Bank details (raw)" },
+                          { key: "logo_files", label: "Logo files" },
+                          { key: "media_files", label: "Media files" },
+                          {
+                            key: "domain_suggestions",
+                            label: "Domain suggestions",
+                          },
+                          {
+                            key: "website_references",
+                            label: "Website references",
+                          },
+                          {
+                            key: "logo_concepts",
+                            label: "Logo ideas / concepts",
+                          },
+                          { key: "brand_theme", label: "Color / brand theme" },
+                          { key: "has_uploads", label: "Has uploads" },
+                          {
+                            key: "approved_project_id",
+                            label: "Approved project ID",
+                          },
+                          { key: "approved_by", label: "Approved by" },
+                          { key: "approved_at", label: "Approved at" },
+                          {
+                            key: "rejection_reason",
+                            label: "Rejection reason",
+                          },
+                          { key: "created_at", label: "Created at" },
+                          { key: "updated_at", label: "Updated at" },
+                        ];
+
+                        const fmt = (v: any) => {
+                          if (v === null || v === undefined) return null;
+                          if (Array.isArray(v))
+                            return v.length ? v.join(", ") : null;
+                          if (typeof v === "object")
+                            return JSON.stringify(v, null, 2);
+                          const s = String(v);
+                          if (!s.trim()) return null;
+                          // Basic datetime prettify
+                          if (
+                            fields.some(
+                              (f) =>
+                                f.key === "created_at" ||
+                                f.key === "updated_at" ||
+                                f.key === "approved_at"
+                            )
+                          ) {
+                            // noop per-field; keep raw here, dedicated rows above already pretty-print
+                          }
+                          return s;
+                        };
+
+                        const knownKeys = new Set(fields.map((f) => f.key));
+                        const otherKeys = Object.keys(viewData || {}).filter(
+                          (k) => !knownKeys.has(k)
+                        );
+
+                        return (
+                          <>
+                            <Section title="All Fields">
+                              {fields.map(({ key, label }) => (
+                                <Row
+                                  key={key}
+                                  label={label}
+                                  value={fmt((viewData as any)[key])}
+                                />
+                              ))}
+                            </Section>
+                            {otherKeys.length > 0 && (
+                              <Section title="Other Fields">
+                                {otherKeys.map((k) => (
+                                  <Row
+                                    key={k}
+                                    label={k}
+                                    value={fmt((viewData as any)[k])}
+                                  />
+                                ))}
+                              </Section>
+                            )}
+                          </>
+                        );
+                      })()}
                     </>
                   );
                 })()}
@@ -1396,120 +1506,17 @@ export function ClientProjectSubmissions() {
             )}
           </div>
           <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setViewingId(null);
-                setViewData(null);
-              }}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View details dialog */}
-      <Dialog
-        open={!!viewingId}
-        onOpenChange={(open) => {
-          if (!open) {
-            setViewingId(null);
-            setViewData(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Submission details</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-            {viewLoading && (
-              <div className="text-sm text-muted-foreground">Loading...</div>
-            )}
-            {!viewLoading && !viewData && (
-              <div className="text-sm text-muted-foreground">No data</div>
-            )}
-            {!viewLoading && viewData && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div>
-                  <div className="font-medium">Status</div>
-                  <div className="text-muted-foreground">{viewData.status}</div>
-                </div>
-                <div>
-                  <div className="font-medium">Selected service</div>
-                  <div className="text-muted-foreground">
-                    {viewData.selected_service}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-medium">Contact email</div>
-                  <div className="text-muted-foreground">
-                    {viewData.contact_email || "—"}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-medium">Contact phone</div>
-                  <div className="text-muted-foreground">
-                    {viewData.contact_phone || viewData.business_phone || "—"}
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <div className="font-medium">Company details</div>
-                  <div className="text-muted-foreground whitespace-pre-wrap">
-                    {viewData.company_details || "—"}
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <div className="font-medium">Services details</div>
-                  <div className="text-muted-foreground whitespace-pre-wrap">
-                    {viewData.services_details || "—"}
-                  </div>
-                </div>
-                {viewData.domain_suggestions && (
-                  <div className="md:col-span-2">
-                    <div className="font-medium">Domain suggestions</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">
-                      {viewData.domain_suggestions}
-                    </div>
-                  </div>
-                )}
-                {viewData.website_references && (
-                  <div className="md:col-span-2">
-                    <div className="font-medium">Website references</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">
-                      {viewData.website_references}
-                    </div>
-                  </div>
-                )}
-                {viewData.logo_concepts && (
-                  <div className="md:col-span-2">
-                    <div className="font-medium">Logo ideas / concepts</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">
-                      {viewData.logo_concepts}
-                    </div>
-                  </div>
-                )}
-                {viewData.brand_theme && (
-                  <div className="md:col-span-2">
-                    <div className="font-medium">Color / brand theme</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">
-                      {viewData.brand_theme}
-                    </div>
-                  </div>
-                )}
-                {viewData.marketing_goals && (
-                  <div className="md:col-span-2">
-                    <div className="font-medium">Marketing goals</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">
-                      {viewData.marketing_goals}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
+            {viewData?.approved_project_id ? (
+              <Button
+                onClick={() => {
+                  window.location.assign(
+                    `/projects/${viewData.approved_project_id}`
+                  );
+                }}
+              >
+                Open Project
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               onClick={() => {
