@@ -1,16 +1,52 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Eye, MoreHorizontal, CheckCircle2, XCircle, Trash2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Eye,
+  MoreHorizontal,
+  CheckCircle2,
+  XCircle,
+  Trash2,
+} from "lucide-react";
 import {
   getClientProjects,
   approveClientProject,
@@ -19,179 +55,231 @@ import {
   type Project,
   type ClientProject,
   deleteClientSubmission,
-} from "@/lib/auth"
-import { useToast } from "@/components/ui/use-toast"
-import { createClient } from "@/lib/supabase"
+  updateClientSubmission,
+} from "@/lib/auth";
+import { useToast } from "@/components/ui/use-toast";
+import { createClient } from "@/lib/supabase";
 
-type ProjectType = Project["type"]
+type ProjectType = Project["type"];
 
 export function ClientProjectSubmissions() {
-  const [submissions, setSubmissions] = useState<ClientProject[]>([])
-  const [loading, setLoading] = useState(true)
-  const [viewingId, setViewingId] = useState<string | null>(null)
-  const [viewData, setViewData] = useState<any | null>(null)
-  const [viewLoading, setViewLoading] = useState(false)
-  const [approveOpen, setApproveOpen] = useState(false)
-  const [rejectOpen, setRejectOpen] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null)
-  const [projectName, setProjectName] = useState("")
-  const [projectType, setProjectType] = useState<ProjectType>("custom")
-  const [projectPriority, setProjectPriority] = useState<Project["priority"]>("medium")
-  const [projectStatus, setProjectStatus] = useState<Project["status"]>("planning")
-  const [description, setDescription] = useState("")
-  const [startDate, setStartDate] = useState("")
-  const [endDate, setEndDate] = useState("")
-  const [budget, setBudget] = useState<string>("")
-  const [clientName, setClientName] = useState("")
-  const [companyEmail, setCompanyEmail] = useState("")
-  const [companyAddress, setCompanyAddress] = useState("")
-  const [companyNumber, setCompanyNumber] = useState("")
-  const [aboutCompany, setAboutCompany] = useState("")
-  const [publicPhone, setPublicPhone] = useState("")
-  const [publicCompanyEmail, setPublicCompanyEmail] = useState("")
-  const [publicCompanyAddress, setPublicCompanyAddress] = useState("")
-  const [socialLinks, setSocialLinks] = useState("")
-  const [mediaLinks, setMediaLinks] = useState("")
-  const [bankAccountName, setBankAccountName] = useState("")
-  const [bankAccountNumber, setBankAccountNumber] = useState("")
-  const [bankIban, setBankIban] = useState("")
-  const [bankSwift, setBankSwift] = useState("")
-  const [selectedService, setSelectedService] = useState("")
-  const [domainSuggestions, setDomainSuggestions] = useState("")
-  const [websiteReferences, setWebsiteReferences] = useState("")
-  const [featuresRequirements, setFeaturesRequirements] = useState("")
-  const [budgetTimeline, setBudgetTimeline] = useState("")
-  const [logoIdeas, setLogoIdeas] = useState("")
-  const [brandTheme, setBrandTheme] = useState("")
-  const [designAssetsNeeded, setDesignAssetsNeeded] = useState("")
-  const [targetAudienceIndustry, setTargetAudienceIndustry] = useState("")
-  const [marketingGoals, setMarketingGoals] = useState("")
-  const [channelsOfInterest, setChannelsOfInterest] = useState("")
-  const [budgetRangeMonthly, setBudgetRangeMonthly] = useState("")
-  const [aiSolutionType, setAiSolutionType] = useState("")
-  const [businessChallengeUseCase, setBusinessChallengeUseCase] = useState("")
-  const [dataAvailability, setDataAvailability] = useState("")
-  const [budgetRange, setBudgetRange] = useState("")
-  const [serviceDescription, setServiceDescription] = useState("")
-  const [expectedOutcome, setExpectedOutcome] = useState("")
-  const [rejectionReason, setRejectionReason] = useState("")
-  const { toast } = useToast()
+  const [submissions, setSubmissions] = useState<ClientProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [viewData, setViewData] = useState<any | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(
+    null
+  );
+  const [projectName, setProjectName] = useState("");
+  const [projectType, setProjectType] = useState<ProjectType>("custom");
+  const [projectPriority, setProjectPriority] =
+    useState<Project["priority"]>("medium");
+  const [projectStatus, setProjectStatus] =
+    useState<Project["status"]>("planning");
+  const [description, setDescription] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [budget, setBudget] = useState<string>("");
+  const [clientName, setClientName] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [companyNumber, setCompanyNumber] = useState("");
+  const [aboutCompany, setAboutCompany] = useState("");
+  const [publicPhone, setPublicPhone] = useState("");
+  const [publicCompanyEmail, setPublicCompanyEmail] = useState("");
+  const [publicCompanyAddress, setPublicCompanyAddress] = useState("");
+  const [socialLinks, setSocialLinks] = useState("");
+  const [mediaLinks, setMediaLinks] = useState("");
+  const [bankAccountName, setBankAccountName] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankIban, setBankIban] = useState("");
+  const [bankSwift, setBankSwift] = useState("");
+  const [selectedService, setSelectedService] = useState("");
+  const [domainSuggestions, setDomainSuggestions] = useState("");
+  const [websiteReferences, setWebsiteReferences] = useState("");
+  const [featuresRequirements, setFeaturesRequirements] = useState("");
+  const [budgetTimeline, setBudgetTimeline] = useState("");
+  const [logoIdeas, setLogoIdeas] = useState("");
+  const [brandTheme, setBrandTheme] = useState("");
+  const [designAssetsNeeded, setDesignAssetsNeeded] = useState("");
+  const [targetAudienceIndustry, setTargetAudienceIndustry] = useState("");
+  const [marketingGoals, setMarketingGoals] = useState("");
+  const [channelsOfInterest, setChannelsOfInterest] = useState("");
+  const [budgetRangeMonthly, setBudgetRangeMonthly] = useState("");
+  const [aiSolutionType, setAiSolutionType] = useState("");
+  const [businessChallengeUseCase, setBusinessChallengeUseCase] = useState("");
+  const [dataAvailability, setDataAvailability] = useState("");
+  const [budgetRange, setBudgetRange] = useState("");
+  const [serviceDescription, setServiceDescription] = useState("");
+  const [expectedOutcome, setExpectedOutcome] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+  const { toast } = useToast();
 
   useEffect(() => {
-    ;(async () => {
-      await refresh()
-    })()
-  }, [])
+    (async () => {
+      await refresh();
+    })();
+  }, []);
 
   const refresh = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const data = await getClientProjects()
-      setSubmissions(data)
+      const data = await getClientProjects();
+      setSubmissions(data);
     } catch (e: any) {
-      toast({ title: "Failed to load submissions", description: e?.message || String(e), variant: "destructive" })
+      toast({
+        title: "Failed to load submissions",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const pendingCount = useMemo(() => submissions.filter((s) => s.status === "pending").length, [submissions])
+  const pendingCount = useMemo(
+    () => submissions.filter((s) => s.status === "pending").length,
+    [submissions]
+  );
 
   const openApprove = async (s: ClientProject) => {
-    setActiveSubmissionId(s.id)
-    setProjectName(s.company_details || s.contact_email)
-    setProjectType("custom")
-    setProjectPriority("medium")
-    setProjectStatus("planning")
+    setActiveSubmissionId(s.id);
+    setProjectName(s.company_details || s.contact_email);
+    setProjectType("custom");
+    setProjectPriority("medium");
+    setProjectStatus("planning");
 
     // Load detailed submission to prefill fields
     try {
-      const supabase = createClient()
+      const supabase = createClient();
       const { data, error } = await supabase
         .from("client_project_details")
         .select("*")
         .eq("id", s.id)
-        .single()
-      if (error) throw error
+        .single();
+      if (error) throw error;
 
-      setCompanyEmail(data.company_email || "")
-      setCompanyAddress(data.company_address || "")
-      setAboutCompany(data.company_details || "")
-      setPublicPhone(data.business_phone || data.contact_phone || "")
+      setCompanyEmail(data.company_email || "");
+      setCompanyAddress(data.company_address || "");
+      setAboutCompany(data.company_details || "");
+      setPublicPhone(data.business_phone || data.contact_phone || "");
       // company number equals business number per requirement
-      if (data.business_phone && !companyNumber) setCompanyNumber(data.business_phone)
-      setPublicCompanyEmail(data.contact_email || "")
-      setPublicCompanyAddress(data.contact_address || "")
-      setSocialLinks((data.social_links || "").toString())
-      setMediaLinks((data.media_links || "").toString())
-      setSelectedService(data.selected_service || "")
+      if (data.business_phone && !companyNumber)
+        setCompanyNumber(data.business_phone);
+      setPublicCompanyEmail(data.contact_email || "");
+      setPublicCompanyAddress(data.contact_address || "");
+      setSocialLinks((data.social_links || "").toString());
+      setMediaLinks((data.media_links || "").toString());
+      setSelectedService(data.selected_service || "");
       // Map submission selected_service → form service type select
-      const svcRaw = (data.selected_service || "").toString()
+      const svcRaw = (data.selected_service || "").toString();
       const svcMap: Record<string, ProjectType> = {
         "web-development": "web",
         "branding-design": "branding",
         "digital-marketing": "marketing",
         "ai-solutions": "ai",
         other: "custom",
-      }
-      const mappedType = svcMap[svcRaw]
-      if (mappedType) setProjectType(mappedType)
+      };
+      const mappedType = svcMap[svcRaw];
+      if (mappedType) setProjectType(mappedType);
 
-      setDomainSuggestions(data.domain_suggestions || "")
-      setWebsiteReferences(data.website_references || "")
-      setLogoIdeas(data.logo_concepts || "")
-      setBrandTheme(data.brand_theme || "")
+      setDomainSuggestions(data.domain_suggestions || "");
+      setWebsiteReferences(data.website_references || "");
+      setLogoIdeas(data.logo_concepts || "");
+      setBrandTheme(data.brand_theme || "");
 
       // Deep prefill from embedded JSON (service_specific or services_details JSON-string)
-      let embedded: any = null
+      let embedded: any = null;
       if (data.service_specific && typeof data.service_specific === "object") {
-        embedded = data.service_specific
+        embedded = data.service_specific;
       } else if (typeof data.services_details === "string") {
-        const txt = data.services_details.trim()
+        const txt = data.services_details.trim();
         if (txt.startsWith("{") || txt.startsWith("[")) {
-          try { embedded = JSON.parse(txt) } catch {}
+          try {
+            embedded = JSON.parse(txt);
+          } catch {}
         }
       }
       if (embedded) {
-        const pick = (k: string) => (embedded[k] ?? embedded[k.replace(/[A-Z]/g, (m: string) => `_${m.toLowerCase()}`)] ?? "")
-        const setIf = (fn: (v: string) => void, v?: any) => { const s = (v ?? "").toString().trim(); if (s) fn(s) }
+        const pick = (k: string) =>
+          embedded[k] ??
+          embedded[k.replace(/[A-Z]/g, (m: string) => `_${m.toLowerCase()}`)] ??
+          "";
+        const setIf = (fn: (v: string) => void, v?: any) => {
+          const s = (v ?? "").toString().trim();
+          if (s) fn(s);
+        };
         // selected service override if provided
-        setIf(setSelectedService, embedded.selectedService)
-        const overrideSvc = (embedded.selectedService || embedded.selected_service || "").toString()
-        const mapped = svcMap[overrideSvc]
-        if (mapped) setProjectType(mapped)
+        setIf(setSelectedService, embedded.selectedService);
+        const overrideSvc = (
+          embedded.selectedService ||
+          embedded.selected_service ||
+          ""
+        ).toString();
+        const mapped = svcMap[overrideSvc];
+        if (mapped) setProjectType(mapped);
 
-        setIf(setDomainSuggestions, embedded.domainSuggestions)
-        setIf(setWebsiteReferences, embedded.websiteReferences)
-        setIf(setFeaturesRequirements, embedded.featuresRequirements || embedded.features_requirements_svc)
-        setIf(setBudgetTimeline, embedded.budgetTimeline || embedded.budget_timeline_svc)
-        setIf(setDesignAssetsNeeded, embedded.designAssetsNeeded)
-        setIf(setChannelsOfInterest, embedded.channelsOfInterest)
-        setIf(setAiSolutionType, embedded.aiSolutionType)
-        setIf(setPublicPhone, embedded.publicBusinessNumber || embedded.contactBusinessNumber)
+        setIf(setDomainSuggestions, embedded.domainSuggestions);
+        setIf(setWebsiteReferences, embedded.websiteReferences);
+        setIf(
+          setFeaturesRequirements,
+          embedded.featuresRequirements || embedded.features_requirements_svc
+        );
+        setIf(
+          setBudgetTimeline,
+          embedded.budgetTimeline || embedded.budget_timeline_svc
+        );
+        setIf(setDesignAssetsNeeded, embedded.designAssetsNeeded);
+        setIf(setChannelsOfInterest, embedded.channelsOfInterest);
+        setIf(setAiSolutionType, embedded.aiSolutionType);
+        setIf(
+          setPublicPhone,
+          embedded.publicBusinessNumber || embedded.contactBusinessNumber
+        );
         // company number equals business number per requirement
-        const bizNum = embedded.publicBusinessNumber || embedded.contactBusinessNumber
-        if (bizNum && !companyNumber) setCompanyNumber(String(bizNum))
-        setIf(setPublicCompanyEmail, embedded.publicCompanyEmail || embedded.contactCompanyEmail)
-        setIf(setPublicCompanyAddress, embedded.publicCompanyAddress || embedded.contactCompanyAddress)
-        setIf(setAboutCompany, embedded.aboutCompanyDetails)
-        const links = pick("socialLinks"); if (links && links.toLowerCase() !== "no links") setSocialLinks(links)
-        const mlinks = pick("mediaLinks"); if (mlinks && mlinks.toLowerCase() !== "no") setMediaLinks(mlinks)
-        const bank = pick("bankDetails"); if (bank && bank.toLowerCase() !== "no") {
+        const bizNum =
+          embedded.publicBusinessNumber || embedded.contactBusinessNumber;
+        if (bizNum && !companyNumber) setCompanyNumber(String(bizNum));
+        setIf(
+          setPublicCompanyEmail,
+          embedded.publicCompanyEmail || embedded.contactCompanyEmail
+        );
+        setIf(
+          setPublicCompanyAddress,
+          embedded.publicCompanyAddress || embedded.contactCompanyAddress
+        );
+        setIf(setAboutCompany, embedded.aboutCompanyDetails);
+        const links = pick("socialLinks");
+        if (links && links.toLowerCase() !== "no links") setSocialLinks(links);
+        const mlinks = pick("mediaLinks");
+        if (mlinks && mlinks.toLowerCase() !== "no") setMediaLinks(mlinks);
+        const bank = pick("bankDetails");
+        if (bank && bank.toLowerCase() !== "no") {
           // store raw bank details string in description footer
-          if (!description) setDescription(`${(embedded.services_details || embedded.details || "").toString()}\n\nBank: ${bank}`.trim())
+          if (!description)
+            setDescription(
+              `${(
+                embedded.services_details ||
+                embedded.details ||
+                ""
+              ).toString()}\n\nBank: ${bank}`.trim()
+            );
         }
       }
     } catch {
       // best-effort prefill; ignore errors
     }
 
-    setApproveOpen(true)
-  }
+    setApproveOpen(true);
+  };
 
   const confirmApprove = async () => {
-    if (!activeSubmissionId) return
+    if (!activeSubmissionId) return;
     try {
       const created = await approveClientProject(activeSubmissionId, {
         name: projectName || "New Project",
@@ -211,7 +299,10 @@ export function ClientProjectSubmissions() {
         public_company_email: publicCompanyEmail || null,
         public_company_address: publicCompanyAddress || null,
         social_links: socialLinks
-          ? socialLinks.split(",").map((s) => s.trim()).filter(Boolean)
+          ? socialLinks
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
           : null,
         public_contacts: {
           phone: publicPhone || undefined,
@@ -219,7 +310,10 @@ export function ClientProjectSubmissions() {
           address: publicCompanyAddress || undefined,
         },
         media_links: mediaLinks
-          ? mediaLinks.split(",").map((s) => s.trim()).filter(Boolean)
+          ? mediaLinks
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
           : null,
         bank_details: {
           account_name: bankAccountName || undefined,
@@ -235,87 +329,200 @@ export function ClientProjectSubmissions() {
         logo_ideas_concepts: logoIdeas || null,
         color_brand_theme: brandTheme || null,
         design_assets_needed: designAssetsNeeded
-          ? designAssetsNeeded.split(",").map((s) => s.trim()).filter(Boolean)
+          ? designAssetsNeeded
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
           : null,
         target_audience_industry: targetAudienceIndustry || null,
         marketing_goals: marketingGoals || null,
         channels_of_interest: channelsOfInterest
-          ? channelsOfInterest.split(",").map((s) => s.trim()).filter(Boolean)
+          ? channelsOfInterest
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
           : null,
         budget_range_monthly: budgetRangeMonthly || null,
         ai_solution_type: aiSolutionType
-          ? aiSolutionType.split(",").map((s) => s.trim()).filter(Boolean)
+          ? aiSolutionType
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
           : null,
         business_challenge_use_case: businessChallengeUseCase || null,
         data_availability: dataAvailability || null,
         budget_range: budgetRange || null,
         service_description: serviceDescription || null,
         expected_outcome: expectedOutcome || null,
-      })
-      toast({ title: "Submission approved", description: `Project created: ${created.name}` })
-      setApproveOpen(false)
-      setActiveSubmissionId(null)
-      await refresh()
+      });
+      toast({
+        title: "Submission approved",
+        description: `Project created: ${created.name}`,
+      });
+      setApproveOpen(false);
+      setActiveSubmissionId(null);
+      await refresh();
     } catch (e: any) {
-      toast({ title: "Approve failed", description: e?.message || String(e), variant: "destructive" })
+      toast({
+        title: "Approve failed",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   const openReject = (s: ClientProject) => {
-    setActiveSubmissionId(s.id)
-    setRejectionReason("")
-    setRejectOpen(true)
-  }
+    setActiveSubmissionId(s.id);
+    setRejectionReason("");
+    setRejectOpen(true);
+  };
 
   const openDelete = (s: ClientProject) => {
-    setActiveSubmissionId(s.id)
-    setDeleteOpen(true)
-  }
+    setActiveSubmissionId(s.id);
+    setDeleteOpen(true);
+  };
 
   const confirmReject = async () => {
-    if (!activeSubmissionId) return
+    if (!activeSubmissionId) return;
     try {
-      await rejectClientProject(activeSubmissionId, rejectionReason || "Not a fit")
-      toast({ title: "Submission rejected" })
-      setRejectOpen(false)
-      setActiveSubmissionId(null)
-      await refresh()
+      await rejectClientProject(
+        activeSubmissionId,
+        rejectionReason || "Not a fit"
+      );
+      toast({ title: "Submission rejected" });
+      setRejectOpen(false);
+      setActiveSubmissionId(null);
+      await refresh();
     } catch (e: any) {
-      toast({ title: "Reject failed", description: e?.message || String(e), variant: "destructive" })
+      toast({
+        title: "Reject failed",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   const confirmDelete = async () => {
-    if (!activeSubmissionId) return
+    if (!activeSubmissionId) return;
     try {
-      await deleteClientSubmission(activeSubmissionId)
-      toast({ title: "Submission deleted" })
-      setDeleteOpen(false)
-      setActiveSubmissionId(null)
-      await refresh()
+      await deleteClientSubmission(activeSubmissionId);
+      toast({ title: "Submission deleted" });
+      setDeleteOpen(false);
+      setActiveSubmissionId(null);
+      await refresh();
     } catch (e: any) {
-      toast({ title: "Delete failed", description: e?.message || String(e), variant: "destructive" })
+      toast({
+        title: "Delete failed",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   const markInReview = async (s: ClientProject) => {
     try {
-      await setClientSubmissionInReview(s.id)
-      toast({ title: "Marked as In Review" })
-      await refresh()
+      await setClientSubmissionInReview(s.id);
+      toast({ title: "Marked as In Review" });
+      await refresh();
     } catch (e: any) {
-      toast({ title: "Update failed", description: e?.message || String(e), variant: "destructive" })
+      toast({
+        title: "Update failed",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
     }
-  }
+  };
+
+  const openView = async (s: ClientProject) => {
+    setViewingId(s.id);
+    setViewLoading(true);
+    setViewData(null);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("client_project_details")
+        .select("*")
+        .eq("id", s.id)
+        .single();
+      if (error) throw error;
+      setViewData(data);
+    } catch {
+      setViewData(null);
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const openEdit = async (s: ClientProject) => {
+    setActiveSubmissionId(s.id);
+    try {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("client_project_details")
+        .select("*")
+        .eq("id", s.id)
+        .single();
+      if (data) {
+        setCompanyEmail(data.company_email || "");
+        setCompanyAddress(data.company_address || "");
+        setAboutCompany(data.company_details || "");
+        setPublicPhone(data.business_phone || data.contact_phone || "");
+        setPublicCompanyEmail(data.contact_email || "");
+        setPublicCompanyAddress(data.contact_address || "");
+        setSocialLinks((data.social_links || "").toString());
+        setMediaLinks((data.media_links || "").toString());
+        setSelectedService(data.selected_service || "");
+        setDomainSuggestions(data.domain_suggestions || "");
+        setWebsiteReferences(data.website_references || "");
+      }
+    } catch {}
+    setEditOpen(true);
+  };
+
+  const confirmEdit = async () => {
+    if (!activeSubmissionId) return;
+    try {
+      const updates: Record<string, any> = {
+        company_email: companyEmail || null,
+        company_address: companyAddress || null,
+        company_details: aboutCompany || null,
+        contact_phone: publicPhone || null,
+        contact_email: publicCompanyEmail || null,
+        contact_address: publicCompanyAddress || null,
+        social_links: socialLinks || null,
+        media_links: mediaLinks || null,
+        selected_service: selectedService || null,
+        domain_suggestions: domainSuggestions || null,
+        website_references: websiteReferences || null,
+      };
+      await updateClientSubmission(activeSubmissionId, updates);
+      toast({ title: "Submission updated" });
+      setEditOpen(false);
+      setActiveSubmissionId(null);
+      await refresh();
+    } catch (e: any) {
+      toast({
+        title: "Update failed",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Client Project Submissions</h1>
-          <p className="text-muted-foreground">Review incoming client requests and convert into projects</p>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Client Project Submissions
+          </h1>
+          <p className="text-muted-foreground">
+            Review incoming client requests and convert into projects
+          </p>
         </div>
-        <div className="text-sm text-muted-foreground">{pendingCount} pending</div>
+        <div className="text-sm text-muted-foreground">
+          {pendingCount} pending
+        </div>
       </div>
 
       <Card>
@@ -327,8 +534,10 @@ export function ClientProjectSubmissions() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Contact Email</TableHead>
-                <TableHead>Company</TableHead>
+                <TableHead className="whitespace-normal">
+                  Contact Email
+                </TableHead>
+                <TableHead className="whitespace-normal">Company</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead className="w-[120px]"></TableHead>
@@ -337,23 +546,41 @@ export function ClientProjectSubmissions() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">Loading...</TableCell>
+                  <TableCell colSpan={5} className="text-muted-foreground">
+                    Loading...
+                  </TableCell>
                 </TableRow>
               ) : submissions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">No submissions yet</TableCell>
+                  <TableCell colSpan={5} className="text-muted-foreground">
+                    No submissions yet
+                  </TableCell>
                 </TableRow>
               ) : (
                 submissions.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.contact_email || "—"}</TableCell>
-                    <TableCell>{s.company_details || "—"}</TableCell>
+                    <TableCell className="font-medium whitespace-normal break-all max-w-[240px]">
+                      {s.contact_email || "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-normal break-words max-w-[320px]">
+                      {s.company_details || "—"}
+                    </TableCell>
                     <TableCell>
-                      <Badge variant={s.status === "pending" ? "destructive" : s.status === "processing" ? "secondary" : "default"}>
+                      <Badge
+                        variant={
+                          s.status === "pending"
+                            ? "destructive"
+                            : s.status === "processing"
+                            ? "secondary"
+                            : "default"
+                        }
+                      >
                         {s.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>{new Date(s.created_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      {new Date(s.created_at).toLocaleString()}
+                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -362,17 +589,38 @@ export function ClientProjectSubmissions() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {(s.status === "pending" || s.status === "processing") && (
+                          <DropdownMenuItem onClick={() => openView(s)}>
+                            <Eye className="mr-2 h-4 w-4" /> View
+                          </DropdownMenuItem>
+                          {s.status === "pending" && (
+                            <DropdownMenuItem onClick={() => markInReview(s)}>
+                              <CheckCircle2 className="mr-2 h-4 w-4" /> Mark In
+                              Review
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => openEdit(s)}>
+                            <CheckCircle2 className="mr-2 h-4 w-4" /> Edit
+                            Details
+                          </DropdownMenuItem>
+                          {(s.status === "pending" ||
+                            s.status === "processing") && (
                             <DropdownMenuItem onClick={() => openApprove(s)}>
-                              <CheckCircle2 className="mr-2 h-4 w-4" /> Approve → Project
+                              <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
+                              → Project
                             </DropdownMenuItem>
                           )}
                           {s.status !== "rejected" && (
-                            <DropdownMenuItem onClick={() => openReject(s)} className="text-destructive">
+                            <DropdownMenuItem
+                              onClick={() => openReject(s)}
+                              className="text-destructive"
+                            >
                               <XCircle className="mr-2 h-4 w-4" /> Reject
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onClick={() => openDelete(s)} className="text-destructive">
+                          <DropdownMenuItem
+                            onClick={() => openDelete(s)}
+                            className="text-destructive"
+                          >
                             <Trash2 className="mr-2 h-4 w-4" /> Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -386,6 +634,101 @@ export function ClientProjectSubmissions() {
         </CardContent>
       </Card>
 
+      {/* Edit Submission dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Submission</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm">Company email</label>
+                <Input
+                  value={companyEmail}
+                  onChange={(e) => setCompanyEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Company address</label>
+                <Input
+                  value={companyAddress}
+                  onChange={(e) => setCompanyAddress(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm">About company</label>
+              <Textarea
+                value={aboutCompany}
+                onChange={(e) => setAboutCompany(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm">Contact phone</label>
+                <Input
+                  value={publicPhone}
+                  onChange={(e) => setPublicPhone(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Contact email</label>
+                <Input
+                  value={publicCompanyEmail}
+                  onChange={(e) => setPublicCompanyEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Contact address</label>
+                <Input
+                  value={publicCompanyAddress}
+                  onChange={(e) => setPublicCompanyAddress(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm">Selected service</label>
+                <Input
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Social links (CSV)</label>
+                <Input
+                  value={socialLinks}
+                  onChange={(e) => setSocialLinks(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm">Domain suggestions</label>
+                <Textarea
+                  value={domainSuggestions}
+                  onChange={(e) => setDomainSuggestions(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Website references</label>
+                <Textarea
+                  value={websiteReferences}
+                  onChange={(e) => setWebsiteReferences(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmEdit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent>
           <DialogHeader>
@@ -395,11 +738,20 @@ export function ClientProjectSubmissions() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm">Project name</label>
-                <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="e.g., ACME Website Revamp" />
+                <Input
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="e.g., ACME Website Revamp"
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Priority</label>
-                <Select value={projectPriority} onValueChange={(v) => setProjectPriority(v as Project["priority"]) }>
+                <Select
+                  value={projectPriority}
+                  onValueChange={(v) =>
+                    setProjectPriority(v as Project["priority"])
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select priority" />
                   </SelectTrigger>
@@ -412,7 +764,10 @@ export function ClientProjectSubmissions() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Service type</label>
-                <Select value={projectType} onValueChange={(v) => setProjectType(v as ProjectType)}>
+                <Select
+                  value={projectType}
+                  onValueChange={(v) => setProjectType(v as ProjectType)}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -427,7 +782,12 @@ export function ClientProjectSubmissions() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Initial status</label>
-                <Select value={projectStatus} onValueChange={(v) => setProjectStatus(v as Project["status"]) }>
+                <Select
+                  value={projectStatus}
+                  onValueChange={(v) =>
+                    setProjectStatus(v as Project["status"])
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
@@ -442,101 +802,172 @@ export function ClientProjectSubmissions() {
 
             <div className="space-y-2">
               <label className="text-sm">Description</label>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short project overview" />
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Short project overview"
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-sm">Start date</label>
-                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">End date</label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Budget</label>
-                <Input type="number" inputMode="decimal" placeholder="0" value={budget} onChange={(e) => setBudget(e.target.value)} />
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm">Client name</label>
-                <Input value={clientName} onChange={(e) => setClientName(e.target.value)} />
+                <Input
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Company number</label>
-                <Input value={companyNumber} onChange={(e) => setCompanyNumber(e.target.value)} />
+                <Input
+                  value={companyNumber}
+                  onChange={(e) => setCompanyNumber(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Company email</label>
-                <Input value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} />
+                <Input
+                  value={companyEmail}
+                  onChange={(e) => setCompanyEmail(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Company address</label>
-                <Input value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} />
+                <Input
+                  value={companyAddress}
+                  onChange={(e) => setCompanyAddress(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm">About company</label>
-              <Textarea value={aboutCompany} onChange={(e) => setAboutCompany(e.target.value)} />
+              <Textarea
+                value={aboutCompany}
+                onChange={(e) => setAboutCompany(e.target.value)}
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-sm">Public phone</label>
-                <Input value={publicPhone} onChange={(e) => setPublicPhone(e.target.value)} />
+                <Input
+                  value={publicPhone}
+                  onChange={(e) => setPublicPhone(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Public email</label>
-                <Input value={publicCompanyEmail} onChange={(e) => setPublicCompanyEmail(e.target.value)} />
+                <Input
+                  value={publicCompanyEmail}
+                  onChange={(e) => setPublicCompanyEmail(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Public address</label>
-                <Input value={publicCompanyAddress} onChange={(e) => setPublicCompanyAddress(e.target.value)} />
+                <Input
+                  value={publicCompanyAddress}
+                  onChange={(e) => setPublicCompanyAddress(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm">Social links (comma separated)</label>
-                <Input value={socialLinks} onChange={(e) => setSocialLinks(e.target.value)} placeholder="https://... , https://..." />
+                <label className="text-sm">
+                  Social links (comma separated)
+                </label>
+                <Input
+                  value={socialLinks}
+                  onChange={(e) => setSocialLinks(e.target.value)}
+                  placeholder="https://... , https://..."
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Media links (comma separated)</label>
-                <Input value={mediaLinks} onChange={(e) => setMediaLinks(e.target.value)} placeholder="https://... , https://..." />
+                <Input
+                  value={mediaLinks}
+                  onChange={(e) => setMediaLinks(e.target.value)}
+                  placeholder="https://... , https://..."
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <label className="text-sm">Bank account name</label>
-                <Input value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} />
+                <Input
+                  value={bankAccountName}
+                  onChange={(e) => setBankAccountName(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Bank account number</label>
-                <Input value={bankAccountNumber} onChange={(e) => setBankAccountNumber(e.target.value)} />
+                <Input
+                  value={bankAccountNumber}
+                  onChange={(e) => setBankAccountNumber(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">IBAN</label>
-                <Input value={bankIban} onChange={(e) => setBankIban(e.target.value)} />
+                <Input
+                  value={bankIban}
+                  onChange={(e) => setBankIban(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">SWIFT</label>
-                <Input value={bankSwift} onChange={(e) => setBankSwift(e.target.value)} />
+                <Input
+                  value={bankSwift}
+                  onChange={(e) => setBankSwift(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm">Selected service</label>
-                <Input value={selectedService} onChange={(e) => setSelectedService(e.target.value)} placeholder="e.g., web-development" />
+                <Input
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
+                  placeholder="e.g., web-development"
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm">Target audience / industry</label>
-                <Input value={targetAudienceIndustry} onChange={(e) => setTargetAudienceIndustry(e.target.value)} />
+                <Input
+                  value={targetAudienceIndustry}
+                  onChange={(e) => setTargetAudienceIndustry(e.target.value)}
+                />
               </div>
             </div>
 
@@ -544,11 +975,17 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">Domain suggestions</label>
-                  <Textarea value={domainSuggestions} onChange={(e) => setDomainSuggestions(e.target.value)} />
+                  <Textarea
+                    value={domainSuggestions}
+                    onChange={(e) => setDomainSuggestions(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Website references</label>
-                  <Textarea value={websiteReferences} onChange={(e) => setWebsiteReferences(e.target.value)} />
+                  <Textarea
+                    value={websiteReferences}
+                    onChange={(e) => setWebsiteReferences(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -557,11 +994,17 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">Features / requirements</label>
-                  <Textarea value={featuresRequirements} onChange={(e) => setFeaturesRequirements(e.target.value)} />
+                  <Textarea
+                    value={featuresRequirements}
+                    onChange={(e) => setFeaturesRequirements(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Budget / timeline</label>
-                  <Textarea value={budgetTimeline} onChange={(e) => setBudgetTimeline(e.target.value)} />
+                  <Textarea
+                    value={budgetTimeline}
+                    onChange={(e) => setBudgetTimeline(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -570,11 +1013,17 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">Logo ideas / concepts</label>
-                  <Textarea value={logoIdeas} onChange={(e) => setLogoIdeas(e.target.value)} />
+                  <Textarea
+                    value={logoIdeas}
+                    onChange={(e) => setLogoIdeas(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Color / brand theme</label>
-                  <Textarea value={brandTheme} onChange={(e) => setBrandTheme(e.target.value)} />
+                  <Textarea
+                    value={brandTheme}
+                    onChange={(e) => setBrandTheme(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -583,7 +1032,10 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">Design assets needed (CSV)</label>
-                  <Input value={designAssetsNeeded} onChange={(e) => setDesignAssetsNeeded(e.target.value)} />
+                  <Input
+                    value={designAssetsNeeded}
+                    onChange={(e) => setDesignAssetsNeeded(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -591,15 +1043,24 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">Marketing goals</label>
-                  <Textarea value={marketingGoals} onChange={(e) => setMarketingGoals(e.target.value)} />
+                  <Textarea
+                    value={marketingGoals}
+                    onChange={(e) => setMarketingGoals(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Channels of interest (CSV)</label>
-                  <Input value={channelsOfInterest} onChange={(e) => setChannelsOfInterest(e.target.value)} />
+                  <Input
+                    value={channelsOfInterest}
+                    onChange={(e) => setChannelsOfInterest(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm">Monthly budget range</label>
-                  <Input value={budgetRangeMonthly} onChange={(e) => setBudgetRangeMonthly(e.target.value)} />
+                  <Input
+                    value={budgetRangeMonthly}
+                    onChange={(e) => setBudgetRangeMonthly(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -607,19 +1068,35 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">AI solution type (CSV)</label>
-                  <Input value={aiSolutionType} onChange={(e) => setAiSolutionType(e.target.value)} />
+                  <Input
+                    value={aiSolutionType}
+                    onChange={(e) => setAiSolutionType(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm">Business challenge / use case</label>
-                  <Input value={businessChallengeUseCase} onChange={(e) => setBusinessChallengeUseCase(e.target.value)} />
+                  <label className="text-sm">
+                    Business challenge / use case
+                  </label>
+                  <Input
+                    value={businessChallengeUseCase}
+                    onChange={(e) =>
+                      setBusinessChallengeUseCase(e.target.value)
+                    }
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Data availability</label>
-                  <Textarea value={dataAvailability} onChange={(e) => setDataAvailability(e.target.value)} />
+                  <Textarea
+                    value={dataAvailability}
+                    onChange={(e) => setDataAvailability(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Overall budget range</label>
-                  <Input value={budgetRange} onChange={(e) => setBudgetRange(e.target.value)} />
+                  <Input
+                    value={budgetRange}
+                    onChange={(e) => setBudgetRange(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -627,11 +1104,17 @@ export function ClientProjectSubmissions() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm">Service description</label>
-                  <Textarea value={serviceDescription} onChange={(e) => setServiceDescription(e.target.value)} />
+                  <Textarea
+                    value={serviceDescription}
+                    onChange={(e) => setServiceDescription(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">Expected outcome</label>
-                  <Textarea value={expectedOutcome} onChange={(e) => setExpectedOutcome(e.target.value)} />
+                  <Textarea
+                    value={expectedOutcome}
+                    onChange={(e) => setExpectedOutcome(e.target.value)}
+                  />
                 </div>
               </div>
             )}
@@ -639,55 +1122,104 @@ export function ClientProjectSubmissions() {
             {/* Intentionally removed non service-specific duplicates. These fields appear only in the matching service sections above. */}
 
             <div className="space-y-2">
-              <small className="text-muted-foreground">Fields shown are filtered by Service type.</small>
+              <small className="text-muted-foreground">
+                Fields shown are filtered by Service type.
+              </small>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setApproveOpen(false)}>Cancel</Button>
-            <Button onClick={confirmApprove} disabled={!projectName}>Create Project</Button>
+            <Button variant="ghost" onClick={() => setApproveOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmApprove} disabled={!projectName}>
+              Create Project
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* View details dialog */}
-      <Dialog open={!!viewingId} onOpenChange={(open) => { if (!open) { setViewingId(null); setViewData(null) } }}>
+      <Dialog
+        open={!!viewingId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingId(null);
+            setViewData(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Submission details</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-sm">
-            {viewLoading && <div className="text-muted-foreground">Loading...</div>}
-            {!viewLoading && !viewData && <div className="text-muted-foreground">No data</div>}
+            {viewLoading && (
+              <div className="text-muted-foreground">Loading...</div>
+            )}
+            {!viewLoading && !viewData && (
+              <div className="text-muted-foreground">No data</div>
+            )}
             {!viewLoading && viewData && (
               <>
                 {(() => {
-                  const svc = (viewData.selected_service || "").toString()
-                  let embedded: any = null
-                  if (viewData.service_specific && typeof viewData.service_specific === "object") embedded = viewData.service_specific
+                  const svc = (viewData.selected_service || "").toString();
+                  let embedded: any = null;
+                  if (
+                    viewData.service_specific &&
+                    typeof viewData.service_specific === "object"
+                  )
+                    embedded = viewData.service_specific;
                   else if (typeof viewData.services_details === "string") {
                     const t = viewData.services_details.trim();
-                    if (t.startsWith("{") || t.startsWith("[")) { try { embedded = JSON.parse(t) } catch {} }
+                    if (t.startsWith("{") || t.startsWith("[")) {
+                      try {
+                        embedded = JSON.parse(t);
+                      } catch {}
+                    }
                   }
                   const pick = (...keys: string[]) => {
                     for (const k of keys) {
-                      const v = embedded?.[k] ?? viewData?.[k]
-                      if (v !== undefined && v !== null && String(v).trim() !== "") return v
+                      const v = embedded?.[k] ?? viewData?.[k];
+                      if (
+                        v !== undefined &&
+                        v !== null &&
+                        String(v).trim() !== ""
+                      )
+                        return v;
                     }
-                    return null
-                  }
-                  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+                    return null;
+                  };
+                  const Section = ({
+                    title,
+                    children,
+                  }: {
+                    title: string;
+                    children: React.ReactNode;
+                  }) => (
                     <div className="space-y-2">
                       <div className="font-medium text-foreground">{title}</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{children}</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {children}
+                      </div>
                     </div>
-                  )
-                  const Row = ({ label, value }: { label: string; value: any }) =>
+                  );
+                  const Row = ({
+                    label,
+                    value,
+                  }: {
+                    label: string;
+                    value: any;
+                  }) =>
                     value ? (
                       <div>
                         <div className="text-foreground/90">{label}</div>
-                        <div className="text-muted-foreground whitespace-pre-wrap">{Array.isArray(value) ? value.join(", ") : String(value)}</div>
+                        <div className="text-muted-foreground whitespace-pre-wrap">
+                          {Array.isArray(value)
+                            ? value.join(", ")
+                            : String(value)}
+                        </div>
                       </div>
-                    ) : null
+                    ) : null;
 
                   return (
                     <>
@@ -699,55 +1231,149 @@ export function ClientProjectSubmissions() {
                       </Section>
 
                       <Section title="Contact">
-                        <Row label="Contact email" value={pick("contactEmail", "contact_email")} />
-                        <Row label="Contact phone" value={pick("contactBusinessNumber", "contact_phone", "business_phone")} />
-                        <Row label="Contact address" value={pick("contactCompanyAddress", "contact_address")} />
-                        <Row label="Company email" value={pick("companyEmail", "company_email")} />
-                        <Row label="Company address" value={pick("companyAddress", "company_address")} />
+                        <Row
+                          label="Contact email"
+                          value={pick("contactEmail", "contact_email")}
+                        />
+                        <Row
+                          label="Contact phone"
+                          value={pick(
+                            "contactBusinessNumber",
+                            "contact_phone",
+                            "business_phone"
+                          )}
+                        />
+                        <Row
+                          label="Contact address"
+                          value={pick(
+                            "contactCompanyAddress",
+                            "contact_address"
+                          )}
+                        />
+                        <Row
+                          label="Company email"
+                          value={pick("companyEmail", "company_email")}
+                        />
+                        <Row
+                          label="Company address"
+                          value={pick("companyAddress", "company_address")}
+                        />
                       </Section>
 
                       <Section title="Company">
-                        <Row label="Company details" value={pick("aboutCompanyDetails", "company_details")} />
-                        <Row label="Social links" value={pick("socialLinks", "social_links")} />
-                        <Row label="Media links" value={pick("mediaLinks", "media_links")} />
+                        <Row
+                          label="Company details"
+                          value={pick("aboutCompanyDetails", "company_details")}
+                        />
+                        <Row
+                          label="Social links"
+                          value={pick("socialLinks", "social_links")}
+                        />
+                        <Row
+                          label="Media links"
+                          value={pick("mediaLinks", "media_links")}
+                        />
                       </Section>
 
                       <Section title="Service">
-                        <Row label="Services details" value={viewData.services_details} />
+                        <Row
+                          label="Services details"
+                          value={viewData.services_details}
+                        />
                         {svc === "web-development" && (
                           <>
-                            <Row label="Domain suggestions" value={pick("domainSuggestions", "domain_suggestions")} />
-                            <Row label="Website references" value={pick("websiteReferences", "website_references")} />
-                            <Row label="Features / requirements" value={pick("featuresRequirements", "features_requirements_svc")} />
-                            <Row label="Budget / timeline" value={pick("budgetTimeline", "budget_timeline_svc")} />
+                            <Row
+                              label="Domain suggestions"
+                              value={pick(
+                                "domainSuggestions",
+                                "domain_suggestions"
+                              )}
+                            />
+                            <Row
+                              label="Website references"
+                              value={pick(
+                                "websiteReferences",
+                                "website_references"
+                              )}
+                            />
+                            <Row
+                              label="Features / requirements"
+                              value={pick(
+                                "featuresRequirements",
+                                "features_requirements_svc"
+                              )}
+                            />
+                            <Row
+                              label="Budget / timeline"
+                              value={pick(
+                                "budgetTimeline",
+                                "budget_timeline_svc"
+                              )}
+                            />
                           </>
                         )}
                         {svc === "branding-design" && (
                           <>
-                            <Row label="Logo ideas / concepts" value={pick("logoIdeas", "logo_concepts")} />
-                            <Row label="Color / brand theme" value={pick("brandTheme", "brand_theme")} />
-                            <Row label="Design assets needed" value={pick("designAssetsNeeded")} />
+                            <Row
+                              label="Logo ideas / concepts"
+                              value={pick("logoIdeas", "logo_concepts")}
+                            />
+                            <Row
+                              label="Color / brand theme"
+                              value={pick("brandTheme", "brand_theme")}
+                            />
+                            <Row
+                              label="Design assets needed"
+                              value={pick("designAssetsNeeded")}
+                            />
                           </>
                         )}
                         {svc === "digital-marketing" && (
                           <>
-                            <Row label="Marketing goals" value={pick("marketingGoals")} />
-                            <Row label="Channels of interest" value={pick("channelsOfInterest")} />
-                            <Row label="Monthly budget range" value={pick("budgetRangeMonthly")} />
+                            <Row
+                              label="Marketing goals"
+                              value={pick("marketingGoals")}
+                            />
+                            <Row
+                              label="Channels of interest"
+                              value={pick("channelsOfInterest")}
+                            />
+                            <Row
+                              label="Monthly budget range"
+                              value={pick("budgetRangeMonthly")}
+                            />
                           </>
                         )}
                         {svc === "ai-solutions" && (
                           <>
-                            <Row label="AI solution type" value={pick("aiSolutionType")} />
-                            <Row label="Business challenge / use case" value={pick("businessChallengeUseCase")} />
-                            <Row label="Data availability" value={pick("dataAvailability")} />
-                            <Row label="Overall budget range" value={pick("budgetRange")} />
+                            <Row
+                              label="AI solution type"
+                              value={pick("aiSolutionType")}
+                            />
+                            <Row
+                              label="Business challenge / use case"
+                              value={pick("businessChallengeUseCase")}
+                            />
+                            <Row
+                              label="Data availability"
+                              value={pick("dataAvailability")}
+                            />
+                            <Row
+                              label="Overall budget range"
+                              value={pick("budgetRange")}
+                            />
                           </>
                         )}
                         {svc === "other" && (
                           <>
-                            <Row label="Service description" value={pick("serviceDescription")} />
-                            <Row label="Expected outcome" value={pick("expectedOutcome")} />
+                            <Row
+                              label="Service description"
+                              value={pick("serviceDescription")}
+                            />
+                            <Row
+                              label="Expected outcome"
+                              value={pick("expectedOutcome")}
+                            />
                           </>
                         )}
                       </Section>
@@ -758,29 +1384,52 @@ export function ClientProjectSubmissions() {
                       </Section>
 
                       <Section title="Billing">
-                        <Row label="Bank details" value={pick("bankDetails", "bank_details")} />
+                        <Row
+                          label="Bank details"
+                          value={pick("bankDetails", "bank_details")}
+                        />
                       </Section>
                     </>
-                  )
+                  );
                 })()}
               </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setViewingId(null); setViewData(null) }}>Close</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setViewingId(null);
+                setViewData(null);
+              }}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* View details dialog */}
-      <Dialog open={!!viewingId} onOpenChange={(open) => { if (!open) { setViewingId(null); setViewData(null) } }}>
+      <Dialog
+        open={!!viewingId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingId(null);
+            setViewData(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Submission details</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-            {viewLoading && <div className="text-sm text-muted-foreground">Loading...</div>}
-            {!viewLoading && !viewData && <div className="text-sm text-muted-foreground">No data</div>}
+            {viewLoading && (
+              <div className="text-sm text-muted-foreground">Loading...</div>
+            )}
+            {!viewLoading && !viewData && (
+              <div className="text-sm text-muted-foreground">No data</div>
+            )}
             {!viewLoading && viewData && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div>
@@ -789,59 +1438,87 @@ export function ClientProjectSubmissions() {
                 </div>
                 <div>
                   <div className="font-medium">Selected service</div>
-                  <div className="text-muted-foreground">{viewData.selected_service}</div>
+                  <div className="text-muted-foreground">
+                    {viewData.selected_service}
+                  </div>
                 </div>
                 <div>
                   <div className="font-medium">Contact email</div>
-                  <div className="text-muted-foreground">{viewData.contact_email || "—"}</div>
+                  <div className="text-muted-foreground">
+                    {viewData.contact_email || "—"}
+                  </div>
                 </div>
                 <div>
                   <div className="font-medium">Contact phone</div>
-                  <div className="text-muted-foreground">{viewData.contact_phone || viewData.business_phone || "—"}</div>
+                  <div className="text-muted-foreground">
+                    {viewData.contact_phone || viewData.business_phone || "—"}
+                  </div>
                 </div>
                 <div className="md:col-span-2">
                   <div className="font-medium">Company details</div>
-                  <div className="text-muted-foreground whitespace-pre-wrap">{viewData.company_details || "—"}</div>
+                  <div className="text-muted-foreground whitespace-pre-wrap">
+                    {viewData.company_details || "—"}
+                  </div>
                 </div>
                 <div className="md:col-span-2">
                   <div className="font-medium">Services details</div>
-                  <div className="text-muted-foreground whitespace-pre-wrap">{viewData.services_details || "—"}</div>
+                  <div className="text-muted-foreground whitespace-pre-wrap">
+                    {viewData.services_details || "—"}
+                  </div>
                 </div>
                 {viewData.domain_suggestions && (
                   <div className="md:col-span-2">
                     <div className="font-medium">Domain suggestions</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">{viewData.domain_suggestions}</div>
+                    <div className="text-muted-foreground whitespace-pre-wrap">
+                      {viewData.domain_suggestions}
+                    </div>
                   </div>
                 )}
                 {viewData.website_references && (
                   <div className="md:col-span-2">
                     <div className="font-medium">Website references</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">{viewData.website_references}</div>
+                    <div className="text-muted-foreground whitespace-pre-wrap">
+                      {viewData.website_references}
+                    </div>
                   </div>
                 )}
                 {viewData.logo_concepts && (
                   <div className="md:col-span-2">
                     <div className="font-medium">Logo ideas / concepts</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">{viewData.logo_concepts}</div>
+                    <div className="text-muted-foreground whitespace-pre-wrap">
+                      {viewData.logo_concepts}
+                    </div>
                   </div>
                 )}
                 {viewData.brand_theme && (
                   <div className="md:col-span-2">
                     <div className="font-medium">Color / brand theme</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">{viewData.brand_theme}</div>
+                    <div className="text-muted-foreground whitespace-pre-wrap">
+                      {viewData.brand_theme}
+                    </div>
                   </div>
                 )}
                 {viewData.marketing_goals && (
                   <div className="md:col-span-2">
                     <div className="font-medium">Marketing goals</div>
-                    <div className="text-muted-foreground whitespace-pre-wrap">{viewData.marketing_goals}</div>
+                    <div className="text-muted-foreground whitespace-pre-wrap">
+                      {viewData.marketing_goals}
+                    </div>
                   </div>
                 )}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setViewingId(null); setViewData(null) }}>Close</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setViewingId(null);
+                setViewData(null);
+              }}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -852,11 +1529,19 @@ export function ClientProjectSubmissions() {
           </DialogHeader>
           <div className="space-y-2 py-2">
             <label className="text-sm">Reason</label>
-            <Textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="Provide a short reason" />
+            <Textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Provide a short reason"
+            />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmReject}>Reject</Button>
+            <Button variant="ghost" onClick={() => setRejectOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmReject}>
+              Reject
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -867,16 +1552,21 @@ export function ClientProjectSubmissions() {
             <DialogTitle>Delete Submission</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            <p className="text-sm text-muted-foreground">This permanently removes the client project submission. This action cannot be undone.</p>
+            <p className="text-sm text-muted-foreground">
+              This permanently removes the client project submission. This
+              action cannot be undone.
+            </p>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
-
-
