@@ -1,12 +1,18 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -16,43 +22,88 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogClose,
-} from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Search, Eye, Edit, Users, Briefcase, Calendar, MapPin, FileText, ExternalLink, Link as LinkIcon, Loader2 } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useToast } from "@/components/ui/use-toast"
-import { Dialog as UIDialog, DialogContent as UIDialogContent, DialogHeader as UIDialogHeader, DialogTitle as UIDialogTitle, DialogDescription as UIDialogDescription } from "@/components/ui/dialog"
-import { getJobs, getJobApplications, createJob, updateJob, updateJobApplication, deleteJob, deleteJobApplication, type Job, type JobApplication as DBJobApplication } from "@/lib/auth"
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Plus,
+  Search,
+  Eye,
+  Edit,
+  Users,
+  Briefcase,
+  Calendar,
+  MapPin,
+  FileText,
+  ExternalLink,
+  Link as LinkIcon,
+  Loader2,
+} from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  Dialog as UIDialog,
+  DialogContent as UIDialogContent,
+  DialogHeader as UIDialogHeader,
+  DialogTitle as UIDialogTitle,
+  DialogDescription as UIDialogDescription,
+} from "@/components/ui/dialog";
+import {
+  getJobs,
+  getJobApplications,
+  createJob,
+  updateJob,
+  updateJobApplication,
+  deleteJob,
+  deleteJobApplication,
+  type Job,
+  type JobApplication as DBJobApplication,
+} from "@/lib/auth";
 
 // Types are sourced from lib/auth
 
 export function JobManagement() {
-  const { toast } = useToast()
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [applications, setApplications] = useState<DBJobApplication[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [applicationDialogOpen, setApplicationDialogOpen] = useState(false)
-  const [selectedApplication, setSelectedApplication] = useState<DBJobApplication | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
-  const [deletingAppId, setDeletingAppId] = useState<string | null>(null)
+  const { toast } = useToast();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [applications, setApplications] = useState<DBJobApplication[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [applicationDialogOpen, setApplicationDialogOpen] = useState(false);
+  const [selectedApplication, setSelectedApplication] =
+    useState<DBJobApplication | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [deletingAppId, setDeletingAppId] = useState<string | null>(null);
 
   const formatSalaryText = (input?: string | null) => {
-    if (!input) return "N/A"
+    if (!input) return "N/A";
     const format = (n: string) =>
-      new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
-        Number(n.replace(/,/g, "")) || 0,
-      )
-    const replaced = input.replace(/\d+(?:[.,]\d+)?/g, (m) => format(m))
-    return replaced
-  }
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      }).format(Number(n.replace(/,/g, "")) || 0);
+    const replaced = input.replace(/\d+(?:[.,]\d+)?/g, (m) => format(m));
+    return replaced;
+  };
   const [newJob, setNewJob] = useState({
     title: "",
     department: "",
@@ -63,38 +114,53 @@ export function JobManagement() {
     requirements: "",
     skills: "",
     is_active: true,
-  })
+  });
 
   // Load from Supabase
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       try {
-        const [jobsRes, appsRes] = await Promise.all([getJobs(), getJobApplications()])
-        setJobs(jobsRes)
-        setApplications(appsRes)
+        const [jobsRes, appsRes] = await Promise.all([
+          getJobs(),
+          getJobApplications(),
+        ]);
+        setJobs(jobsRes);
+        setApplications(appsRes);
       } catch (e: any) {
-        toast({ title: "Failed to load data", description: e?.message || "Try again later.", variant: "destructive" as any })
+        toast({
+          title: "Failed to load data",
+          description: e?.message || "Try again later.",
+          variant: "destructive" as any,
+        });
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    })()
-  }, [])
+    })();
+  }, []);
 
   const handleCreateJob = async () => {
     if (!newJob.title.trim()) {
-      toast({ title: "Title is required", description: "Please add a job title.", variant: "destructive" as any })
-      return
+      toast({
+        title: "Title is required",
+        description: "Please add a job title.",
+        variant: "destructive" as any,
+      });
+      return;
     }
     if (!newJob.employment_type) {
-      toast({ title: "Employment type required", description: "Please select a type.", variant: "destructive" as any })
-      return
+      toast({
+        title: "Employment type required",
+        description: "Please select a type.",
+        variant: "destructive" as any,
+      });
+      return;
     }
-    setCreating(true)
+    setCreating(true);
     const parseList = (s: string) =>
       s
         .split(/\n|,/)
         .map((x) => x.trim())
-        .filter(Boolean)
+        .filter(Boolean);
 
     const payload = {
       title: newJob.title,
@@ -106,72 +172,81 @@ export function JobManagement() {
       requirements: parseList(newJob.requirements),
       skills: parseList(newJob.skills),
       is_active: newJob.is_active,
-    } as Omit<Job, "id" | "created_at">
+    } as Omit<Job, "id" | "created_at">;
 
-    let created: Job
     try {
-      created = await createJob(payload)
-      setJobs([created, ...jobs])
-      toast({ title: "Job created", description: `${created.title} is now live.` })
+      const created = await createJob(payload);
+      setJobs([created, ...jobs]);
+      toast({
+        title: "Job created",
+        description: `${created.title} is now live.`,
+      });
+      setNewJob({
+        title: "",
+        department: "",
+        location: "",
+        employment_type: "full-time",
+        experience: "",
+        description: "",
+        requirements: "",
+        skills: "",
+        is_active: true,
+      });
+      setIsCreateDialogOpen(false);
     } catch (e: any) {
-      toast({ title: "Failed to create job", description: e?.message || "Try again later.", variant: "destructive" as any })
-      return
+      toast({
+        title: "Failed to create job",
+        description: e?.message || "Try again later.",
+        variant: "destructive" as any,
+      });
+    } finally {
+      setCreating(false);
     }
-    setNewJob({
-      title: "",
-      department: "",
-      location: "",
-      employment_type: "full-time",
-      experience: "",
-      description: "",
-      requirements: "",
-      skills: "",
-      is_active: true,
-    })
-    setIsCreateDialogOpen(false)
-    setCreating(false)
-  }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "active":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
       case "draft":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
       case "closed":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
       case "new":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
       case "under review":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300"
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300";
       case "interview scheduled":
-        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300";
       case "hired":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
       case "rejected":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
       default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300"
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
     }
-  }
+  };
 
-  const filteredJobs = jobs.filter((job) =>
-    (job.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ((job.department || "").toLowerCase().includes(searchTerm.toLowerCase())),
-  )
+  const filteredJobs = jobs.filter(
+    (job) =>
+      (job.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (job.department || "").toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const filteredApplications = applications.filter(
     (app) =>
       (app.full_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (app.position || "").toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      (app.position || "").toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Career Hub</h1>
-          <p className="text-muted-foreground">Manage job openings and track applications</p>
+          <p className="text-muted-foreground">
+            Manage job openings and track applications
+          </p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
@@ -183,7 +258,9 @@ export function JobManagement() {
           <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Job Opening</DialogTitle>
-              <DialogDescription>Fill in the details to create a new job posting</DialogDescription>
+              <DialogDescription>
+                Fill in the details to create a new job posting
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -192,7 +269,9 @@ export function JobManagement() {
                   <Input
                     id="title"
                     value={newJob.title}
-                    onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
+                    onChange={(e) =>
+                      setNewJob({ ...newJob, title: e.target.value })
+                    }
                     placeholder="e.g. Senior Developer"
                   />
                 </div>
@@ -201,7 +280,9 @@ export function JobManagement() {
                   <Input
                     id="department"
                     value={newJob.department}
-                    onChange={(e) => setNewJob({ ...newJob, department: e.target.value })}
+                    onChange={(e) =>
+                      setNewJob({ ...newJob, department: e.target.value })
+                    }
                     placeholder="e.g. Engineering"
                   />
                 </div>
@@ -212,13 +293,20 @@ export function JobManagement() {
                   <Input
                     id="location"
                     value={newJob.location}
-                    onChange={(e) => setNewJob({ ...newJob, location: e.target.value })}
+                    onChange={(e) =>
+                      setNewJob({ ...newJob, location: e.target.value })
+                    }
                     placeholder="e.g. Remote, New York"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="type">Employment Type</Label>
-                  <Select value={newJob.employment_type} onValueChange={(value) => setNewJob({ ...newJob, employment_type: value })}>
+                  <Select
+                    value={newJob.employment_type}
+                    onValueChange={(value) =>
+                      setNewJob({ ...newJob, employment_type: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -236,7 +324,9 @@ export function JobManagement() {
                 <Input
                   id="experience"
                   value={newJob.experience}
-                  onChange={(e) => setNewJob({ ...newJob, experience: e.target.value })}
+                  onChange={(e) =>
+                    setNewJob({ ...newJob, experience: e.target.value })
+                  }
                   placeholder="e.g. 2-4 years"
                 />
               </div>
@@ -245,43 +335,64 @@ export function JobManagement() {
                 <Textarea
                   id="description"
                   value={newJob.description}
-                  onChange={(e) => setNewJob({ ...newJob, description: e.target.value })}
+                  onChange={(e) =>
+                    setNewJob({ ...newJob, description: e.target.value })
+                  }
                   placeholder="Describe the role and responsibilities..."
                   rows={3}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="requirements">Requirements (comma or newline separated)</Label>
+                <Label htmlFor="requirements">
+                  Requirements (comma or newline separated)
+                </Label>
                 <Textarea
                   id="requirements"
                   value={newJob.requirements}
-                  onChange={(e) => setNewJob({ ...newJob, requirements: e.target.value })}
+                  onChange={(e) =>
+                    setNewJob({ ...newJob, requirements: e.target.value })
+                  }
                   placeholder="e.g. React, TypeScript, UX..."
                   rows={3}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="skills">Skills (comma or newline separated)</Label>
+                <Label htmlFor="skills">
+                  Skills (comma or newline separated)
+                </Label>
                 <Textarea
                   id="skills"
                   value={newJob.skills}
-                  onChange={(e) => setNewJob({ ...newJob, skills: e.target.value })}
+                  onChange={(e) =>
+                    setNewJob({ ...newJob, skills: e.target.value })
+                  }
                   placeholder="e.g. Figma, Research, Prototyping"
                   rows={2}
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Checkbox id="active" checked={newJob.is_active} onCheckedChange={(v) => setNewJob({ ...newJob, is_active: Boolean(v) })} />
+                <Checkbox
+                  id="active"
+                  checked={newJob.is_active}
+                  onCheckedChange={(v) =>
+                    setNewJob({ ...newJob, is_active: Boolean(v) })
+                  }
+                />
                 <Label htmlFor="active">Active</Label>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
                 Cancel
               </Button>
               <Button onClick={handleCreateJob} disabled={creating}>
                 {creating ? (
-                  <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Creating...</span>
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Creating...
+                  </span>
                 ) : (
                   "Create Job Opening"
                 )}
@@ -343,137 +454,204 @@ export function JobManagement() {
                 </CardContent>
               </Card>
             )}
-            {!loading && filteredJobs.map((job) => (
-              <Card key={job.id} className="hover:shadow-md transition-shadow h-full flex flex-col">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{job.title}</CardTitle>
-                      <CardDescription className="flex items-center gap-1 mt-1">
-                        <MapPin className="h-3 w-3" />
-                        {job.location}
-                      </CardDescription>
-                    </div>
-                    <Badge className={getStatusColor(job.is_active ? "active" : "closed")}>{job.is_active ? "Active" : "Closed"}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Department</span>
-                      <span className="text-right">{job.department || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Type</span>
-                      <span className="text-right capitalize">{job.employment_type || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Experience</span>
-                      <span className="text-right">{job.experience || "—"}</span>
-                    </div>
-
-                    {(job.skills && job.skills.length > 0) && (
-                      <div className="text-sm">
-                        <div className="text-muted-foreground mb-1">Skills</div>
-                        <div className="flex flex-wrap gap-1">
-                          {job.skills.slice(0, 8).map((s, i) => (
-                            <Badge key={`${job.id}-skill-${i}`} variant="secondary" className="capitalize">
-                              {s}
-                            </Badge>
-                          ))}
-                        </div>
+            {!loading &&
+              filteredJobs.map((job) => (
+                <Card
+                  key={job.id}
+                  className="hover:shadow-md transition-shadow h-full flex flex-col"
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg">{job.title}</CardTitle>
+                        <CardDescription className="flex items-center gap-1 mt-1">
+                          <MapPin className="h-3 w-3" />
+                          {job.location}
+                        </CardDescription>
                       </div>
-                    )}
-
-                    {(job.requirements && job.requirements.length > 0) && (
-                      <div className="text-sm">
-                        <div className="text-muted-foreground mb-1">Requirements</div>
-                        <ul className="list-disc pl-5 space-y-1 text-muted-foreground/90 max-h-24 overflow-hidden">
-                          {job.requirements.slice(0, 4).map((r, i) => (
-                            <li key={`${job.id}-req-${i}`}>{r}</li>
-                          ))}
-                        </ul>
+                      <Badge
+                        className={getStatusColor(
+                          job.is_active ? "active" : "closed"
+                        )}
+                      >
+                        {job.is_active ? "Active" : "Closed"}
+                      </Badge>
                     </div>
-                    )}
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Department
+                        </span>
+                        <span className="text-right">
+                          {job.department || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="text-right capitalize">
+                          {job.employment_type || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Experience
+                        </span>
+                        <span className="text-right">
+                          {job.experience || "—"}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Posted</span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(job.created_at).toLocaleDateString()}
-                      </span>
+                      {job.skills && job.skills.length > 0 && (
+                        <div className="text-sm">
+                          <div className="text-muted-foreground mb-1">
+                            Skills
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {job.skills.slice(0, 8).map((s, i) => (
+                              <Badge
+                                key={`${job.id}-skill-${i}`}
+                                variant="secondary"
+                                className="capitalize"
+                              >
+                                {s}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {job.requirements && job.requirements.length > 0 && (
+                        <div className="text-sm">
+                          <div className="text-muted-foreground mb-1">
+                            Requirements
+                          </div>
+                          <ul className="list-disc pl-5 space-y-1 text-muted-foreground/90 max-h-24 overflow-hidden">
+                            {job.requirements.slice(0, 4).map((r, i) => (
+                              <li key={`${job.id}-req-${i}`}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Posted</span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(job.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2 mt-auto pt-2 border-t">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="flex-1 bg-transparent">
-                      <Eye className="h-3 w-3 mr-1" />
-                      View
-                    </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle>{job.title}</DialogTitle>
-                          <DialogDescription>Job details</DialogDescription>
-                        </DialogHeader>
-                        <JobDetails job={job} />
-                      </DialogContent>
-                    </Dialog>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="flex-1 bg-transparent">
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle>Edit Job</DialogTitle>
-                          <DialogDescription>Update job details and save changes</DialogDescription>
-                        </DialogHeader>
-                        <EditJobForm job={job} onSaved={(updated) => {
-                          setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)))
-                        }} />
-                      </DialogContent>
-                    </Dialog>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="destructive" size="sm" className="flex-1">Delete</Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Delete job?</DialogTitle>
-                          <DialogDescription>This action cannot be undone.</DialogDescription>
-                        </DialogHeader>
-                        <div className="flex justify-end gap-2">
-                          <DialogClose asChild>
-                            <Button variant="outline">Cancel</Button>
-                          </DialogClose>
+                    <div className="flex gap-2 mt-auto pt-2 border-t">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            View
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>{job.title}</DialogTitle>
+                            <DialogDescription>Job details</DialogDescription>
+                          </DialogHeader>
+                          <JobDetails job={job} />
+                        </DialogContent>
+                      </Dialog>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                          >
+                            <Edit className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Edit Job</DialogTitle>
+                            <DialogDescription>
+                              Update job details and save changes
+                            </DialogDescription>
+                          </DialogHeader>
+                          <EditJobForm
+                            job={job}
+                            onSaved={(updated) => {
+                              setJobs((prev) =>
+                                prev.map((j) =>
+                                  j.id === updated.id ? updated : j
+                                )
+                              );
+                            }}
+                          />
+                        </DialogContent>
+                      </Dialog>
+                      <Dialog>
+                        <DialogTrigger asChild>
                           <Button
                             variant="destructive"
-                            onClick={async () => {
-                              try {
-                                setDeletingJobId(job.id)
-                                await deleteJob(job.id)
-                                setJobs((prev) => prev.filter((j) => j.id !== job.id))
-                                toast({ title: "Job deleted" })
-                              } catch (e: any) {
-                                toast({ title: "Failed to delete job", description: e?.message || "Try again later.", variant: "destructive" as any })
-                              } finally {
-                                setDeletingJobId(null)
-                              }
-                            }}
+                            size="sm"
+                            className="flex-1"
                           >
-                            {deletingJobId === job.id ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Deleting...</span> : "Delete"}
+                            Delete
                           </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Delete job?</DialogTitle>
+                            <DialogDescription>
+                              This action cannot be undone.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="flex justify-end gap-2">
+                            <DialogClose asChild>
+                              <Button variant="outline">Cancel</Button>
+                            </DialogClose>
+                            <Button
+                              variant="destructive"
+                              onClick={async () => {
+                                try {
+                                  setDeletingJobId(job.id);
+                                  await deleteJob(job.id);
+                                  setJobs((prev) =>
+                                    prev.filter((j) => j.id !== job.id)
+                                  );
+                                  toast({ title: "Job deleted" });
+                                } catch (e: any) {
+                                  toast({
+                                    title: "Failed to delete job",
+                                    description:
+                                      e?.message || "Try again later.",
+                                    variant: "destructive" as any,
+                                  });
+                                } finally {
+                                  setDeletingJobId(null);
+                                }
+                              }}
+                            >
+                              {deletingJobId === job.id ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                                  Deleting...
+                                </span>
+                              ) : (
+                                "Delete"
+                              )}
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
           </div>
         </TabsContent>
 
@@ -517,244 +695,388 @@ export function JobManagement() {
                 )}
                 {!loading && filteredApplications.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    <TableCell
+                      colSpan={5}
+                      className="text-center text-muted-foreground py-8"
+                    >
                       No applications found.
                     </TableCell>
                   </TableRow>
                 )}
-                {!loading && filteredApplications.map((application) => (
-                  <TableRow key={application.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {application.full_name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                      <div>
-                          <div className="font-medium leading-tight">{application.full_name}</div>
-                          <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:underline"
-                            onClick={() => navigator.clipboard.writeText(application.email || "")}
-                            title="Copy email"
-                          >
-                            {application.email}
-                          </button>
+                {!loading &&
+                  filteredApplications.map((application) => (
+                    <TableRow key={application.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback>
+                              {application.full_name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .slice(0, 2)
+                                .toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="font-medium leading-tight">
+                              {application.full_name}
+                            </div>
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:underline"
+                              onClick={() =>
+                                navigator.clipboard.writeText(
+                                  application.email || ""
+                                )
+                              }
+                              title="Copy email"
+                            >
+                              {application.email}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{application.position}</TableCell>
-                    <TableCell>{application.location || "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap">{new Date(application.created_at).toLocaleDateString()}</TableCell>
-                    <TableCell className="capitalize">{application.experience_level}</TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(application.status)}>{application.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex gap-2 justify-end">
-                        {application.resume_url && (
-                          <Button asChild variant="outline" size="sm" title="Open resume">
-                            <a href={application.resume_url || "#"} target="_blank" rel="noreferrer">
-                              <FileText className="h-3 w-3" />
-                            </a>
+                      </TableCell>
+                      <TableCell>{application.position}</TableCell>
+                      <TableCell>{application.location || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {new Date(application.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="capitalize">
+                        {application.experience_level}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(application.status)}>
+                          {application.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-2 justify-end">
+                          {application.resume_url && (
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="sm"
+                              title="Open resume"
+                            >
+                              <a
+                                href={application.resume_url || "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <FileText className="h-3 w-3" />
+                              </a>
+                            </Button>
+                          )}
+                          {application.linkedin_url && (
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="sm"
+                              title="Open LinkedIn"
+                            >
+                              <a
+                                href={application.linkedin_url || "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </Button>
+                          )}
+                          {application.portfolio_url && (
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="sm"
+                              title="Open portfolio"
+                            >
+                              <a
+                                href={application.portfolio_url || "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <LinkIcon className="h-3 w-3" />
+                              </a>
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedApplication(application);
+                              setApplicationDialogOpen(true);
+                            }}
+                            title="View details"
+                          >
+                            <Eye className="h-3 w-3" />
                           </Button>
-                        )}
-                        {application.linkedin_url && (
-                          <Button asChild variant="outline" size="sm" title="Open LinkedIn">
-                            <a href={application.linkedin_url || "#"} target="_blank" rel="noreferrer">
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </Button>
-                        )}
-                        {application.portfolio_url && (
-                          <Button asChild variant="outline" size="sm" title="Open portfolio">
-                            <a href={application.portfolio_url || "#"} target="_blank" rel="noreferrer">
-                              <LinkIcon className="h-3 w-3" />
-                            </a>
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedApplication(application)
-                            setApplicationDialogOpen(true)
-                          }}
-                          title="View details"
-                        >
-                          <Eye className="h-3 w-3" />
-                        </Button>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" title="Update status">
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Update Application Status</DialogTitle>
-                              <DialogDescription>Change the status of this application</DialogDescription>
-                            </DialogHeader>
-                            <UpdateApplicationStatusForm
-                              application={application}
-                              onSaved={(updated) => {
-                                setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
-                              }}
-                            />
-                          </DialogContent>
-                        </Dialog>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="destructive" size="sm" title="Delete application">Delete</Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Delete application?</DialogTitle>
-                              <DialogDescription>This action cannot be undone.</DialogDescription>
-                            </DialogHeader>
-                            <div className="flex justify-end gap-2">
-                              <DialogClose asChild>
-                                <Button variant="outline">Cancel</Button>
-                              </DialogClose>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                title="Update status"
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>
+                                  Update Application Status
+                                </DialogTitle>
+                                <DialogDescription>
+                                  Change the status of this application
+                                </DialogDescription>
+                              </DialogHeader>
+                              <UpdateApplicationStatusForm
+                                application={application}
+                                onSaved={(updated) => {
+                                  setApplications((prev) =>
+                                    prev.map((a) =>
+                                      a.id === updated.id ? updated : a
+                                    )
+                                  );
+                                }}
+                              />
+                            </DialogContent>
+                          </Dialog>
+                          <Dialog>
+                            <DialogTrigger asChild>
                               <Button
                                 variant="destructive"
-                                onClick={async () => {
-                                  try {
-                                    setDeletingAppId(application.id)
-                                    await deleteJobApplication(application.id)
-                                    setApplications((prev) => prev.filter((a) => a.id !== application.id))
-                                    toast({ title: "Application deleted" })
-                                  } catch (e: any) {
-                                    toast({ title: "Failed to delete application", description: e?.message || "Try again later.", variant: "destructive" as any })
-                                  } finally {
-                                    setDeletingAppId(null)
-                                  }
-                                }}
+                                size="sm"
+                                title="Delete application"
                               >
-                                {deletingAppId === application.id ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Deleting...</span> : "Delete"}
+                                Delete
                               </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Delete application?</DialogTitle>
+                                <DialogDescription>
+                                  This action cannot be undone.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="flex justify-end gap-2">
+                                <DialogClose asChild>
+                                  <Button variant="outline">Cancel</Button>
+                                </DialogClose>
+                                <Button
+                                  variant="destructive"
+                                  onClick={async () => {
+                                    try {
+                                      setDeletingAppId(application.id);
+                                      await deleteJobApplication(
+                                        application.id
+                                      );
+                                      setApplications((prev) =>
+                                        prev.filter(
+                                          (a) => a.id !== application.id
+                                        )
+                                      );
+                                      toast({ title: "Application deleted" });
+                                    } catch (e: any) {
+                                      toast({
+                                        title: "Failed to delete application",
+                                        description:
+                                          e?.message || "Try again later.",
+                                        variant: "destructive" as any,
+                                      });
+                                    } finally {
+                                      setDeletingAppId(null);
+                                    }
+                                  }}
+                                >
+                                  {deletingAppId === application.id ? (
+                                    <span className="inline-flex items-center gap-2">
+                                      <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                                      Deleting...
+                                    </span>
+                                  ) : (
+                                    "Delete"
+                                  )}
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </Card>
         </TabsContent>
       </Tabs>
 
-      <UIDialog open={applicationDialogOpen} onOpenChange={setApplicationDialogOpen}>
+      <UIDialog
+        open={applicationDialogOpen}
+        onOpenChange={setApplicationDialogOpen}
+      >
         <UIDialogContent className="sm:max-w-lg">
           <UIDialogHeader>
             <UIDialogTitle>Application Details</UIDialogTitle>
-            <UIDialogDescription>Review candidate information and materials.</UIDialogDescription>
+            <UIDialogDescription>
+              Review candidate information and materials.
+            </UIDialogDescription>
           </UIDialogHeader>
           {selectedApplication && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
-                  <span className="font-medium">Name:</span> {selectedApplication.full_name}
+                  <span className="font-medium">Name:</span>{" "}
+                  {selectedApplication.full_name}
                 </div>
                 <div>
-                  <span className="font-medium">Email:</span> {selectedApplication.email}
+                  <span className="font-medium">Email:</span>{" "}
+                  {selectedApplication.email}
                 </div>
                 <div>
-                  <span className="font-medium">Position:</span> {selectedApplication.position}
+                  <span className="font-medium">Position:</span>{" "}
+                  {selectedApplication.position}
                 </div>
                 <div>
-                  <span className="font-medium">Experience:</span> {selectedApplication.experience_level}
+                  <span className="font-medium">Experience:</span>{" "}
+                  {selectedApplication.experience_level}
                 </div>
                 <div>
-                  <span className="font-medium">Status:</span> {selectedApplication.status}
+                  <span className="font-medium">Status:</span>{" "}
+                  {selectedApplication.status}
                 </div>
                 <div>
-                  <span className="font-medium">Date:</span> {new Date(selectedApplication.created_at).toLocaleString()}
+                  <span className="font-medium">Date:</span>{" "}
+                  {new Date(selectedApplication.created_at).toLocaleString()}
                 </div>
                 <div>
-                  <span className="font-medium">Location:</span> {selectedApplication.location || "N/A"}
+                  <span className="font-medium">Location:</span>{" "}
+                  {selectedApplication.location || "N/A"}
                 </div>
                 <div>
-                  <span className="font-medium">Salary:</span> {formatSalaryText(selectedApplication.salary)}
+                  <span className="font-medium">Salary:</span>{" "}
+                  {formatSalaryText(selectedApplication.salary)}
                 </div>
                 <div>
-                  <span className="font-medium">Availability:</span> {selectedApplication.availability || "N/A"}
+                  <span className="font-medium">Availability:</span>{" "}
+                  {selectedApplication.availability || "N/A"}
                 </div>
                 <div>
-                  <span className="font-medium">Referral:</span> {selectedApplication.referral_source || "N/A"}
+                  <span className="font-medium">Referral:</span>{" "}
+                  {selectedApplication.referral_source || "N/A"}
                 </div>
               </div>
               <div>
                 <div className="font-medium mb-1">Cover Letter</div>
                 <div className="rounded-md border p-3 text-sm whitespace-pre-wrap break-words break-all overflow-auto max-h-64">
-                  {selectedApplication.cover_letter || "No cover letter provided."}
+                  {selectedApplication.cover_letter ||
+                    "No cover letter provided."}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
-                  <span className="font-medium">Phone:</span> {selectedApplication.phone || "N/A"}
+                  <span className="font-medium">Phone:</span>{" "}
+                  {selectedApplication.phone || "N/A"}
                 </div>
                 <div>
-                  <span className="font-medium">Resume:</span> {selectedApplication.resume_url ? (
-                    <a className="underline" href={selectedApplication.resume_url} target="_blank" rel="noreferrer">Open</a>
+                  <span className="font-medium">Resume:</span>{" "}
+                  {selectedApplication.resume_url ? (
+                    <a
+                      className="underline"
+                      href={selectedApplication.resume_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
                   ) : (
                     "N/A"
                   )}
                 </div>
                 <div>
-                  <span className="font-medium">LinkedIn:</span> {selectedApplication.linkedin_url ? (
-                    <a className="underline" href={selectedApplication.linkedin_url} target="_blank" rel="noreferrer">Open</a>
+                  <span className="font-medium">LinkedIn:</span>{" "}
+                  {selectedApplication.linkedin_url ? (
+                    <a
+                      className="underline"
+                      href={selectedApplication.linkedin_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
                   ) : (
                     "N/A"
                   )}
                 </div>
                 <div>
-                  <span className="font-medium">GitHub:</span> {selectedApplication.github_url ? (
-                    <a className="underline" href={selectedApplication.github_url} target="_blank" rel="noreferrer">Open</a>
+                  <span className="font-medium">GitHub:</span>{" "}
+                  {selectedApplication.github_url ? (
+                    <a
+                      className="underline"
+                      href={selectedApplication.github_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
                   ) : (
                     "N/A"
                   )}
                 </div>
                 <div>
-                  <span className="font-medium">Portfolio:</span> {selectedApplication.portfolio_url ? (
-                    <a className="underline" href={selectedApplication.portfolio_url} target="_blank" rel="noreferrer">Open</a>
+                  <span className="font-medium">Portfolio:</span>{" "}
+                  {selectedApplication.portfolio_url ? (
+                    <a
+                      className="underline"
+                      href={selectedApplication.portfolio_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
                   ) : (
                     "N/A"
                   )}
                 </div>
               </div>
 
-              {selectedApplication.portfolio_files && selectedApplication.portfolio_files.length > 0 && (
-                <div>
-                  <div className="font-medium mb-1">Portfolio Files</div>
-                  <ul className="list-disc pl-5 text-sm">
-                    {selectedApplication.portfolio_files.map((f, i) => (
-                      <li key={`pf-${i}`}>
-                        <a className="underline" href={f} target="_blank" rel="noreferrer">File {i + 1}</a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {selectedApplication.portfolio_files &&
+                selectedApplication.portfolio_files.length > 0 && (
+                  <div>
+                    <div className="font-medium mb-1">Portfolio Files</div>
+                    <ul className="list-disc pl-5 text-sm">
+                      {selectedApplication.portfolio_files.map((f, i) => (
+                        <li key={`pf-${i}`}>
+                          <a
+                            className="underline"
+                            href={f}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            File {i + 1}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
             </div>
           )}
         </UIDialogContent>
       </UIDialog>
     </div>
-  )
+  );
 }
 
-function EditJobForm({ job, onSaved }: { job: Job; onSaved: (j: Job) => void }) {
-  const { toast } = useToast()
+function EditJobForm({
+  job,
+  onSaved,
+}: {
+  job: Job;
+  onSaved: (j: Job) => void;
+}) {
+  const { toast } = useToast();
   const [form, setForm] = useState({
     title: job.title || "",
     department: job.department || "",
@@ -765,13 +1087,13 @@ function EditJobForm({ job, onSaved }: { job: Job; onSaved: (j: Job) => void }) 
     requirements: (job.requirements || []).join("\n"),
     skills: (job.skills || []).join(", "),
     is_active: Boolean(job.is_active),
-  })
+  });
 
   const parseList = (s: string) =>
     s
       .split(/\n|,/)
       .map((x) => x.trim())
-      .filter(Boolean)
+      .filter(Boolean);
 
   const handleSave = async () => {
     try {
@@ -785,62 +1107,101 @@ function EditJobForm({ job, onSaved }: { job: Job; onSaved: (j: Job) => void }) 
         requirements: parseList(form.requirements),
         skills: parseList(form.skills),
         is_active: form.is_active,
-      }
-      const updated = await updateJob(job.id, updates)
-      toast({ title: "Job updated", description: `${updated.title} saved.` })
-      onSaved(updated)
+      };
+      const updated = await updateJob(job.id, updates);
+      toast({ title: "Job updated", description: `${updated.title} saved.` });
+      onSaved(updated);
     } catch (e: any) {
-      toast({ title: "Failed to update job", description: e?.message || "Try again later.", variant: "destructive" as any })
+      toast({
+        title: "Failed to update job",
+        description: e?.message || "Try again later.",
+        variant: "destructive" as any,
+      });
     }
-  }
+  };
 
   return (
     <div className="grid gap-4 py-2">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Job Title</Label>
-          <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <Input
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
         </div>
         <div className="space-y-2">
           <Label>Department</Label>
-          <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+          <Input
+            value={form.department}
+            onChange={(e) => setForm({ ...form, department: e.target.value })}
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Location</Label>
-          <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
+          <Input
+            value={form.location}
+            onChange={(e) => setForm({ ...form, location: e.target.value })}
+          />
         </div>
         <div className="space-y-2">
           <Label>Employment Type</Label>
-          <Input value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })} />
+          <Input
+            value={form.employment_type}
+            onChange={(e) =>
+              setForm({ ...form, employment_type: e.target.value })
+            }
+          />
         </div>
       </div>
       <div className="space-y-2">
         <Label>Experience</Label>
-        <Input value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} />
+        <Input
+          value={form.experience}
+          onChange={(e) => setForm({ ...form, experience: e.target.value })}
+        />
       </div>
       <div className="space-y-2">
         <Label>Description</Label>
-        <Textarea rows={3} value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <Textarea
+          rows={3}
+          value={form.description || ""}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+        />
       </div>
       <div className="space-y-2">
         <Label>Requirements (comma or newline separated)</Label>
-        <Textarea rows={3} value={form.requirements} onChange={(e) => setForm({ ...form, requirements: e.target.value })} />
+        <Textarea
+          rows={3}
+          value={form.requirements}
+          onChange={(e) => setForm({ ...form, requirements: e.target.value })}
+        />
       </div>
       <div className="space-y-2">
         <Label>Skills (comma or newline separated)</Label>
-        <Textarea rows={2} value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} />
+        <Textarea
+          rows={2}
+          value={form.skills}
+          onChange={(e) => setForm({ ...form, skills: e.target.value })}
+        />
       </div>
       <div className="flex items-center gap-2">
-        <Checkbox id={`edit-active-${job.id}`} checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: Boolean(v) })} />
+        <Checkbox
+          id={`edit-active-${job.id}`}
+          checked={form.is_active}
+          onCheckedChange={(v) => setForm({ ...form, is_active: Boolean(v) })}
+        />
         <Label htmlFor={`edit-active-${job.id}`}>Active</Label>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={handleSave}>Save</Button>
+        <Button variant="outline" onClick={handleSave}>
+          Save
+        </Button>
       </div>
     </div>
-  )
+  );
 }
 
 function JobDetails({ job }: { job: Job }) {
@@ -870,17 +1231,23 @@ function JobDetails({ job }: { job: Job }) {
           <div className="text-sm whitespace-pre-wrap">{job.description}</div>
         </div>
       )}
-      {(job.skills && job.skills.length > 0) && (
+      {job.skills && job.skills.length > 0 && (
         <div>
           <div className="font-medium mb-1">Skills</div>
           <div className="flex flex-wrap gap-1">
             {job.skills.map((s, i) => (
-              <Badge key={`details-skill-${i}`} variant="secondary" className="capitalize">{s}</Badge>
+              <Badge
+                key={`details-skill-${i}`}
+                variant="secondary"
+                className="capitalize"
+              >
+                {s}
+              </Badge>
             ))}
           </div>
         </div>
       )}
-      {(job.requirements && job.requirements.length > 0) && (
+      {job.requirements && job.requirements.length > 0 && (
         <div>
           <div className="font-medium mb-1">Requirements</div>
           <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
@@ -891,28 +1258,35 @@ function JobDetails({ job }: { job: Job }) {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function UpdateApplicationStatusForm({
   application,
   onSaved,
 }: {
-  application: DBJobApplication
-  onSaved: (a: DBJobApplication) => void
+  application: DBJobApplication;
+  onSaved: (a: DBJobApplication) => void;
 }) {
-  const { toast } = useToast()
-  const [status, setStatus] = useState(application.status)
+  const { toast } = useToast();
+  const [status, setStatus] = useState(application.status);
 
   const handleSave = async () => {
     try {
-      const updated = await updateJobApplication(application.id, { status })
-      toast({ title: "Application updated", description: `${application.full_name} is now ${updated.status}.` })
-      onSaved(updated)
+      const updated = await updateJobApplication(application.id, { status });
+      toast({
+        title: "Application updated",
+        description: `${application.full_name} is now ${updated.status}.`,
+      });
+      onSaved(updated);
     } catch (e: any) {
-      toast({ title: "Failed to update application", description: e?.message || "Try again later.", variant: "destructive" as any })
+      toast({
+        title: "Failed to update application",
+        description: e?.message || "Try again later.",
+        variant: "destructive" as any,
+      });
     }
-  }
+  };
 
   return (
     <div className="grid gap-3">
@@ -932,8 +1306,10 @@ function UpdateApplicationStatusForm({
         </Select>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={handleSave}>Save</Button>
+        <Button variant="outline" onClick={handleSave}>
+          Save
+        </Button>
       </div>
     </div>
-  )
+  );
 }

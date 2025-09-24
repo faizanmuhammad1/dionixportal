@@ -203,13 +203,7 @@ export function DashboardLayout({
       : [
           // Employee Dashboard
           {
-            name: "My Tasks",
-            href: "project-center",
-            icon: CheckSquare,
-            current: currentView === "project-center",
-          },
-          {
-            name: "My Projects",
+            name: "Project Center",
             href: "project-center",
             icon: FolderOpen,
             current: currentView === "project-center",

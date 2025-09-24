@@ -377,12 +377,20 @@ export function UnifiedProjectManagement() {
   useEffect(() => {
     // initial fetch
     (async () => {
+      let fetchedUser: User | null = null;
       try {
-        const u = await getCurrentUser();
-        setCurrentUser(u);
+        fetchedUser = await getCurrentUser();
+        setCurrentUser(fetchedUser);
       } catch {}
       await fetchEmployees();
       await refetchAllProjects();
+      // Default employees to My Tasks tab for quicker access
+      setActiveTab((prev) =>
+        prev === "overview" &&
+        (currentUser?.role || fetchedUser?.role) === "employee"
+          ? "tasks"
+          : prev
+      );
       setLoading(false);
     })();
 
@@ -660,7 +668,11 @@ export function UnifiedProjectManagement() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList
+          className={`grid w-full ${
+            currentUser?.role === "employee" ? "grid-cols-3" : "grid-cols-4"
+          }`}
+        >
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="projects">
             {currentUser?.role === "employee" ? "My Projects" : "All Projects"}
@@ -1446,53 +1458,67 @@ export function UnifiedProjectManagement() {
         <TabsContent value="tasks" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>All Tasks</CardTitle>
+              <CardTitle>
+                {currentUser?.role === "employee" ? "My Tasks" : "All Tasks"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Task</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Assignee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Due Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleTasks.map((task) => {
-                    const project = projects.find(
-                      (p) => p.id === task.project_id
-                    );
-                    return (
-                      <TableRow key={task.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{task.title}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {task.description}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>{project?.name || "Unknown"}</TableCell>
-                        <TableCell>{getEmployeeName(task.assignee)}</TableCell>
-                        <TableCell>
-                          <Badge className={getTaskStatusColor(task.status)}>
-                            {task.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getPriorityColor(task.priority)}>
-                            {task.priority}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{task.due_date}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              {visibleTasks.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-6">
+                  No tasks assigned yet. Check back later.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Project</TableHead>
+                      {currentUser?.role !== "employee" && (
+                        <TableHead>Assignee</TableHead>
+                      )}
+                      <TableHead>Status</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Due Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleTasks.map((task) => {
+                      const project = projects.find(
+                        (p) => p.id === task.project_id
+                      );
+                      return (
+                        <TableRow key={task.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{task.title}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {task.description}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{project?.name || "Unknown"}</TableCell>
+                          {currentUser?.role !== "employee" && (
+                            <TableCell>
+                              {getEmployeeName(task.assignee)}
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <Badge className={getTaskStatusColor(task.status)}>
+                              {task.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={getPriorityColor(task.priority)}>
+                              {task.priority}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{task.due_date}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

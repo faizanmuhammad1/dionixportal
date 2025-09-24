@@ -307,7 +307,7 @@ export async function createJob(payload: Omit<Job, "id" | "created_at">) {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("jobs")
-    .insert(payload)
+    .insert(payload as any)
     .select()
     .single();
   if (error) throw new Error(error.message);

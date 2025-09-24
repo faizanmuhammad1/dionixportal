@@ -12,6 +12,7 @@ import { ContactSubmissions } from "@/components/contact-submissions";
 import { EmployeeDashboard } from "@/components/employee-dashboard";
 import { JobManagement } from "@/components/job-management";
 import { UnifiedProjectManagement } from "@/components/unified-project-management";
+import { EmployeeProjectCenter } from "@/components/employee-project-center";
 import { ComingSoon } from "@/components/coming-soon";
 import { getCurrentUser, signOut, type User } from "@/lib/auth";
 
@@ -295,7 +296,7 @@ export default function HomePage() {
       {/* Employee views */}
       {/* Email center disabled for employees */}
       {currentView === "project-center" && user.role === "employee" && (
-        <UnifiedProjectManagement />
+        <EmployeeProjectCenter user={user} />
       )}
 
       {/* Coming soon components for employee features */}
