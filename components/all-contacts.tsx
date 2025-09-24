@@ -19,21 +19,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Users,
-  Search,
-  Mail,
-  Phone,
-  Calendar,
-  MessageSquare,
-  Trash2,
-} from "lucide-react";
+import { Users, Search, Mail, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { getFormSubmissions } from "@/lib/auth";
 import type { FormSubmission } from "@/lib/auth";
@@ -61,6 +52,55 @@ export function AllContacts() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const formatKey = (key: string) =>
+    key
+      .replace(/[_-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const renderValue = (val: any) => {
+    if (val == null) return "—";
+    if (typeof val === "string") {
+      const v = val.trim();
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+      const isUrl = /^https?:\/\//i.test(v);
+      const looksIso =
+        /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v) && !isNaN(Date.parse(v));
+      if (looksIso) {
+        try {
+          const d = new Date(v);
+          return d.toLocaleString();
+        } catch {}
+      }
+      if (isEmail)
+        return (
+          <a className="underline" href={`mailto:${v}`}>
+            {v}
+          </a>
+        );
+      if (isUrl)
+        return (
+          <a className="underline" href={v} target="_blank" rel="noreferrer">
+            {v}
+          </a>
+        );
+      return v;
+    }
+    if (Array.isArray(val) || typeof val === "object") {
+      try {
+        return (
+          <pre className="text-xs whitespace-pre-wrap break-words">
+            {JSON.stringify(val, null, 2)}
+          </pre>
+        );
+      } catch {
+        return String(val);
+      }
+    }
+    return String(val);
+  };
 
   useEffect(() => {
     async function fetchContacts() {
@@ -174,7 +214,6 @@ export function AllContacts() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Phone</TableHead>
                   <TableHead>Form Type</TableHead>
                   <TableHead>Message Preview</TableHead>
                   <TableHead>Status</TableHead>
@@ -189,7 +228,6 @@ export function AllContacts() {
                       {getContactName(contact)}
                     </TableCell>
                     <TableCell>{contact.contact_email || "N/A"}</TableCell>
-                    <TableCell>{getContactPhone(contact)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
                         {contact.form_type || "General"}
@@ -216,33 +254,14 @@ export function AllContacts() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {new Date(contact.created_at || "").toLocaleDateString()}
+                      {contact.created_at
+                        ? new Date(contact.created_at).toLocaleString()
+                        : "—"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" title="Send Email">
                           <Mail className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" title="Call">
-                          <Phone className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Schedule Meeting"
-                        >
-                          <Calendar className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="View Details"
-                          onClick={() => {
-                            setSelected(contact);
-                            setOpen(true);
-                          }}
-                        >
-                          <MessageSquare className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -269,15 +288,9 @@ export function AllContacts() {
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Contact Details</DialogTitle>
-            <DialogDescription>
-              Full submission data for this contact.
-            </DialogDescription>
           </DialogHeader>
           {selected && (
             <div className="space-y-3">
-              <div className="text-sm text-muted-foreground">
-                ID: {selected.id}
-              </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
                   <span className="font-medium">Type:</span>{" "}
@@ -298,7 +311,7 @@ export function AllContacts() {
               </div>
               <div>
                 <div className="font-medium mb-1">Message</div>
-                <div className="rounded-md border p-3 text-sm whitespace-pre-wrap break-words overflow-auto max-h-64">
+                <div className="rounded-md border p-3 text-sm whitespace-pre-wrap break-words overflow-auto overflow-x-auto max-h-56 md:max-h-64">
                   {(() => {
                     const d: any = selected.form_data || {};
                     return (
@@ -310,11 +323,64 @@ export function AllContacts() {
                 </div>
               </div>
 
-              <div>
-                <div className="font-medium mb-1">All Fields</div>
-                <pre className="rounded-md border p-3 text-xs overflow-auto max-h-80">
-                  {JSON.stringify(selected.form_data, null, 2)}
-                </pre>
+              <div className="space-y-2">
+                <div className="font-medium">Details</div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(() => {
+                    const raw: Record<string, any> =
+                      (selected?.form_data as any) || {};
+                    const exclude = new Set([
+                      "message",
+                      "description",
+                      "email",
+                      "submitted_at",
+                      "submittedAt",
+                    ]);
+                    const preferred = [
+                      "name",
+                      "full_name",
+                      "firstName",
+                      "lastName",
+                      "company",
+                      "company_name",
+                      "service",
+                      "selected_service",
+                      "budget",
+                      "budget_range",
+                      "budget_range_monthly",
+                      "budget_timeline",
+                      "source",
+                      "referral_source",
+                      "phone",
+                      "phoneNumber",
+                      "mobile",
+                      "website",
+                      "website_url",
+                    ];
+
+                    const keys = Object.keys(raw).filter(
+                      (k) => !exclude.has(k)
+                    );
+                    const ordered = [
+                      ...preferred.filter((k) => keys.includes(k)),
+                      ...keys
+                        .filter((k) => !preferred.includes(k))
+                        .sort((a, b) => a.localeCompare(b)),
+                    ];
+
+                    return ordered.map((k) => (
+                      <div key={k} className="space-y-1">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                          {formatKey(k)}
+                        </div>
+                        <div className="rounded-md border p-2 bg-muted/30 text-sm whitespace-pre-wrap break-words max-h-32 overflow-auto overflow-x-auto">
+                          {renderValue(raw[k])}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
               </div>
             </div>
           )}
