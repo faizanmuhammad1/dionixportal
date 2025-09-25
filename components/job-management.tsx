@@ -109,7 +109,7 @@ export function JobManagement() {
   const [newJob, setNewJob] = useState({
     title: "",
     department: "",
-    location: "",
+    locations: "",
     employment_type: "full-time",
     experience: "",
     description: "",
@@ -167,7 +167,7 @@ export function JobManagement() {
     const payload = {
       title: newJob.title,
       department: newJob.department || null,
-      location: newJob.location || null,
+      locations: parseList(newJob.locations),
       employment_type: newJob.employment_type || null,
       experience: newJob.experience || null,
       description: newJob.description || null,
@@ -186,7 +186,7 @@ export function JobManagement() {
       setNewJob({
         title: "",
         department: "",
-        location: "",
+        locations: "",
         employment_type: "full-time",
         experience: "",
         description: "",
@@ -291,14 +291,14 @@ export function JobManagement() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="location">Location</Label>
+                  <Label htmlFor="locations">Locations (separate by |)</Label>
                   <Input
-                    id="location"
-                    value={newJob.location}
+                    id="locations"
+                    value={newJob.locations}
                     onChange={(e) =>
-                      setNewJob({ ...newJob, location: e.target.value })
+                      setNewJob({ ...newJob, locations: e.target.value })
                     }
-                    placeholder="e.g. Remote, New York"
+                    placeholder="e.g. Remote | Islamabad, Pakistan | Berlin"
                   />
                 </div>
                 <div className="space-y-2">
@@ -468,7 +468,20 @@ export function JobManagement() {
                         <CardTitle className="text-lg">{job.title}</CardTitle>
                         <CardDescription className="flex items-center gap-1 mt-1">
                           <MapPin className="h-3 w-3" />
-                          {job.location}
+                          {job.locations && job.locations.length > 0 ? (
+                            <span className="flex flex-wrap gap-1">
+                              {job.locations.slice(0, 3).map((loc, i) => (
+                                <Badge key={`loc-${job.id}-${i}`} variant="secondary">
+                                  {loc}
+                                </Badge>
+                              ))}
+                              {job.locations.length > 3 && (
+                                <span className="text-xs text-muted-foreground">+{job.locations.length - 3} more</span>
+                              )}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
                         </CardDescription>
                       </div>
                       <Badge
@@ -740,7 +753,11 @@ export function JobManagement() {
                         </div>
                       </TableCell>
                       <TableCell>{application.position}</TableCell>
-                      <TableCell>{application.location || "—"}</TableCell>
+                      <TableCell>
+                        {Array.isArray((application as any).locations) && (application as any).locations.length > 0
+                          ? (application as any).locations.join(" | ")
+                          : (application as any).location || "—"}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {new Date(application.created_at).toLocaleDateString()}
                       </TableCell>
@@ -973,7 +990,9 @@ export function JobManagement() {
                 </div>
                 <div>
                   <span className="font-medium">Location:</span>{" "}
-                  {selectedApplication.location || "N/A"}
+                  {Array.isArray((selectedApplication as any).locations) && (selectedApplication as any).locations.length > 0
+                    ? (selectedApplication as any).locations.join(" | ")
+                    : (selectedApplication as any).location || "N/A"}
                 </div>
                 <div>
                   <span className="font-medium">Salary:</span>{" "}
@@ -1144,7 +1163,7 @@ function EditJobForm({
   const [form, setForm] = useState({
     title: job.title || "",
     department: job.department || "",
-    location: job.location || "",
+    locations: (job.locations || []).join(" | "),
     employment_type: job.employment_type || "",
     experience: job.experience || "",
     description: job.description || "",
@@ -1152,19 +1171,26 @@ function EditJobForm({
     skills: (job.skills || []).join(", "),
     is_active: Boolean(job.is_active),
   });
+  const [saving, setSaving] = useState(false);
 
   const parseList = (s: string) =>
     s
-      .split(/\n|,/)
+      .split(/\n|,\s*/)
       .map((x) => x.trim())
       .filter(Boolean);
 
   const handleSave = async () => {
     try {
+      setSaving(true);
       const updates: any = {
         title: form.title || undefined,
         department: form.department || undefined,
-        location: form.location || undefined,
+        locations: form.locations
+          ? form.locations
+              .split(/\|/)
+              .map((x) => x.trim())
+              .filter(Boolean)
+          : [],
         employment_type: form.employment_type || undefined,
         experience: form.experience || undefined,
         description: form.description || undefined,
@@ -1181,6 +1207,8 @@ function EditJobForm({
         description: e?.message || "Try again later.",
         variant: "destructive" as any,
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1204,10 +1232,10 @@ function EditJobForm({
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Location</Label>
+          <Label>Locations (separate by |)</Label>
           <Input
-            value={form.location}
-            onChange={(e) => setForm({ ...form, location: e.target.value })}
+            value={form.locations}
+            onChange={(e) => setForm({ ...form, locations: e.target.value })}
           />
         </div>
         <div className="space-y-2">
@@ -1260,8 +1288,14 @@ function EditJobForm({
         <Label htmlFor={`edit-active-${job.id}`}>Active</Label>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={handleSave}>
-          Save
+        <Button variant="outline" onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+            </span>
+          ) : (
+            "Save"
+          )}
         </Button>
       </div>
     </div>
@@ -1277,8 +1311,18 @@ function JobDetails({ job }: { job: Job }) {
           <div>{job.department || "—"}</div>
         </div>
         <div>
-          <span className="text-muted-foreground">Location</span>
-          <div>{job.location || "—"}</div>
+          <span className="text-muted-foreground">Locations</span>
+          <div className="flex flex-wrap gap-1">
+            {job.locations && job.locations.length > 0 ? (
+              job.locations.map((loc, i) => (
+                <Badge key={`details-loc-${i}`} variant="secondary">
+                  {loc}
+                </Badge>
+              ))
+            ) : (
+              <span>—</span>
+            )}
+          </div>
         </div>
         <div>
           <span className="text-muted-foreground">Type</span>

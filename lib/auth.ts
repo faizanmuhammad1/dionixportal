@@ -41,7 +41,7 @@ export interface JobApplication {
   resume_url: string | null;
   cover_letter: string | null;
   status: "pending" | "reviewing" | "interview" | "accepted" | "rejected";
-  location?: string | null;
+  locations?: string[] | null; // migrated from single location
   salary?: string | null;
   availability?: string | null;
   github_url?: string | null;
@@ -54,7 +54,7 @@ export interface Job {
   id: string;
   title: string;
   department: string | null;
-  location: string | null;
+  locations: string[] | null; // migrated from single location
   employment_type: string | null;
   experience: string | null;
   description: string | null;
@@ -278,7 +278,15 @@ export async function getJobApplications(): Promise<JobApplication[]> {
       return [];
     }
 
-    return data || [];
+    const normalized: JobApplication[] = (data || []).map((row: any) => ({
+      ...row,
+      locations: Array.isArray(row.locations)
+        ? row.locations.filter((x: any) => typeof x === "string" && x.trim()).map((x: string) => x.trim())
+        : typeof row.location === "string" && row.location.trim()
+        ? [row.location.trim()]
+        : null,
+    }));
+    return normalized;
   } catch (error) {
     return [];
   }
@@ -297,7 +305,29 @@ export async function getJobs(): Promise<Job[]> {
       return [];
     }
 
-    return data || [];
+    // Normalize legacy single location (text) to locations string[] for UI
+    const normalized: Job[] = (data || []).map((row: any) => {
+      const locations: string[] | null = Array.isArray(row.locations)
+        ? row.locations
+            .filter((x: any) => typeof x === "string" && x.trim())
+            .map((x: string) => x.trim())
+        : null;
+      return {
+        id: row.id,
+        title: row.title,
+        department: row.department ?? null,
+        locations,
+        employment_type: row.employment_type ?? null,
+        experience: row.experience ?? null,
+        description: row.description ?? null,
+        requirements: Array.isArray(row.requirements) ? row.requirements : null,
+        skills: Array.isArray(row.skills) ? row.skills : null,
+        is_active: row.is_active ?? null,
+        created_at: row.created_at,
+      } as Job;
+    });
+
+    return normalized;
   } catch (error) {
     return [];
   }
@@ -305,13 +335,41 @@ export async function getJobs(): Promise<Job[]> {
 
 export async function createJob(payload: Omit<Job, "id" | "created_at">) {
   const supabase = createClient();
+  const insertPayload: any = {
+    title: payload.title,
+    department: payload.department,
+    locations: Array.isArray(payload.locations)
+      ? payload.locations.map((x) => (x || "").trim()).filter(Boolean)
+      : null,
+    employment_type: payload.employment_type,
+    experience: payload.experience,
+    description: payload.description,
+    requirements: payload.requirements,
+    skills: payload.skills,
+    is_active: payload.is_active,
+  };
   const { data, error } = await supabase
     .from("jobs")
-    .insert(payload as any)
+    .insert(insertPayload)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data as Job;
+  const normalized: Job = {
+    id: data.id,
+    title: data.title,
+    department: data.department ?? null,
+    locations: Array.isArray(data.locations)
+      ? (data.locations as any[]).filter((x) => typeof x === "string")
+      : null,
+    employment_type: data.employment_type ?? null,
+    experience: data.experience ?? null,
+    description: data.description ?? null,
+    requirements: Array.isArray(data.requirements) ? data.requirements : null,
+    skills: Array.isArray(data.skills) ? data.skills : null,
+    is_active: data.is_active ?? null,
+    created_at: data.created_at,
+  };
+  return normalized;
 }
 
 export async function updateJob(
@@ -319,27 +377,66 @@ export async function updateJob(
   updates: Partial<Omit<Job, "id" | "created_at">>
 ) {
   const supabase = createClient();
+  const mapped: any = { ...updates };
+  if ("locations" in mapped) {
+    const locations: string[] | null | undefined = mapped.locations as any;
+    mapped.locations = Array.isArray(locations)
+      ? locations.map((x) => (x || "").trim()).filter(Boolean)
+      : null;
+  }
+
   const { data, error } = await supabase
     .from("jobs")
-    .update(updates)
+    .update(mapped)
     .eq("id", id)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data as Job;
+  const normalized: Job = {
+    id: data.id,
+    title: data.title,
+    department: data.department ?? null,
+    locations: Array.isArray(data.locations)
+      ? (data.locations as any[]).filter((x) => typeof x === "string")
+      : null,
+    employment_type: data.employment_type ?? null,
+    experience: data.experience ?? null,
+    description: data.description ?? null,
+    requirements: Array.isArray(data.requirements) ? data.requirements : null,
+    skills: Array.isArray(data.skills) ? data.skills : null,
+    is_active: data.is_active ?? null,
+    created_at: data.created_at,
+  };
+  return normalized;
 }
 
 export async function applyToJob(
   payload: Omit<JobApplication, "id" | "created_at">
 ) {
   const supabase = createClient();
+  // Map locations[] to legacy single text column if present
+  const insertPayload: any = {
+    ...payload,
+    location: Array.isArray((payload as any).locations)
+      ? ((payload as any).locations as string[]).join(" | ") || null
+      : (payload as any).location || null,
+  };
+  delete insertPayload.locations;
   const { data, error } = await supabase
     .from("job_applications")
-    .insert(payload)
+    .insert(insertPayload)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data as JobApplication;
+  const normalized: JobApplication = {
+    ...(data as any),
+    locations: Array.isArray((data as any).locations)
+      ? (data as any).locations
+      : typeof (data as any).location === "string" && (data as any).location.trim()
+      ? [(data as any).location.trim()]
+      : null,
+  } as JobApplication;
+  return normalized;
 }
 
 export async function updateJobApplication(
@@ -347,14 +444,29 @@ export async function updateJobApplication(
   updates: Partial<Omit<JobApplication, "id" | "created_at">>
 ) {
   const supabase = createClient();
+  const mapped: any = { ...updates };
+  if ("locations" in mapped) {
+    mapped.location = Array.isArray(mapped.locations)
+      ? (mapped.locations as string[]).join(" | ") || null
+      : mapped.location ?? null;
+    delete mapped.locations;
+  }
   const { data, error } = await supabase
     .from("job_applications")
-    .update(updates)
+    .update(mapped)
     .eq("id", id)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data as JobApplication;
+  const normalized: JobApplication = {
+    ...(data as any),
+    locations: Array.isArray((data as any).locations)
+      ? (data as any).locations
+      : typeof (data as any).location === "string" && (data as any).location.trim()
+      ? [(data as any).location.trim()]
+      : null,
+  } as JobApplication;
+  return normalized;
 }
 
 export async function getProjects(): Promise<Project[]> {
