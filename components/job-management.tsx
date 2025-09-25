@@ -85,6 +85,11 @@ export function JobManagement() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<DBJobApplication[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  // Removed filters for job openings per request
+  const [appFilterPosition, setAppFilterPosition] = useState("");
+  const [appFilterLocation, setAppFilterLocation] = useState("");
+  const [appFilterExperience, setAppFilterExperience] = useState("any");
+  const [appFilterStatus, setAppFilterStatus] = useState("any");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
@@ -667,12 +672,12 @@ export function JobManagement() {
                   </CardContent>
                 </Card>
               ))}
-          </div>
+            </div>
         </TabsContent>
 
         <TabsContent value="applications" className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-sm">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search applications..."
@@ -681,6 +686,40 @@ export function JobManagement() {
                 className="pl-10"
               />
             </div>
+            <Input
+              placeholder="Filter by position"
+              value={appFilterPosition}
+              onChange={(e) => setAppFilterPosition(e.target.value)}
+              className="w-[200px]"
+            />
+            <Input
+              placeholder="Filter by location"
+              value={appFilterLocation}
+              onChange={(e) => setAppFilterLocation(e.target.value)}
+              className="w-[200px]"
+            />
+            <Select value={appFilterExperience} onValueChange={setAppFilterExperience}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Experience" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any</SelectItem>
+                <SelectItem value="entry">Entry</SelectItem>
+                <SelectItem value="mid">Mid</SelectItem>
+                <SelectItem value="senior">Senior</SelectItem>
+                <SelectItem value="lead">Lead</SelectItem>
+                <SelectItem value="executive">Executive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={appFilterStatus} onValueChange={setAppFilterStatus}>
+              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="reviewing">Reviewing</SelectItem>
+                <SelectItem value="interview">Interview</SelectItem>
+                <SelectItem value="accepted">Accepted</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <Card>
@@ -708,7 +747,17 @@ export function JobManagement() {
                     </TableCell>
                   </TableRow>
                 )}
-                {!loading && filteredApplications.length === 0 && (
+                {!loading && filteredApplications
+                  .filter((app) =>
+                    (appFilterPosition ? (app.position || "").toLowerCase().includes(appFilterPosition.toLowerCase()) : true) &&
+                    (appFilterLocation
+                      ? Array.isArray((app as any).locations)
+                        ? ((app as any).locations as string[]).some((loc) => (loc || "").toLowerCase().includes(appFilterLocation.toLowerCase()))
+                        : ((app as any).location || "").toLowerCase().includes(appFilterLocation.toLowerCase())
+                      : true) &&
+                    (appFilterExperience !== "any" ? app.experience_level === appFilterExperience : true) &&
+                    (appFilterStatus !== "any" ? app.status === appFilterStatus : true)
+                  ).length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={5}
@@ -719,7 +768,18 @@ export function JobManagement() {
                   </TableRow>
                 )}
                 {!loading &&
-                  filteredApplications.map((application) => (
+                  filteredApplications
+                    .filter((app) =>
+                      (appFilterPosition ? (app.position || "").toLowerCase().includes(appFilterPosition.toLowerCase()) : true) &&
+                      (appFilterLocation
+                        ? Array.isArray((app as any).locations)
+                          ? ((app as any).locations as string[]).some((loc) => (loc || "").toLowerCase().includes(appFilterLocation.toLowerCase()))
+                          : ((app as any).location || "").toLowerCase().includes(appFilterLocation.toLowerCase())
+                        : true) &&
+                      (appFilterExperience !== "any" ? app.experience_level === appFilterExperience : true) &&
+                      (appFilterStatus !== "any" ? app.status === appFilterStatus : true)
+                    )
+                    .map((application) => (
                     <TableRow key={application.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
