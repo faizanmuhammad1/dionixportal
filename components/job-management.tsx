@@ -57,6 +57,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
+import { createClient } from "@/lib/supabase";
 import {
   Dialog as UIDialog,
   DialogContent as UIDialogContent,
@@ -80,6 +81,7 @@ import {
 
 export function JobManagement() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<DBJobApplication[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -754,18 +756,28 @@ export function JobManagement() {
                         <div className="flex gap-2 justify-end">
                           {application.resume_url && (
                             <Button
-                              asChild
                               variant="outline"
                               size="sm"
                               title="Open resume"
+                              onClick={async () => {
+                                try {
+                                  const url = await getSignedUrlIfStorage(
+                                    application.resume_url!,
+                                    supabase
+                                  );
+                                  window.open(url, "_blank", "noreferrer");
+                                } catch (e: any) {
+                                  toast({
+                                    title: "Could not open resume",
+                                    description:
+                                      e?.message ||
+                                      "File may be missing or access is restricted.",
+                                    variant: "destructive" as any,
+                                  });
+                                }
+                              }}
                             >
-                              <a
-                                href={application.resume_url || "#"}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                <FileText className="h-3 w-3" />
-                              </a>
+                              <FileText className="h-3 w-3" />
                             </Button>
                           )}
                           {application.linkedin_url && (
@@ -786,18 +798,28 @@ export function JobManagement() {
                           )}
                           {application.portfolio_url && (
                             <Button
-                              asChild
                               variant="outline"
                               size="sm"
                               title="Open portfolio"
+                              onClick={async () => {
+                                try {
+                                  const url = await getSignedUrlIfStorage(
+                                    application.portfolio_url!,
+                                    supabase
+                                  );
+                                  window.open(url, "_blank", "noreferrer");
+                                } catch (e: any) {
+                                  toast({
+                                    title: "Could not open portfolio",
+                                    description:
+                                      e?.message ||
+                                      "File may be missing or access is restricted.",
+                                    variant: "destructive" as any,
+                                  });
+                                }
+                              }}
                             >
-                              <a
-                                href={application.portfolio_url || "#"}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                <LinkIcon className="h-3 w-3" />
-                              </a>
+                              <LinkIcon className="h-3 w-3" />
                             </Button>
                           )}
                           <Button
@@ -982,14 +1004,28 @@ export function JobManagement() {
                 <div>
                   <span className="font-medium">Resume:</span>{" "}
                   {selectedApplication.resume_url ? (
-                    <a
+                    <button
                       className="underline"
-                      href={selectedApplication.resume_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={async () => {
+                        try {
+                          const url = await getSignedUrlIfStorage(
+                            selectedApplication.resume_url!,
+                            createClient()
+                          );
+                          window.open(url, "_blank", "noreferrer");
+                        } catch (e: any) {
+                          toast({
+                            title: "Could not open resume",
+                            description:
+                              e?.message ||
+                              "File may be missing or access is restricted.",
+                            variant: "destructive" as any,
+                          });
+                        }
+                      }}
                     >
                       Open
-                    </a>
+                    </button>
                   ) : (
                     "N/A"
                   )}
@@ -1027,14 +1063,28 @@ export function JobManagement() {
                 <div>
                   <span className="font-medium">Portfolio:</span>{" "}
                   {selectedApplication.portfolio_url ? (
-                    <a
+                    <button
                       className="underline"
-                      href={selectedApplication.portfolio_url}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={async () => {
+                        try {
+                          const url = await getSignedUrlIfStorage(
+                            selectedApplication.portfolio_url!,
+                            createClient()
+                          );
+                          window.open(url, "_blank", "noreferrer");
+                        } catch (e: any) {
+                          toast({
+                            title: "Could not open portfolio",
+                            description:
+                              e?.message ||
+                              "File may be missing or access is restricted.",
+                            variant: "destructive" as any,
+                          });
+                        }
+                      }}
                     >
                       Open
-                    </a>
+                    </button>
                   ) : (
                     "N/A"
                   )}
@@ -1048,14 +1098,28 @@ export function JobManagement() {
                     <ul className="list-disc pl-5 text-sm">
                       {selectedApplication.portfolio_files.map((f, i) => (
                         <li key={`pf-${i}`}>
-                          <a
+                          <button
                             className="underline"
-                            href={f}
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={async () => {
+                              try {
+                                const url = await getSignedUrlIfStorage(
+                                  f,
+                                  supabase
+                                );
+                                window.open(url, "_blank", "noreferrer");
+                              } catch (e: any) {
+                                toast({
+                                  title: "Could not open file",
+                                  description:
+                                    e?.message ||
+                                    "File may be missing or access is restricted.",
+                                  variant: "destructive" as any,
+                                });
+                              }
+                            }}
                           >
                             File {i + 1}
-                          </a>
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -1312,4 +1376,79 @@ function UpdateApplicationStatusForm({
       </div>
     </div>
   );
+}
+
+// Utilities
+async function getSignedUrlIfStorage(
+  urlOrPath: string,
+  supabase: ReturnType<typeof createClient>
+): Promise<string> {
+  // Accepts:
+  // - storage path: "bucket/path/to/file"
+  // - Supabase public URL: "https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>"
+  // - Any other http(s) URL (returned unchanged)
+  try {
+    const isHttp = /^https?:\/\//i.test(urlOrPath);
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const makePublicUrl = (bucket: string, objectPath: string) =>
+      SUPABASE_URL
+        ? `${SUPABASE_URL.replace(
+            /\/$/,
+            ""
+          )}/storage/v1/object/public/${bucket}/${objectPath}`
+        : urlOrPath; // fallback to original if env missing
+
+    // Helper: try to parse a Supabase storage public URL to bucket/object
+    const parseSupabasePublicUrl = (fullUrl: string) => {
+      try {
+        const supaUrl = new URL(fullUrl);
+        // Path: /storage/v1/object/<mode>/<bucket>/<...objectPath>
+        const parts = supaUrl.pathname.split("/").filter(Boolean);
+        const objectIdx = parts.findIndex((p) => p === "object");
+        if (objectIdx === -1 || parts.length < objectIdx + 3) return null;
+        const mode = parts[objectIdx + 1]; // public | sign | render
+        if (!mode) return null;
+        const bucket = parts[objectIdx + 2];
+        const objectPath = parts.slice(objectIdx + 3).join("/");
+        if (!bucket || !objectPath) return null;
+        return { bucket, objectPath, mode } as const;
+      } catch {
+        return null;
+      }
+    };
+
+    if (isHttp) {
+      // If already a signed URL (contains token param) or not a Supabase storage URL, return as-is
+      if (/\btoken=/.test(urlOrPath)) return urlOrPath;
+      const parsed = parseSupabasePublicUrl(urlOrPath);
+      if (!parsed) return urlOrPath;
+      // It's a Supabase storage URL — try to sign; if it fails (e.g., bucket is public or no perms), return original URL
+      const { bucket, objectPath } = parsed;
+      try {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(objectPath, 60 * 10);
+        if (error) throw error;
+        return data.signedUrl;
+      } catch {
+        return urlOrPath; // likely public bucket or signing disabled; original should work
+      }
+    }
+
+    // Plain storage path case: "bucket/path/to/file"
+    const [bucket, ...rest] = urlOrPath.split("/");
+    const objectPath = rest.join("/");
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(objectPath, 60 * 10);
+      if (error) throw error;
+      return data.signedUrl;
+    } catch {
+      // If signing fails (e.g., bucket is public or permissions disallow), build a public URL instead
+      return makePublicUrl(bucket, objectPath);
+    }
+  } catch (e: any) {
+    throw new Error(e?.message || "Unable to generate signed URL");
+  }
 }
