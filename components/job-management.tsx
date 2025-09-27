@@ -94,6 +94,8 @@ export function JobManagement() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [applicationDialogOpen, setApplicationDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [selectedApplication, setSelectedApplication] =
     useState<DBJobApplication | null>(null);
   const [creating, setCreating] = useState(false);
@@ -583,12 +585,21 @@ export function JobManagement() {
                           <JobDetails job={job} />
                         </DialogContent>
                       </Dialog>
-                      <Dialog>
+                      <Dialog open={editDialogOpen && editingJob?.id === job.id} onOpenChange={(open) => {
+                        if (!open) {
+                          setEditDialogOpen(false);
+                          setEditingJob(null);
+                        }
+                      }}>
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
                             size="sm"
                             className="flex-1 bg-transparent"
+                            onClick={() => {
+                              setEditingJob(job);
+                              setEditDialogOpen(true);
+                            }}
                           >
                             <Edit className="h-3 w-3 mr-1" />
                             Edit
@@ -601,16 +612,22 @@ export function JobManagement() {
                               Update job details and save changes
                             </DialogDescription>
                           </DialogHeader>
-                          <EditJobForm
-                            job={job}
-                            onSaved={(updated) => {
-                              setJobs((prev) =>
-                                prev.map((j) =>
-                                  j.id === updated.id ? updated : j
-                                )
-                              );
-                            }}
-                          />
+                          {editingJob && (
+                            <EditJobForm
+                              job={editingJob}
+                              onSaved={(updated) => {
+                                console.log("onSaved callback called with:", updated);
+                                setJobs((prev) =>
+                                  prev.map((j) =>
+                                    j.id === updated.id ? updated : j
+                                  )
+                                );
+                                console.log("Closing edit dialog");
+                                setEditDialogOpen(false);
+                                setEditingJob(null);
+                              }}
+                            />
+                          )}
                         </DialogContent>
                       </Dialog>
                       <Dialog>
@@ -1242,6 +1259,7 @@ function EditJobForm({
   const handleSave = async () => {
     try {
       setSaving(true);
+      console.log("Starting job update for:", job.id);
       const updates: any = {
         title: form.title || undefined,
         department: form.department || undefined,
@@ -1258,10 +1276,13 @@ function EditJobForm({
         skills: parseList(form.skills),
         is_active: form.is_active,
       };
+      console.log("Updates payload:", updates);
       const updated = await updateJob(job.id, updates);
+      console.log("Job updated successfully:", updated);
       toast({ title: "Job updated", description: `${updated.title} saved.` });
       onSaved(updated);
     } catch (e: any) {
+      console.error("Error updating job:", e);
       toast({
         title: "Failed to update job",
         description: e?.message || "Try again later.",

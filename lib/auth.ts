@@ -377,6 +377,37 @@ export async function updateJob(
   updates: Partial<Omit<Job, "id" | "created_at">>
 ) {
   const supabase = createClient();
+  
+  // Check authentication first
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError) {
+    console.error("Authentication error:", authError);
+    throw new Error(`Authentication failed: ${authError.message}`);
+  }
+  if (!user) {
+    console.error("No authenticated user");
+    throw new Error("No authenticated user");
+  }
+  
+  // Check user role from profiles table
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+    
+  if (profileError) {
+    console.error("Profile error:", profileError);
+    throw new Error(`Profile lookup failed: ${profileError.message}`);
+  }
+  
+  if (!profile || !["admin", "manager"].includes(profile.role)) {
+    console.error("Insufficient permissions. User role:", profile?.role);
+    throw new Error(`Insufficient permissions. Required: admin or manager, got: ${profile?.role}`);
+  }
+  
+  console.log("User authenticated and authorized:", { userId: user.id, role: profile.role });
+  
   const mapped: any = { ...updates };
   if ("locations" in mapped) {
     const locations: string[] | null | undefined = mapped.locations as any;
@@ -385,13 +416,22 @@ export async function updateJob(
       : null;
   }
 
+  console.log("Updating job with data:", { id, updates: mapped });
+  
   const { data, error } = await supabase
     .from("jobs")
     .update(mapped)
     .eq("id", id)
     .select()
     .single();
-  if (error) throw new Error(error.message);
+    
+  if (error) {
+    console.error("Database update error:", error);
+    throw new Error(error.message);
+  }
+  
+  console.log("Job updated successfully:", data);
+  
   const normalized: Job = {
     id: data.id,
     title: data.title,

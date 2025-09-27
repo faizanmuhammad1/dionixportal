@@ -35,6 +35,9 @@ export function EmployeeManagement() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [newEmployee, setNewEmployee] = useState({
     email: "",
     firstName: "",
@@ -58,26 +61,49 @@ export function EmployeeManagement() {
 
   const handleCreateEmployee = async () => {
     try {
-      const res = await fetch("/api/employees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: newEmployee.email,
-          password: newEmployee.password,
-          firstName: newEmployee.firstName,
-          lastName: newEmployee.lastName,
-          role: newEmployee.role,
-          department: newEmployee.department,
-          position: newEmployee.position,
-        }),
-      })
-      if (!res.ok) throw new Error((await res.json()).error || "Failed")
+      setIsUpdating(true)
+      if (editingEmployee) {
+        // Update existing employee
+        const res = await fetch(`/api/employees/${editingEmployee.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role: newEmployee.role,
+            first_name: newEmployee.firstName,
+            last_name: newEmployee.lastName,
+            department: newEmployee.department,
+            position: newEmployee.position,
+          }),
+        })
+        if (!res.ok) throw new Error((await res.json()).error || "Failed")
+        console.log("Employee updated successfully")
+      } else {
+        // Create new employee
+        const res = await fetch("/api/employees", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: newEmployee.email,
+            password: newEmployee.password,
+            firstName: newEmployee.firstName,
+            lastName: newEmployee.lastName,
+            role: newEmployee.role,
+            department: newEmployee.department,
+            position: newEmployee.position,
+          }),
+        })
+        if (!res.ok) throw new Error((await res.json()).error || "Failed")
+        console.log("Employee created successfully")
+      }
 
       setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", password: "", department: "", position: "" })
+      setEditingEmployee(null)
       setIsCreateDialogOpen(false)
       fetchEmployees()
     } catch (error: any) {
-      console.error("Error creating employee:", error.message)
+      console.error("Error saving employee:", error.message)
+    } finally {
+      setIsUpdating(false)
     }
   }
 
@@ -111,7 +137,14 @@ export function EmployeeManagement() {
         <div className="flex items-center gap-4">
           <Badge variant="secondary">{activeEmployees} Active</Badge>
           <Badge variant="outline">{totalEmployees} Total</Badge>
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+            setIsCreateDialogOpen(open)
+            if (!open) {
+              setEditingEmployee(null)
+              setIsUpdating(false)
+              setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", password: "", department: "", position: "" })
+            }
+          }}>
             <DialogTrigger asChild>
               <Button>
                 <UserPlus className="mr-2 h-4 w-4" />
@@ -120,9 +153,12 @@ export function EmployeeManagement() {
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Create New Employee</DialogTitle>
+                <DialogTitle>{editingEmployee ? "Edit Employee" : "Create New Employee"}</DialogTitle>
                 <DialogDescription>
-                  Add a new employee to the dionix.ai system. They will receive portal access credentials.
+                  {editingEmployee 
+                    ? "Update employee information and access permissions."
+                    : "Add a new employee to the dionix.ai system. They will receive portal access credentials."
+                  }
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -151,17 +187,20 @@ export function EmployeeManagement() {
                     type="email"
                     value={newEmployee.email}
                     onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
+                    disabled={!!editingEmployee}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Temporary Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={newEmployee.password}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
-                  />
-                </div>
+                {!editingEmployee && (
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Temporary Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={newEmployee.password}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
+                    />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="department">Department</Label>
@@ -207,8 +246,15 @@ export function EmployeeManagement() {
                     placeholder="e.g. Frontend Developer"
                   />
                 </div>
-                <Button onClick={handleCreateEmployee} className="w-full">
-                  Create Employee
+                <Button onClick={handleCreateEmployee} className="w-full" disabled={isUpdating}>
+                  {isUpdating ? (
+                    <span className="flex items-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      {editingEmployee ? "Updating Employee..." : "Creating Employee..."}
+                    </span>
+                  ) : (
+                    editingEmployee ? "Update Employee" : "Create Employee"
+                  )}
                 </Button>
               </div>
             </DialogContent>
@@ -276,6 +322,7 @@ export function EmployeeManagement() {
                         <Mail className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="sm" title="Edit Employee" onClick={() => {
+                        setEditingEmployee(employee)
                         setIsCreateDialogOpen(true)
                         setNewEmployee({
                           email: employee.email,
@@ -289,15 +336,30 @@ export function EmployeeManagement() {
                       }}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" title="Deactivate" onClick={async () => {
-                        await fetch(`/api/employees/${employee.id}`, {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ status: "inactive" }),
-                        })
-                        fetchEmployees()
-                      }}>
-                        <Trash2 className="h-4 w-4" />
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        title="Deactivate" 
+                        disabled={deactivatingId === employee.id}
+                        onClick={async () => {
+                          setDeactivatingId(employee.id)
+                          try {
+                            await fetch(`/api/employees/${employee.id}`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ status: "inactive" }),
+                            })
+                            fetchEmployees()
+                          } finally {
+                            setDeactivatingId(null)
+                          }
+                        }}
+                      >
+                        {deactivatingId === employee.id ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   </TableCell>
