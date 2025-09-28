@@ -285,7 +285,7 @@ export function UnifiedProjectManagement() {
           assigned_employees: members,
           progress,
           budget: Number(p.budget || 0),
-          client: p.client_name || "",
+        client: p.client_name || "",
           tasks: taskList,
           service_type: p.project_type || undefined,
           company_number: p.business_number || undefined,
@@ -663,8 +663,8 @@ export function UnifiedProjectManagement() {
           iban: bankIban,
           swift: bankSwift,
         }),
-      };
-
+    };
+      
       if (editingProject) {
         // Update existing project
         const { data, error } = await supabase
@@ -852,7 +852,7 @@ export function UnifiedProjectManagement() {
                 {loading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <div className="text-2xl font-bold">{projects.length}</div>
+                <div className="text-2xl font-bold">{projects.length}</div>
                 )}
               </CardContent>
             </Card>
@@ -867,9 +867,9 @@ export function UnifiedProjectManagement() {
                 {loading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <div className="text-2xl font-bold">
-                    {projects.filter((p) => p.status === "active").length}
-                  </div>
+                <div className="text-2xl font-bold">
+                  {projects.filter((p) => p.status === "active").length}
+                </div>
                 )}
               </CardContent>
             </Card>
@@ -899,7 +899,7 @@ export function UnifiedProjectManagement() {
                 {loading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <div className="text-2xl font-bold">{employees.length}</div>
+                <div className="text-2xl font-bold">{employees.length}</div>
                 )}
               </CardContent>
             </Card>
@@ -924,24 +924,24 @@ export function UnifiedProjectManagement() {
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {projects.slice(0, 3).map((project) => (
-                      <div
-                        key={project.id}
-                        className="flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="font-medium">{project.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {project.client}
-                          </p>
-                        </div>
-                        <Badge className={getStatusColor(project.status)}>
-                          {project.status}
-                        </Badge>
+                <div className="space-y-4">
+                  {projects.slice(0, 3).map((project) => (
+                    <div
+                      key={project.id}
+                      className="flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="font-medium">{project.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {project.client}
+                        </p>
                       </div>
-                    ))}
-                  </div>
+                      <Badge className={getStatusColor(project.status)}>
+                        {project.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
                 )}
               </CardContent>
             </Card>
@@ -952,7 +952,7 @@ export function UnifiedProjectManagement() {
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="space-y-4">
+                <div className="space-y-4">
                     {Array.from({ length: 3 }).map((_, index) => (
                       <div key={`skeleton-task-${index}`} className="flex items-center justify-between">
                         <div className="space-y-2">
@@ -966,25 +966,25 @@ export function UnifiedProjectManagement() {
                 ) : (
                   <div className="space-y-4">
                     {tasks
-                      .filter((t) => t.status !== "completed")
-                      .slice(0, 3)
-                      .map((task) => (
-                        <div
-                          key={task.id}
-                          className="flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="font-medium">{task.title}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {getEmployeeName(task.assignee)}
-                            </p>
-                          </div>
-                          <Badge className={getTaskStatusColor(task.status)}>
-                            {task.status}
-                          </Badge>
+                    .filter((t) => t.status !== "completed")
+                    .slice(0, 3)
+                    .map((task) => (
+                      <div
+                        key={task.id}
+                        className="flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="font-medium">{task.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {getEmployeeName(task.assignee)}
+                          </p>
                         </div>
-                      ))}
-                  </div>
+                        <Badge className={getTaskStatusColor(task.status)}>
+                          {task.status}
+                        </Badge>
+                      </div>
+                    ))}
+                </div>
                 )}
               </CardContent>
             </Card>
@@ -1253,9 +1253,9 @@ export function UnifiedProjectManagement() {
                                 {/* Service-Specific Details */}
                                 {project.service_specific && Object.keys(project.service_specific).length > 0 && (
                                   <Card className="md:col-span-2">
-                                    <CardHeader>
+                                  <CardHeader>
                                       <CardTitle>Service-Specific Details</CardTitle>
-                                    </CardHeader>
+                                  </CardHeader>
                                     <CardContent className="space-y-2 text-sm">
                                       {project.service_type === "web" && (
                                         <>
@@ -1360,7 +1360,7 @@ export function UnifiedProjectManagement() {
                                                 </a>
                                               </p>
                                             ))}
-                                          </div>
+                                      </div>
                                         ) : (
                                           <p className="text-muted-foreground">No media links provided</p>
                                         )}
@@ -1628,9 +1628,9 @@ export function UnifiedProjectManagement() {
               </Card>
             ))}
           </div>
-         </TabsContent>
+        </TabsContent>
 
-         {currentUser?.role !== "employee" && (
+        {currentUser?.role !== "employee" && (
           <TabsContent value="team" className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {teamEmployees.map((employee) => {
@@ -1736,7 +1736,7 @@ export function UnifiedProjectManagement() {
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         required
                       />
-                    </div>
+                            </div>
                     
                     <div>
                       <Label>Project Type *</Label>
@@ -1752,7 +1752,7 @@ export function UnifiedProjectManagement() {
                           <SelectItem value="custom">Custom Project</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
+                              </div>
                     
                     <div>
                       <Label>Description</Label>
@@ -1762,7 +1762,7 @@ export function UnifiedProjectManagement() {
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         rows={3}
                       />
-                    </div>
+                              </div>
                     
                     <div>
                       <Label>Client Name</Label>
@@ -1771,7 +1771,7 @@ export function UnifiedProjectManagement() {
                         value={formData.client}
                         onChange={(e) => setFormData({ ...formData, client: e.target.value })}
                       />
-                    </div>
+                            </div>
                     
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -1782,7 +1782,7 @@ export function UnifiedProjectManagement() {
                           value={formData.budget}
                           onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
                         />
-                      </div>
+                          </div>
                       <div>
                         <Label>Priority</Label>
                         <Select value={formData.priority} onValueChange={(value) => setFormData({ ...formData, priority: value as any })}>
@@ -1795,7 +1795,7 @@ export function UnifiedProjectManagement() {
                             <SelectItem value="high">High</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
+                  </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4">
@@ -1852,11 +1852,11 @@ export function UnifiedProjectManagement() {
                     <div className="space-y-4">
                       <div>
                         <Label className="text-sm font-medium">Domain Name Suggestions</Label>
-                        <Input
+                      <Input
                           placeholder="e.g., example.com, mysite.dev"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               domain_suggestions: e.target.value,
                             })
                           }
@@ -1867,14 +1867,14 @@ export function UnifiedProjectManagement() {
                         <Label className="text-sm font-medium">Website References</Label>
                         <Textarea
                           placeholder="Enter website URLs (one per line or comma-separated)"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
-                              references: e.target.value,
-                            })
-                          }
-                          defaultValue={serviceSpecific.references || ""}
-                        />
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            references: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.references || ""}
+                      />
                       </div>
                       <div>
                         <Label className="text-sm font-medium">Features & Requirements</Label>
@@ -1889,8 +1889,8 @@ export function UnifiedProjectManagement() {
                                   const newFeatures = e.target.checked
                                     ? [...currentFeatures, feature]
                                     : currentFeatures.filter((f: string) => f !== feature);
-                                  setServiceSpecific({
-                                    ...serviceSpecific,
+                          setServiceSpecific({
+                            ...serviceSpecific,
                                     features: newFeatures,
                                   });
                                 }}
@@ -1902,14 +1902,14 @@ export function UnifiedProjectManagement() {
                         <Textarea
                           placeholder="Additional requirements..."
                           className="mt-2"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               additional_requirements: e.target.value,
-                            })
-                          }
+                          })
+                        }
                           defaultValue={serviceSpecific.additional_requirements || ""}
-                        />
+                      />
                       </div>
                     </div>
                   )}
@@ -1917,27 +1917,27 @@ export function UnifiedProjectManagement() {
                     <div className="space-y-4">
                       <div>
                         <Label className="text-sm font-medium">Logo Ideas & Concepts</Label>
-                        <Textarea
+                      <Textarea
                           placeholder="Describe your logo ideas, style preferences, and concepts"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
-                              logo_ideas: e.target.value,
-                            })
-                          }
-                          defaultValue={serviceSpecific.logo_ideas || ""}
-                        />
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            logo_ideas: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.logo_ideas || ""}
+                      />
                       </div>
                       <div>
                         <Label className="text-sm font-medium">Upload Brand References (Optional)</Label>
-                        <Input
+                      <Input
                           type="file"
                           multiple
                           accept="image/*"
                           onChange={(e) => {
                             const files = Array.from(e.target.files || []);
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               uploaded_references: files.map(f => ({
                                 name: f.name,
                                 size: f.size,
@@ -1949,11 +1949,11 @@ export function UnifiedProjectManagement() {
                       </div>
                       <div>
                         <Label className="text-sm font-medium">Colour & Theme Preferences</Label>
-                        <Input
+                      <Input
                           placeholder="e.g., Blue, White, Modern, Minimalist"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               color_preferences: e.target.value,
                             })
                           }
@@ -1986,14 +1986,14 @@ export function UnifiedProjectManagement() {
                         <Input
                           placeholder="Other assets needed..."
                           className="mt-2"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               other_assets: e.target.value,
-                            })
-                          }
+                          })
+                        }
                           defaultValue={serviceSpecific.other_assets || ""}
-                        />
+                      />
                       </div>
                     </div>
                   )}
@@ -2009,24 +2009,24 @@ export function UnifiedProjectManagement() {
                                 name="ai_solution_type"
                                 value={type}
                                 checked={serviceSpecific.ai_solution_type === type}
-                                onChange={(e) =>
-                                  setServiceSpecific({
-                                    ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                                     ai_solution_type: e.target.value,
-                                  })
-                                }
-                              />
+                          })
+                        }
+                      />
                               <span className="text-sm">{type}</span>
                             </label>
                           ))}
                         </div>
                         {serviceSpecific.ai_solution_type === "Other" && (
-                          <Input
+                      <Input
                             placeholder="Specify other AI solution type..."
                             className="mt-2"
-                            onChange={(e) =>
-                              setServiceSpecific({
-                                ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                                 other_ai_type: e.target.value,
                               })
                             }
@@ -2038,9 +2038,9 @@ export function UnifiedProjectManagement() {
                         <Label className="text-sm font-medium">Business Challenge / Use Case</Label>
                         <Textarea
                           placeholder="Describe the business challenge and how AI can help"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               business_challenge: e.target.value,
                             })
                           }
@@ -2052,8 +2052,8 @@ export function UnifiedProjectManagement() {
                         <Select
                           value={serviceSpecific.data_availability || ""}
                           onValueChange={(value) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               data_availability: value,
                             })
                           }
@@ -2101,9 +2101,9 @@ export function UnifiedProjectManagement() {
                         <Label className="text-sm font-medium">Target Audience & Industry</Label>
                         <Textarea
                           placeholder="Describe your target audience and industry"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               target_audience: e.target.value,
                             })
                           }
@@ -2114,9 +2114,9 @@ export function UnifiedProjectManagement() {
                         <Label className="text-sm font-medium">Marketing Goals</Label>
                         <Textarea
                           placeholder="What are your marketing objectives?"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               marketing_goals: e.target.value,
                             })
                           }
@@ -2147,12 +2147,12 @@ export function UnifiedProjectManagement() {
                           ))}
                         </div>
                         {serviceSpecific.channels?.includes("Other") && (
-                          <Input
+                      <Input
                             placeholder="Specify other channels..."
                             className="mt-2"
-                            onChange={(e) =>
-                              setServiceSpecific({
-                                ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                                 other_channels: e.target.value,
                               })
                             }
@@ -2165,8 +2165,8 @@ export function UnifiedProjectManagement() {
                         <Select
                           value={serviceSpecific.monthly_budget || ""}
                           onValueChange={(value) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               monthly_budget: value,
                             })
                           }
@@ -2189,29 +2189,29 @@ export function UnifiedProjectManagement() {
                     <div className="space-y-4">
                       <div>
                         <Label className="text-sm font-medium">Service Description</Label>
-                        <Textarea
+                      <Textarea
                           placeholder="Describe the custom service you need"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               service_description: e.target.value,
-                            })
-                          }
+                          })
+                        }
                           defaultValue={serviceSpecific.service_description || ""}
-                        />
+                      />
                       </div>
                       <div>
                         <Label className="text-sm font-medium">Expected Outcome</Label>
-                        <Textarea
+                      <Textarea
                           placeholder="What do you expect to achieve with this project?"
-                          onChange={(e) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
                               expected_outcome: e.target.value,
-                            })
-                          }
+                          })
+                        }
                           defaultValue={serviceSpecific.expected_outcome || ""}
-                        />
+                      />
                       </div>
                     </div>
                   )}
@@ -2234,21 +2234,21 @@ export function UnifiedProjectManagement() {
                   <div className="space-y-4">
                     <div>
                       <Label>Business Number *</Label>
-                      <Input
+                    <Input
                         placeholder="Enter business registration number"
-                        value={companyNumber}
-                        onChange={(e) => setCompanyNumber(e.target.value)}
+                      value={companyNumber}
+                      onChange={(e) => setCompanyNumber(e.target.value)}
                         required
-                      />
+                    />
                     </div>
                     
                     <div>
                       <Label>Company Email *</Label>
-                      <Input
+                    <Input
                         type="email"
                         placeholder="company@example.com"
-                        value={companyEmail}
-                        onChange={(e) => setCompanyEmail(e.target.value)}
+                      value={companyEmail}
+                      onChange={(e) => setCompanyEmail(e.target.value)}
                         required
                       />
                     </div>
@@ -2257,23 +2257,23 @@ export function UnifiedProjectManagement() {
                       <Label>Company Address *</Label>
                       <Textarea
                         placeholder="Full company address"
-                        value={companyAddress}
-                        onChange={(e) => setCompanyAddress(e.target.value)}
+                      value={companyAddress}
+                      onChange={(e) => setCompanyAddress(e.target.value)}
                         rows={3}
                         required
-                      />
+                    />
                     </div>
                     
                     <div>
                       <Label>About Company / Team *</Label>
-                      <Textarea
+                    <Textarea
                         placeholder="Describe your company, team, and what you do"
-                        value={aboutCompany}
-                        onChange={(e) => setAboutCompany(e.target.value)}
+                      value={aboutCompany}
+                      onChange={(e) => setAboutCompany(e.target.value)}
                         rows={4}
                         required
-                      />
-                    </div>
+                    />
+                  </div>
                   </div>
                   
                   {tryAdvance && wizardStep === 2 && (!companyNumber || !companyEmail || !companyAddress || !aboutCompany) && (
@@ -2295,65 +2295,65 @@ export function UnifiedProjectManagement() {
                   <div className="space-y-4">
                     <div>
                       <Label>Social Media Links *</Label>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <Input
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Input
                             placeholder="Add social media link (e.g., https://facebook.com/company)"
-                            value={newSocial}
-                            onChange={(e) => setNewSocial(e.target.value)}
-                          />
+                        value={newSocial}
+                        onChange={(e) => setNewSocial(e.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (!newSocial.trim()) return;
+                          setSocialLinks([...socialLinks, newSocial.trim()]);
+                          setNewSocial("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      {socialLinks.map((s, idx) => (
+                        <div
+                          key={`${s}-${idx}`}
+                          className="flex justify-between border rounded-md p-2"
+                        >
+                              <span className="truncate">{s}</span>
                           <Button
-                            variant="outline"
-                            onClick={() => {
-                              if (!newSocial.trim()) return;
-                              setSocialLinks([...socialLinks, newSocial.trim()]);
-                              setNewSocial("");
-                            }}
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setSocialLinks(
+                                socialLinks.filter((_, i) => i !== idx)
+                              )
+                            }
                           >
-                            Add
+                            Remove
                           </Button>
                         </div>
-                        <div className="text-sm space-y-1">
-                          {socialLinks.map((s, idx) => (
-                            <div
-                              key={`${s}-${idx}`}
-                              className="flex justify-between border rounded-md p-2"
-                            >
-                              <span className="truncate">{s}</span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  setSocialLinks(
-                                    socialLinks.filter((_, i) => i !== idx)
-                                  )
-                                }
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
                     </div>
                     
                     <div>
                       <Label>Public Business Number *</Label>
-                      <Input
+                    <Input
                         placeholder="Phone number for public display"
-                        value={publicContactPhone}
-                        onChange={(e) => setPublicContactPhone(e.target.value)}
+                      value={publicContactPhone}
+                      onChange={(e) => setPublicContactPhone(e.target.value)}
                         required
-                      />
+                    />
                     </div>
                     
                     <div>
                       <Label>Public Company Email *</Label>
-                      <Input
+                    <Input
                         type="email"
                         placeholder="Email for public display"
-                        value={publicContactEmail}
-                        onChange={(e) => setPublicContactEmail(e.target.value)}
+                      value={publicContactEmail}
+                      onChange={(e) => setPublicContactEmail(e.target.value)}
                         required
                       />
                     </div>
@@ -2362,12 +2362,12 @@ export function UnifiedProjectManagement() {
                       <Label>Public Address *</Label>
                       <Textarea
                         placeholder="Address for public display"
-                        value={publicContactAddress}
-                        onChange={(e) => setPublicContactAddress(e.target.value)}
+                      value={publicContactAddress}
+                      onChange={(e) => setPublicContactAddress(e.target.value)}
                         rows={3}
                         required
-                      />
-                    </div>
+                    />
+                  </div>
                   </div>
                   
                   {tryAdvance && wizardStep === 3 && (!socialLinks.length || !publicContactPhone || !publicContactEmail || !publicContactAddress) && (
@@ -2389,86 +2389,86 @@ export function UnifiedProjectManagement() {
                   <div className="space-y-4">
                     <div>
                       <Label>Media Links</Label>
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <Input
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Input
                             placeholder="Add media link (images, videos, etc.)"
-                            value={newMedia}
-                            onChange={(e) => setNewMedia(e.target.value)}
-                          />
+                        value={newMedia}
+                        onChange={(e) => setNewMedia(e.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (!newMedia.trim()) return;
+                          setMediaLinks([...mediaLinks, newMedia.trim()]);
+                          setNewMedia("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      {mediaLinks.map((m, idx) => (
+                        <div
+                          key={`${m}-${idx}`}
+                          className="flex justify-between border rounded-md p-2"
+                        >
+                              <span className="truncate">{m}</span>
                           <Button
-                            variant="outline"
-                            onClick={() => {
-                              if (!newMedia.trim()) return;
-                              setMediaLinks([...mediaLinks, newMedia.trim()]);
-                              setNewMedia("");
-                            }}
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setMediaLinks(
+                                mediaLinks.filter((_, i) => i !== idx)
+                              )
+                            }
                           >
-                            Add
+                            Remove
                           </Button>
                         </div>
-                        <div className="text-sm space-y-1">
-                          {mediaLinks.map((m, idx) => (
-                            <div
-                              key={`${m}-${idx}`}
-                              className="flex justify-between border rounded-md p-2"
-                            >
-                              <span className="truncate">{m}</span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  setMediaLinks(
-                                    mediaLinks.filter((_, i) => i !== idx)
-                                  )
-                                }
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
                     </div>
                     
                     <div>
                       <Label>Upload Media Files</Label>
-                      <Input
-                        type="file"
-                        multiple
+                    <Input
+                      type="file"
+                      multiple
                         accept="image/*,video/*,.pdf,.doc,.docx"
-                        onChange={(e) =>
-                          setUploadFiles(Array.from(e.target.files || []))
-                        }
-                      />
+                      onChange={(e) =>
+                        setUploadFiles(Array.from(e.target.files || []))
+                      }
+                    />
                       <p className="text-xs text-muted-foreground mt-1">
                         Upload images, videos, documents, or other media files
                       </p>
-                    </div>
+                  </div>
                     
                     <div className="border-t pt-4">
                       <Label className="text-base font-medium">Bank Details for Payment Integration (Optional)</Label>
                       <div className="grid md:grid-cols-2 gap-3 mt-3">
-                        <Input
-                          placeholder="Bank Account Name"
-                          value={bankAccountName}
-                          onChange={(e) => setBankAccountName(e.target.value)}
-                        />
-                        <Input
-                          placeholder="Bank Account Number"
-                          value={bankAccountNumber}
-                          onChange={(e) => setBankAccountNumber(e.target.value)}
-                        />
-                        <Input
-                          placeholder="IBAN"
-                          value={bankIban}
-                          onChange={(e) => setBankIban(e.target.value)}
-                        />
-                        <Input
+                    <Input
+                      placeholder="Bank Account Name"
+                      value={bankAccountName}
+                      onChange={(e) => setBankAccountName(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Bank Account Number"
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value)}
+                    />
+                    <Input
+                      placeholder="IBAN"
+                      value={bankIban}
+                      onChange={(e) => setBankIban(e.target.value)}
+                    />
+                    <Input
                           placeholder="SWIFT Code"
-                          value={bankSwift}
-                          onChange={(e) => setBankSwift(e.target.value)}
-                        />
+                      value={bankSwift}
+                      onChange={(e) => setBankSwift(e.target.value)}
+                    />
                       </div>
                     </div>
                   </div>
@@ -2484,11 +2484,11 @@ export function UnifiedProjectManagement() {
                   </div>
                   
                   <div className="space-y-4">
-                    <Card>
-                      <CardHeader>
+                  <Card>
+                    <CardHeader>
                         <CardTitle>Brand & References</CardTitle>
                         <CardDescription>Step 1 + Step 2 + Step 5 summary</CardDescription>
-                      </CardHeader>
+                    </CardHeader>
                       <CardContent className="space-y-2 text-sm">
                         <div><strong>Project:</strong> {formData.name}</div>
                         <div><strong>Type:</strong> {serviceType || "-"}</div>
@@ -2507,8 +2507,8 @@ export function UnifiedProjectManagement() {
                         {uploadFiles.length > 0 && (
                           <div><strong>Uploaded Files:</strong> {uploadFiles.length} files</div>
                         )}
-                      </CardContent>
-                    </Card>
+                    </CardContent>
+                  </Card>
                     
                     <Card>
                       <CardHeader>
@@ -2531,10 +2531,10 @@ export function UnifiedProjectManagement() {
                     
                     <div className="border rounded-lg p-4 bg-muted/50">
                       <label className="flex items-start gap-3 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={confirmSubmit}
-                          onChange={(e) => setConfirmSubmit(e.target.checked)}
+                    <input
+                      type="checkbox"
+                      checked={confirmSubmit}
+                      onChange={(e) => setConfirmSubmit(e.target.checked)}
                           className="mt-1"
                           required
                         />
@@ -2545,7 +2545,7 @@ export function UnifiedProjectManagement() {
                             By checking this box, you confirm that all information provided is accurate and complete.
                           </span>
                         </span>
-                      </label>
+                  </label>
                     </div>
                   </div>
                 </div>

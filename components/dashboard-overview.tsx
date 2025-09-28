@@ -21,6 +21,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
   const [activeProjectsCount, setActiveProjectsCount] = useState<number>(0)
   const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
   const [activeEmployees, setActiveEmployees] = useState<number>(0)
+  const [pendingSubmissionsCount, setPendingSubmissionsCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -30,33 +31,80 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     async function fetchData() {
       if (isAdmin) {
         try {
-          const [submissions, applications, employees, activeProjects] = await Promise.all([
+          // Fetch basic data first
+          const [submissions, applications] = await Promise.all([
             getFormSubmissions(),
             getJobApplications(),
-            supabase
-              .from("profiles")
-              .select("id", { count: "exact", head: true })
-              .eq("status", "active")
-              .neq("role", "admin"),
-            supabase
-              .from("projects")
-              .select("id", { count: "exact", head: true })
-              .eq("status", "active"),
           ])
-          // submissions here refers to form submissions; keep client submissions list separate
+          
           setFormSubmissions(submissions)
+          setJobApplications(applications)
+          
           // Load recent client project submissions for activity stream
           const submissionsList = await getClientProjects()
           setClientProjects(submissionsList)
-          setJobApplications(applications)
-          if (employees && (employees as any).count !== undefined) {
-            setActiveEmployees((employees as any).count as number)
+          
+          // Try to get employee count from employee_profiles table
+          try {
+            const { count: employeeCount, error: employeeError } = await supabase
+              .from("employee_profiles")
+              .select("id", { count: "exact", head: true })
+              .eq("status", "active")
+            
+            if (employeeError) {
+              console.warn("Employee profiles table error:", employeeError)
+              setActiveEmployees(0)
+            } else {
+              console.log("Active employee count from employee_profiles:", employeeCount)
+              setActiveEmployees(employeeCount || 0)
+            }
+          } catch (employeeError) {
+            console.warn("Could not fetch employee count:", employeeError)
+            setActiveEmployees(0)
           }
-          if (activeProjects && (activeProjects as any).count !== undefined) {
-            setActiveProjectsCount((activeProjects as any).count as number)
+          
+          // Get total projects count from projects table
+          try {
+            const { count: projectCount, error: projectError } = await supabase
+              .from("projects")
+              .select("project_id", { count: "exact", head: true })
+            
+            if (projectError) {
+              console.warn("Projects table error:", projectError)
+              setActiveProjectsCount(0)
+            } else {
+              console.log("Total projects count from projects table:", projectCount)
+              setActiveProjectsCount(projectCount || 0)
+            }
+          } catch (projectError) {
+            console.warn("Could not fetch projects count:", projectError)
+            setActiveProjectsCount(0)
+          }
+          
+          // Get pending submissions count
+          try {
+            const { count: pendingCount, error: pendingError } = await supabase
+              .from("submissions")
+              .select("submission_id", { count: "exact", head: true })
+              .eq("status", "pending")
+            
+            if (pendingError) {
+              console.warn("Pending submissions count error:", pendingError)
+              setPendingSubmissionsCount(0)
+            } else {
+              console.log("Pending submissions count:", pendingCount)
+              setPendingSubmissionsCount(pendingCount || 0)
+            }
+          } catch (pendingError) {
+            console.warn("Could not fetch pending submissions count:", pendingError)
+            setPendingSubmissionsCount(0)
           }
         } catch (error) {
           console.error("Error fetching dashboard data:", error)
+          // Set default values on error
+          setActiveEmployees(0)
+          setActiveProjectsCount(0)
+          setPendingSubmissionsCount(0)
         }
       }
       setLoading(false)
@@ -95,7 +143,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     totalSubmissions: formSubmissions.length,
     activeProjects: activeProjectsCount,
     jobApplications: jobApplications.length,
-    pendingProjects: clientProjects.filter((p) => p.status === "pending").length,
+    pendingProjects: pendingSubmissionsCount, // Use real pending submissions count from database
     newApplications: jobApplications.filter((a) => a.status === "pending").length,
   }
 
