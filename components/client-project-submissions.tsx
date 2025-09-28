@@ -47,26 +47,54 @@ import {
   XCircle,
   Trash2,
 } from "lucide-react";
-import {
-  getClientProjects,
-  approveClientProject,
-  rejectClientProject,
-  setClientSubmissionInReview,
-  type Project,
-  type ClientProject,
-  deleteClientSubmission,
-  updateClientSubmission,
-} from "@/lib/auth";
 import { useToast } from "@/components/ui/use-toast";
 import { createClient } from "@/lib/supabase";
+import { getCurrentUser, type User } from "@/lib/auth";
+
+interface Submission {
+  submission_id: string;
+  client_id: string;
+  project_type: string;
+  description?: string;
+  client_name?: string;
+  budget: number;
+  start_date?: string;
+  end_date?: string;
+  status: "pending" | "approved" | "rejected";
+  priority: "low" | "medium" | "high";
+  step2_data?: Record<string, any>;
+  business_number?: string;
+  company_email?: string;
+  company_address?: string;
+  about_company?: string;
+  social_media_links?: string;
+  public_business_number?: string;
+  public_company_email?: string;
+  public_address?: string;
+  media_links?: string;
+  uploaded_media?: Record<string, any>;
+  bank_details?: string;
+  confirmation_checked: boolean;
+  created_at: string;
+  approved_at?: string;
+  approved_by?: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  type: "web" | "branding" | "marketing" | "ai" | "custom";
+  status: "planning" | "active" | "completed" | "on-hold";
+  priority: "low" | "medium" | "high";
+}
 
 type ProjectType = Project["type"];
 
 export function ClientProjectSubmissions() {
-  const [submissions, setSubmissions] = useState<ClientProject[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewingId, setViewingId] = useState<string | null>(null);
-  const [viewData, setViewData] = useState<any | null>(null);
+  const [viewData, setViewData] = useState<Submission | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
@@ -75,6 +103,9 @@ export function ClientProjectSubmissions() {
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(
     null
   );
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const supabase = createClient();
+  const { toast } = useToast();
   const [projectName, setProjectName] = useState("");
   const [projectType, setProjectType] = useState<ProjectType>("custom");
   const [projectPriority, setProjectPriority] =
@@ -103,7 +134,6 @@ export function ClientProjectSubmissions() {
   const [domainSuggestions, setDomainSuggestions] = useState("");
   const [websiteReferences, setWebsiteReferences] = useState("");
   const [featuresRequirements, setFeaturesRequirements] = useState("");
-  const [budgetTimeline, setBudgetTimeline] = useState("");
   const [logoIdeas, setLogoIdeas] = useState("");
   const [brandTheme, setBrandTheme] = useState("");
   const [designAssetsNeeded, setDesignAssetsNeeded] = useState("");
@@ -118,7 +148,6 @@ export function ClientProjectSubmissions() {
   const [serviceDescription, setServiceDescription] = useState("");
   const [expectedOutcome, setExpectedOutcome] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
-  const { toast } = useToast();
 
   useEffect(() => {
     (async () => {
@@ -129,8 +158,16 @@ export function ClientProjectSubmissions() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const data = await getClientProjects();
-      setSubmissions(data);
+      const { data, error } = await supabase
+        .from("submissions")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setSubmissions(data || []);
     } catch (e: any) {
       toast({
         title: "Failed to load submissions",
@@ -147,193 +184,96 @@ export function ClientProjectSubmissions() {
     [submissions]
   );
 
-  const openApprove = async (s: ClientProject) => {
-    setActiveSubmissionId(s.id);
-    setProjectName(s.company_details || s.contact_email);
-    setProjectType("custom");
-    setProjectPriority("medium");
+  const openApprove = async (s: Submission) => {
+    setActiveSubmissionId(s.submission_id);
+    setProjectName(s.client_name || "Unknown Client");
+    setProjectType(s.project_type as ProjectType);
+    setProjectPriority(s.priority);
     setProjectStatus("planning");
 
-    // Load detailed submission to prefill fields
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("client_project_details")
-        .select("*")
-        .eq("id", s.id)
-        .single();
-      if (error) throw error;
-
-      setCompanyEmail(data.company_email || "");
-      setCompanyAddress(data.company_address || "");
-      setAboutCompany(data.company_details || "");
-      setPublicPhone(data.business_phone || data.contact_phone || "");
-      // company number equals business number per requirement
-      if (data.business_phone && !companyNumber)
-        setCompanyNumber(data.business_phone);
-      setPublicCompanyEmail(data.contact_email || "");
-      setPublicCompanyAddress(data.contact_address || "");
-      setSocialLinks((data.social_links || "").toString());
-      setMediaLinks((data.media_links || "").toString());
-      setSelectedService(data.selected_service || "");
-      // Map submission selected_service → form service type select
-      const svcRaw = (data.selected_service || "").toString();
-      const svcMap: Record<string, ProjectType> = {
-        "web-development": "web",
-        "branding-design": "branding",
-        "digital-marketing": "marketing",
-        "ai-solutions": "ai",
-        other: "custom",
-      };
-      const mappedType = svcMap[svcRaw];
-      if (mappedType) setProjectType(mappedType);
-
-      setDomainSuggestions(data.domain_suggestions || "");
-      setWebsiteReferences(data.website_references || "");
-      setLogoIdeas(data.logo_concepts || "");
-      setBrandTheme(data.brand_theme || "");
-
-      // Deep prefill from embedded JSON (service_specific or services_details JSON-string)
-      let embedded: any = null;
-      if (data.service_specific && typeof data.service_specific === "object") {
-        embedded = data.service_specific;
-      } else if (typeof data.services_details === "string") {
-        const txt = data.services_details.trim();
-        if (txt.startsWith("{") || txt.startsWith("[")) {
-          try {
-            embedded = JSON.parse(txt);
-          } catch {}
-        }
+    // Load submission data to prefill fields
+    setCompanyEmail(s.company_email || "");
+    setCompanyAddress(s.company_address || "");
+    setAboutCompany(s.about_company || "");
+    setPublicPhone(s.public_business_number || "");
+    setCompanyNumber(s.business_number || "");
+    setPublicCompanyEmail(s.public_company_email || "");
+    setPublicCompanyAddress(s.public_address || "");
+    setSocialLinks(s.social_media_links || "");
+    setMediaLinks(s.media_links || "");
+    
+    // Parse bank details if available
+    if (s.bank_details) {
+      try {
+        const bankData = JSON.parse(s.bank_details);
+        setBankAccountName(bankData.account_name || "");
+        setBankAccountNumber(bankData.account_number || "");
+        setBankIban(bankData.iban || "");
+        setBankSwift(bankData.swift || "");
+      } catch (e) {
+        // If parsing fails, treat as plain text
+        setBankAccountName(s.bank_details);
       }
-      if (embedded) {
-        const pick = (k: string) =>
-          embedded[k] ??
-          embedded[k.replace(/[A-Z]/g, (m: string) => `_${m.toLowerCase()}`)] ??
-          "";
-        const setIf = (fn: (v: string) => void, v?: any) => {
-          const s = (v ?? "").toString().trim();
-          if (s) fn(s);
-        };
-        // selected service override if provided
-        setIf(setSelectedService, embedded.selectedService);
-        const overrideSvc = (
-          embedded.selectedService ||
-          embedded.selected_service ||
-          ""
-        ).toString();
-        const mapped = svcMap[overrideSvc];
-        if (mapped) setProjectType(mapped);
-
-        setIf(setDomainSuggestions, embedded.domainSuggestions);
-        setIf(setWebsiteReferences, embedded.websiteReferences);
-        setIf(
-          setFeaturesRequirements,
-          embedded.featuresRequirements || embedded.features_requirements_svc
-        );
-        setIf(
-          setBudgetTimeline,
-          embedded.budgetTimeline || embedded.budget_timeline_svc
-        );
-        setIf(setDesignAssetsNeeded, embedded.designAssetsNeeded);
-        setIf(setChannelsOfInterest, embedded.channelsOfInterest);
-        setIf(setAiSolutionType, embedded.aiSolutionType);
-        setIf(
-          setPublicPhone,
-          embedded.publicBusinessNumber || embedded.contactBusinessNumber
-        );
-        // company number equals business number per requirement
-        const bizNum =
-          embedded.publicBusinessNumber || embedded.contactBusinessNumber;
-        if (bizNum && !companyNumber) setCompanyNumber(String(bizNum));
-        setIf(
-          setPublicCompanyEmail,
-          embedded.publicCompanyEmail || embedded.contactCompanyEmail
-        );
-        setIf(
-          setPublicCompanyAddress,
-          embedded.publicCompanyAddress || embedded.contactCompanyAddress
-        );
-        setIf(setAboutCompany, embedded.aboutCompanyDetails);
-        const links = pick("socialLinks");
-        if (links && links.toLowerCase() !== "no links") setSocialLinks(links);
-        const mlinks = pick("mediaLinks");
-        if (mlinks && mlinks.toLowerCase() !== "no") setMediaLinks(mlinks);
-        const bank = pick("bankDetails");
-        if (bank && bank.toLowerCase() !== "no") {
-          // store raw bank details string in description footer
-          if (!description)
-            setDescription(
-              `${(
-                embedded.services_details ||
-                embedded.details ||
-                ""
-              ).toString()}\n\nBank: ${bank}`.trim()
-            );
-        }
-      }
-    } catch {
-      // best-effort prefill; ignore errors
     }
 
+    // Load service-specific data from step2_data
+    const step2Data = s.step2_data || {};
+    setSelectedService(s.project_type);
+    setDomainSuggestions(step2Data.domain_suggestions || "");
+    setWebsiteReferences(step2Data.references || "");
+    setFeaturesRequirements(step2Data.features?.join(", ") || "");
+    setLogoIdeas(step2Data.logo_ideas || "");
+    setBrandTheme(step2Data.color_preferences || "");
+    setDesignAssetsNeeded(step2Data.design_assets?.join(", ") || "");
+    setTargetAudienceIndustry(step2Data.target_audience || "");
+    setMarketingGoals(step2Data.marketing_goals || "");
+    setChannelsOfInterest(step2Data.channels?.join(", ") || "");
+    setBudgetRangeMonthly(step2Data.monthly_budget || "");
+    setAiSolutionType(step2Data.ai_solution_type || "");
+    setBusinessChallengeUseCase(step2Data.business_challenge || "");
+    setDataAvailability(step2Data.data_availability || "");
+    setBudgetRange(step2Data.budget_range || "");
+    setServiceDescription(step2Data.service_description || "");
+    setExpectedOutcome(step2Data.expected_outcome || "");
+
     setApproveOpen(true);
+
   };
 
   const confirmApprove = async () => {
     if (!activeSubmissionId) return;
     try {
-      const created = await approveClientProject(activeSubmissionId, {
-        name: projectName || "New Project",
-        type: projectType,
-        priority: projectPriority,
-        status: projectStatus,
-        description: description || null,
-        start_date: startDate || null,
-        end_date: endDate || null,
-        budget: budget ? Number(budget) : null,
-        client_name: clientName || null,
-        company_number: companyNumber || publicPhone || null,
-        company_email: companyEmail || null,
-        company_address: companyAddress || null,
-        about_company: aboutCompany || null,
-        public_business_number: publicPhone || null,
-        public_company_email: publicCompanyEmail || null,
-        public_company_address: publicCompanyAddress || null,
-        social_links: socialLinks
-          ? socialLinks
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : null,
-        public_contacts: {
-          phone: publicPhone || undefined,
-          email: publicCompanyEmail || undefined,
-          address: publicCompanyAddress || undefined,
+      const response = await fetch('/api/submissions/approve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        media_links: mediaLinks
-          ? mediaLinks
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : null,
-        bank_details: {
-          account_name: bankAccountName || undefined,
-          account_number: bankAccountNumber || undefined,
-          iban: bankIban || undefined,
-          swift: bankSwift || undefined,
-        },
-        selected_service: selectedService || null,
-        domain_suggestions: domainSuggestions || null,
-        website_references: websiteReferences || null,
-        features_requirements: featuresRequirements || null,
-        budget_timeline: budgetTimeline || null,
-        logo_ideas_concepts: logoIdeas || null,
-        color_brand_theme: brandTheme || null,
-        design_assets_needed: designAssetsNeeded
-          ? designAssetsNeeded
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : null,
+        body: JSON.stringify({
+          submission_id: activeSubmissionId,
+          project_name: projectName || "New Project",
+          project_type: projectType,
+          priority: projectPriority,
+          status: projectStatus,
+          description: description || null,
+          start_date: startDate || null,
+          end_date: endDate || null,
+          budget: budget ? Number(budget) : null,
+          client_name: clientName || null,
+          company_number: companyNumber || publicPhone || null,
+          company_email: companyEmail || null,
+          company_address: companyAddress || null,
+          about_company: aboutCompany || null,
+          public_business_number: publicPhone || null,
+          public_company_email: publicCompanyEmail || null,
+          public_company_address: publicCompanyAddress || null,
+          social_links: socialLinks || null,
+          media_links: mediaLinks || null,
+          bank_details: JSON.stringify({
+            account_name: bankAccountName || null,
+            account_number: bankAccountNumber || null,
+            iban: bankIban || null,
+            swift: bankSwift || null,
+          }),
         target_audience_industry: targetAudienceIndustry || null,
         marketing_goals: marketingGoals || null,
         channels_of_interest: channelsOfInterest
@@ -354,10 +294,17 @@ export function ClientProjectSubmissions() {
         budget_range: budgetRange || null,
         service_description: serviceDescription || null,
         expected_outcome: expectedOutcome || null,
+        }),
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to approve submission');
+      }
+
+      const result = await response.json();
       toast({
         title: "Submission approved",
-        description: `Project created: ${created.name}`,
+        description: `Project created: ${result.project_name}`,
       });
       setApproveOpen(false);
       setActiveSubmissionId(null);
@@ -371,25 +318,39 @@ export function ClientProjectSubmissions() {
     }
   };
 
-  const openReject = (s: ClientProject) => {
-    setActiveSubmissionId(s.id);
+  const openReject = (s: Submission) => {
+    setActiveSubmissionId(s.submission_id);
     setRejectionReason("");
     setRejectOpen(true);
   };
 
-  const openDelete = (s: ClientProject) => {
-    setActiveSubmissionId(s.id);
+  const openDelete = (s: Submission) => {
+    setActiveSubmissionId(s.submission_id);
     setDeleteOpen(true);
   };
 
   const confirmReject = async () => {
     if (!activeSubmissionId) return;
     try {
-      await rejectClientProject(
-        activeSubmissionId,
-        rejectionReason || "Not a fit"
-      );
-      toast({ title: "Submission rejected" });
+      const response = await fetch('/api/submissions/reject', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          submission_id: activeSubmissionId,
+          reason: rejectionReason,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reject submission');
+      }
+
+      toast({
+        title: "Submission rejected",
+        description: "The submission has been rejected.",
+      });
       setRejectOpen(false);
       setActiveSubmissionId(null);
       await refresh();
@@ -405,8 +366,18 @@ export function ClientProjectSubmissions() {
   const confirmDelete = async () => {
     if (!activeSubmissionId) return;
     try {
-      await deleteClientSubmission(activeSubmissionId);
-      toast({ title: "Submission deleted" });
+      const response = await fetch(`/api/submissions/${activeSubmissionId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete submission');
+      }
+
+      toast({
+        title: "Submission deleted",
+        description: "The submission has been deleted.",
+      });
       setDeleteOpen(false);
       setActiveSubmissionId(null);
       await refresh();
@@ -419,9 +390,23 @@ export function ClientProjectSubmissions() {
     }
   };
 
-  const markInReview = async (s: ClientProject) => {
+
+  const markInReview = async (s: Submission) => {
     try {
-      await setClientSubmissionInReview(s.id);
+      const response = await fetch(`/api/submissions/${s.submission_id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: 'in_review'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update submission status');
+      }
+
       toast({ title: "Marked as In Review" });
       await refresh();
     } catch (e: any) {
@@ -433,8 +418,8 @@ export function ClientProjectSubmissions() {
     }
   };
 
-  const openView = async (s: ClientProject) => {
-    setViewingId(s.id);
+  const openView = async (s: Submission) => {
+    setViewingId(s.submission_id);
     setViewLoading(true);
     setViewData(null);
     try {
@@ -453,8 +438,8 @@ export function ClientProjectSubmissions() {
     }
   };
 
-  const openEdit = async (s: ClientProject) => {
-    setActiveSubmissionId(s.id);
+  const openEdit = async (s: Submission) => {
+    setActiveSubmissionId(s.submission_id);
     try {
       const supabase = createClient();
       const { data } = await supabase

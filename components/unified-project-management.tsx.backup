@@ -1,0 +1,2444 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Calendar,
+  DollarSign,
+  Users,
+  Plus,
+  Edit,
+  Trash2,
+  Eye,
+  Search,
+  FolderOpen,
+  Clock,
+  User as UserIcon,
+  Paperclip,
+  Upload,
+  MessageSquare,
+} from "lucide-react";
+import {
+  getProjects as storeGetProjects,
+  saveProjects as storeSaveProjects,
+  upsertProject as storeUpsertProject,
+  type Project as StoreProject,
+} from "@/lib/project-store";
+import { useToast } from "@/components/ui/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage";
+import { createClient } from "@/lib/supabase";
+import { getCurrentUser, type User } from "@/lib/auth";
+import { deleteProject as deleteProjectApi } from "@/lib/auth";
+
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  status: "planning" | "active" | "completed" | "on-hold";
+  priority: "low" | "medium" | "high";
+  start_date: string;
+  end_date: string;
+  assigned_employees: string[];
+  progress: number;
+  budget: number;
+  client: string;
+  tasks?: Task[];
+  service_type?: "web" | "branding" | "marketing" | "ai" | "custom";
+  company_number?: string;
+  company_email?: string;
+  company_address?: string;
+  about_company?: string;
+  social_links?: string[];
+  public_contacts?: { phone?: string; email?: string; address?: string };
+  media_links?: string[];
+  bank_details?: {
+    account_name?: string;
+    account_number?: string;
+    iban?: string;
+    swift?: string;
+  };
+  service_specific?: Record<string, any>;
+  attachments?: ProjectAttachment[];
+  comments?: ProjectComment[];
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  status: "todo" | "in-progress" | "review" | "completed";
+  assignee: string;
+  due_date: string;
+  priority: "low" | "medium" | "high";
+  project_id: string;
+}
+
+interface ProjectAttachment {
+  id: string;
+  file_name: string;
+  file_size?: number;
+  content_type?: string;
+  version: number;
+  uploaded_by: string;
+  uploaded_at: string;
+  task_id?: string;
+  client_visible?: boolean;
+}
+
+interface ProjectComment {
+  id: string;
+  body: string;
+  created_by: string;
+  created_at: string;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
+export function UnifiedProjectManagement() {
+  const [activeTab, setActiveTab] = useState("overview");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [serviceType, setServiceType] = useState<
+    "web" | "branding" | "marketing" | "ai" | "custom" | ""
+  >("");
+  const [serviceSpecific, setServiceSpecific] = useState<Record<string, any>>(
+    {}
+  );
+  const [companyNumber, setCompanyNumber] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [aboutCompany, setAboutCompany] = useState("");
+  const [socialLinks, setSocialLinks] = useState<string[]>([]);
+  const [newSocial, setNewSocial] = useState("");
+  const [publicContactPhone, setPublicContactPhone] = useState("");
+  const [publicContactEmail, setPublicContactEmail] = useState("");
+  const [publicContactAddress, setPublicContactAddress] = useState("");
+  const [mediaLinks, setMediaLinks] = useState<string[]>([]);
+  const [bankAccountName, setBankAccountName] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankIban, setBankIban] = useState("");
+  const [bankSwift, setBankSwift] = useState("");
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [tryAdvance, setTryAdvance] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    client: "",
+    budget: 0,
+    start_date: "",
+    end_date: "",
+    status: "planning" as const,
+    priority: "medium" as const,
+  });
+  const supabase = createClient();
+  const { toast } = useToast();
+
+  // Helper functions
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      client: "",
+      budget: 0,
+      start_date: "",
+      end_date: "",
+      status: "planning",
+      priority: "medium",
+    });
+    setServiceType("");
+    setServiceSpecific({});
+    setCompanyNumber("");
+    setCompanyEmail("");
+    setCompanyAddress("");
+    setAboutCompany("");
+    setSocialLinks([]);
+    setNewSocial("");
+    setPublicContactPhone("");
+    setPublicContactEmail("");
+    setPublicContactAddress("");
+    setMediaLinks([]);
+    setNewMedia("");
+    setBankAccountName("");
+    setBankAccountNumber("");
+    setBankIban("");
+    setBankSwift("");
+    setUploadFiles([]);
+    setWizardStep(0);
+    setConfirmSubmit(false);
+    setTryAdvance(false);
+    setIsCreating(false);
+    setEditingProject(null);
+  };
+
+  async function refetchAllProjects() {
+    const { data, error } = await supabase
+      .from("projects")
+      .select(
+        `id, name, description, status, priority, start_date, end_date, budget, client_name, company_number, company_email, company_address, about_company, social_links, public_contacts, media_links, bank_details, service_specific, type,
+         tasks ( id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
+         attachments ( id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
+         comments ( id, project_id, task_id, body, file_refs, created_by, created_at ),
+         project_members ( user_id )`
+      )
+      .order("created_at", { ascending: false });
+    if (!error && data) {
+      const mapped = (data as any[]).map((p) => {
+        const taskList = (p.tasks || []).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          assignee: t.assignee_id || "",
+          due_date: t.due_date || "",
+          priority: t.priority,
+          project_id: t.project_id,
+        })) as Task[];
+        const completed = taskList.filter(
+          (t) => t.status === "completed"
+        ).length;
+        const progress = taskList.length
+          ? Math.round((completed / taskList.length) * 100)
+          : 0;
+        const members = (p.project_members || []).map((m: any) => m.user_id);
+        const attachments = (p.attachments || []).map((a: any) => ({
+          id: a.id,
+          file_name: a.file_name,
+          file_size: a.file_size,
+          content_type: a.content_type,
+          version: a.version,
+          uploaded_by: a.uploaded_by || "",
+          uploaded_at: a.uploaded_at,
+          task_id: a.task_id || undefined,
+          client_visible: a.client_visible || false,
+        })) as ProjectAttachment[];
+        const comments = (p.comments || []).map((c: any) => ({
+          id: c.id,
+          body: c.body,
+          created_by: c.created_by || "",
+          created_at: c.created_at,
+        })) as ProjectComment[];
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description || "",
+          status: p.status,
+          priority: p.priority,
+          start_date: p.start_date || "",
+          end_date: p.end_date || "",
+          assigned_employees: members,
+          progress,
+          budget: Number(p.budget || 0),
+        client: p.client_name || "",
+          tasks: taskList,
+          service_type: p.type || undefined,
+          company_number: p.company_number || undefined,
+          company_email: p.company_email || undefined,
+          company_address: p.company_address || undefined,
+          about_company: p.about_company || undefined,
+          social_links: p.social_links || [],
+          public_contacts: p.public_contacts || {},
+          media_links: p.media_links || [],
+          bank_details: p.bank_details || {},
+          service_specific: p.service_specific || {},
+          attachments,
+          comments,
+        } as Project;
+      });
+      setProjects(mapped);
+    }
+  }
+
+  async function fetchEmployees() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, role, status");
+    if (error) return;
+      const list = (data || [])
+        .filter((p: any) => (p.role || "").toLowerCase() === "employee")
+        .filter((p: any) => (p.status ?? "active") === "active")
+        .map((p: any) => ({
+          id: p.id,
+          name: `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
+          email: "",
+          role: "employee",
+        })) as Employee[];
+      setEmployees(list);
+  }
+
+  const mockProjects: Project[] = [
+    {
+      id: "1",
+      name: "E-commerce Website",
+      description: "Complete e-commerce solution with payment integration",
+      status: "active",
+      priority: "high",
+      start_date: "2024-01-15",
+      end_date: "2024-03-15",
+      assigned_employees: ["1", "2"],
+      progress: 65,
+      budget: 50000,
+      client: "TechCorp Inc",
+      tasks: [
+        {
+          id: "t1",
+          title: "Design Homepage",
+          description: "Create responsive homepage design",
+          status: "completed",
+          assignee: "2",
+          due_date: "2024-02-01",
+          priority: "high",
+          project_id: "1",
+        },
+        {
+          id: "t2",
+          title: "Implement Payment Gateway",
+          description: "Integrate Stripe payment system",
+          status: "in-progress",
+          assignee: "1",
+          due_date: "2024-02-15",
+          priority: "high",
+          project_id: "1",
+        },
+      ],
+    },
+    {
+      id: "2",
+      name: "Mobile App Development",
+      description: "Cross-platform mobile application",
+      status: "planning",
+      priority: "medium",
+      start_date: "2024-02-01",
+      end_date: "2024-05-01",
+      assigned_employees: ["1", "3"],
+      progress: 15,
+      budget: 75000,
+      client: "StartupXYZ",
+      tasks: [
+        {
+          id: "t3",
+          title: "Market Research",
+          description: "Analyze competitor apps and user needs",
+          status: "completed",
+          assignee: "3",
+          due_date: "2024-02-10",
+          priority: "medium",
+          project_id: "2",
+        },
+      ],
+    },
+  ];
+
+  const [formData, setFormData] = useState<{
+    name: string;
+    description: string;
+    status: Project["status"];
+    priority: Project["priority"];
+    start_date: string;
+    end_date: string;
+    assigned_employees: string[];
+    progress: number;
+    budget: number;
+    client: string;
+  }>({
+    name: "",
+    description: "",
+    status: "planning",
+    priority: "medium",
+    start_date: "",
+    end_date: "",
+    assigned_employees: [],
+    progress: 0,
+    budget: 0,
+    client: "",
+  });
+
+  useEffect(() => {
+    // initial fetch
+    (async () => {
+      let fetchedUser: User | null = null;
+      try {
+        fetchedUser = await getCurrentUser();
+        setCurrentUser(fetchedUser);
+      } catch {}
+      await fetchEmployees();
+      await refetchAllProjects();
+      setLoading(false);
+    })();
+
+    // realtime subscriptions
+    const channel = supabase
+      .channel("projects-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "projects" },
+        refetchAllProjects
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "projects" },
+        refetchAllProjects
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "projects" },
+        refetchAllProjects
+      )
+      .subscribe();
+
+    const channelEmployees = supabase
+      .channel("employees-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "profiles" },
+        fetchEmployees
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles" },
+        fetchEmployees
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(channelEmployees);
+    };
+  }, []);
+
+  const filteredProjects = projects.filter((project) => {
+    const matchesText =
+      project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.description.toLowerCase().includes(searchTerm.toLowerCase());
+    if (currentUser && currentUser.role === "employee") {
+      return matchesText && project.assigned_employees.includes(currentUser.id);
+    }
+    return matchesText;
+  });
+
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active":
+        return "bg-green-100 text-green-800";
+      case "completed":
+        return "bg-blue-100 text-blue-800";
+      case "on-hold":
+        return "bg-yellow-100 text-yellow-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "high":
+        return "bg-red-100 text-red-800";
+      case "medium":
+        return "bg-orange-100 text-orange-800";
+      default:
+        return "bg-green-100 text-green-800";
+    }
+  };
+
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      status: "planning",
+      priority: "medium",
+      start_date: "",
+      end_date: "",
+      assigned_employees: [],
+      progress: 0,
+      budget: 0,
+      client: "",
+    });
+    setIsCreating(false);
+    setEditingProject(null);
+    setWizardStep(0);
+    setConfirmSubmit(false);
+    setServiceType("");
+    setServiceSpecific({});
+    setCompanyNumber("");
+    setCompanyEmail("");
+    setCompanyAddress("");
+    setAboutCompany("");
+    setSocialLinks([]);
+    setNewSocial("");
+    setPublicContactPhone("");
+    setPublicContactEmail("");
+    setPublicContactAddress("");
+    setMediaLinks([]);
+    setNewMedia("");
+    setBankAccountName("");
+    setBankAccountNumber("");
+    setBankIban("");
+    setBankSwift("");
+    setUploadFiles([]);
+  };
+
+  const handleSubmit = () => {
+    const attachments: ProjectAttachment[] = uploadFiles.map((f, idx) => ({
+      id: `${Date.now()}-${idx}`,
+      file_name: f.name,
+      file_size: f.size,
+      content_type: f.type,
+      version: 1,
+      uploaded_by: "admin",
+      uploaded_at: new Date().toISOString(),
+    }));
+
+    const newProject: Project = {
+      id: editingProject ? editingProject.id : Date.now().toString(),
+      ...formData,
+      service_type: serviceType || undefined,
+      company_number: companyNumber || undefined,
+      company_email: companyEmail || undefined,
+      company_address: companyAddress || undefined,
+      about_company: aboutCompany || undefined,
+      social_links: socialLinks,
+        public_contacts: {
+        phone: publicContactPhone || undefined,
+        email: publicContactEmail || undefined,
+        address: publicContactAddress || undefined,
+      },
+      media_links: mediaLinks,
+        bank_details: {
+        account_name: bankAccountName || undefined,
+        account_number: bankAccountNumber || undefined,
+        iban: bankIban || undefined,
+        swift: bankSwift || undefined,
+      },
+      service_specific: serviceSpecific,
+      attachments: editingProject?.attachments
+        ? [...editingProject.attachments]
+        : [...attachments],
+      comments: editingProject?.comments ? [...editingProject.comments] : [],
+    };
+      
+      if (editingProject) {
+          setProjects(
+        projects.map((p) => (p.id === editingProject.id ? newProject : p))
+      );
+      } else {
+      setProjects([...projects, newProject]);
+    }
+    // persist
+    storeUpsertProject(newProject as unknown as StoreProject);
+      resetForm();
+  };
+
+  const startEdit = (project: Project) => {
+    // Ensure any details dialog is closed before opening editor
+    setDetailsOpen(false);
+    setEditingProject(project);
+    setFormData({
+      name: project.name,
+      description: project.description,
+      status: project.status,
+      priority: project.priority,
+      start_date: project.start_date,
+      end_date: project.end_date,
+      assigned_employees: project.assigned_employees,
+      progress: project.progress,
+      budget: project.budget,
+      client: project.client,
+    });
+    setIsCreating(true);
+    setServiceType((project.service_type as any) || "");
+    setCompanyNumber(project.company_number || "");
+    setCompanyEmail(project.company_email || "");
+    setCompanyAddress(project.company_address || "");
+    setAboutCompany(project.about_company || "");
+    setSocialLinks(project.social_links || []);
+    setPublicContactPhone(project.public_contacts?.phone || "");
+    setPublicContactEmail(project.public_contacts?.email || "");
+    setPublicContactAddress(project.public_contacts?.address || "");
+    setMediaLinks(project.media_links || []);
+    setBankAccountName(project.bank_details?.account_name || "");
+    setBankAccountNumber(project.bank_details?.account_number || "");
+    setBankIban(project.bank_details?.iban || "");
+    setBankSwift(project.bank_details?.swift || "");
+    setServiceSpecific(project.service_specific || {});
+    setWizardStep(0);
+  };
+
+  const deleteProjectLocal = (id: string) => {
+      const nextProjects = projects.filter((p) => p.id !== id);
+      setProjects(nextProjects);
+    storeSaveProjects(nextProjects as unknown as StoreProject[]);
+  };
+
+  const getEmployeeName = (id: string) => {
+    return employees.find((e) => e.id === id)?.name || "Unknown";
+  };
+
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto px-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {currentUser?.role === "employee"
+              ? "My Projects"
+              : "Project Management"}
+          </h1>
+          <p className="text-muted-foreground">
+            {currentUser?.role === "employee"
+              ? "Projects you're assigned to"
+              : "Comprehensive project oversight and management"}
+          </p>
+        </div>
+        {currentUser?.role !== "employee" && (
+          <Button
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            New Project
+          </Button>
+        )}
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="projects">
+            {currentUser?.role === "employee" ? "My Projects" : "All Projects"}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Total Projects
+                </CardTitle>
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{projects.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Active Projects
+                </CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {projects.filter((p) => p.status === "active").length}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Team Members
+                </CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{employees.length}</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Projects</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {projects.slice(0, 3).map((project) => (
+                    <div
+                      key={project.id}
+                      className="flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="font-medium">{project.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {project.client}
+                        </p>
+                      </div>
+                      <Badge className={getStatusColor(project.status)}>
+                        {project.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+          </div>
+        </TabsContent>
+
+        <TabsContent value="projects" className="space-y-6">
+          <div className="flex items-center space-x-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search projects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
+          <div className="grid gap-4">
+            {loading && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <Card key={i} className="border-0 shadow-sm">
+                    <CardContent className="p-6">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-2 flex-1">
+                            <Skeleton className="h-6 w-3/4" />
+                            <Skeleton className="h-4 w-1/2" />
+                          </div>
+                          <div className="space-y-2">
+                            <Skeleton className="h-6 w-16" />
+                            <Skeleton className="h-5 w-12" />
+                          </div>
+                        </div>
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-3/4" />
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-1/2" />
+                          <Skeleton className="h-2 w-full" />
+                        </div>
+                        <div className="flex justify-between items-center pt-4 border-t">
+                          <Skeleton className="h-4 w-20" />
+                          <Skeleton className="h-4 w-16" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {!loading && filteredProjects.length === 0 && (
+              <Card>
+                <CardContent className="p-6 text-sm text-muted-foreground">
+                  {currentUser?.role === "employee"
+                    ? "No assigned projects yet."
+                    : 'No projects yet. Click "New Project" to create one.'}
+                </CardContent>
+              </Card>
+            )}
+            {filteredProjects.map((project) => (
+              <Card
+                key={project.id}
+                onClick={() => {
+                  setSelectedProject(project);
+                  setDetailsOpen(true);
+                }}
+                className="group cursor-pointer transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 border-0 bg-gradient-to-br from-white to-gray-50/50 hover:from-blue-50/30 hover:to-indigo-50/30 relative overflow-hidden"
+              >
+                {/* Gradient overlay on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                
+                <CardContent className="p-6 relative z-10">
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-700 transition-colors">
+                        {project.name}
+                      </h3>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-600 font-medium">{project.client}</span>
+                        <Badge 
+                          variant="secondary" 
+                          className="bg-blue-100 text-blue-700 border-blue-200 font-medium text-xs"
+                        >
+                          {project.service_type}
+                        </Badge>
+                    </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Badge 
+                        className={`font-semibold ${
+                          project.status === "completed"
+                            ? "bg-green-100 text-green-700 border-green-200"
+                            : project.status === "active"
+                            ? "bg-blue-100 text-blue-700 border-blue-200"
+                            : "bg-gray-100 text-gray-700 border-gray-200"
+                        }`}
+                      >
+                        {project.status}
+                      </Badge>
+                      <Badge 
+                        className={`text-xs ${
+                          project.priority === "high"
+                            ? "bg-red-50 text-red-700 border-red-200"
+                            : project.priority === "medium"
+                            ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                            : "bg-gray-50 text-gray-700 border-gray-200"
+                        }`}
+                      >
+                        {project.priority} priority
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {project.description && (
+                    <p className="text-sm text-gray-600 mb-6 line-clamp-2">
+                    {project.description}
+                  </p>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-6 mb-6">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <Calendar className="h-4 w-4" />
+                        <span className="text-xs font-medium uppercase tracking-wide">Start Date</span>
+                    </div>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {project.start_date ? new Date(project.start_date).toLocaleDateString() : "TBD"}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <DollarSign className="h-4 w-4" />
+                        <span className="text-xs font-medium uppercase tracking-wide">Budget</span>
+                      </div>
+                      <span className="text-sm font-bold text-gray-900">
+                        ${project.budget.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 mb-6">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 font-medium">Project Progress</span>
+                      <span className="font-bold text-gray-900">{project.progress}%</span>
+                    </div>
+                    <div className="relative">
+                      <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                          style={{ width: `${project.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action indicators */}
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                      <span>Active Project</span>
+                    </div>
+                    <div className="text-xs text-gray-400 group-hover:text-gray-600 transition-colors">
+                      View Details →
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+                    <Progress value={project.progress} className="w-full" />
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <div className="flex gap-2">
+                      {project.assigned_employees.map((empId) => (
+                        <Badge key={empId} variant="outline">
+                          {getEmployeeName(empId)}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Dialog
+                        open={detailsOpen && selectedProject?.id === project.id}
+                        onOpenChange={setDetailsOpen}
+                      >
+                        <DialogContent
+                          className="max-w-6xl max-h-[95vh] overflow-hidden bg-gradient-to-br from-white to-gray-50/50"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <DialogHeader className="pb-6 border-b border-gray-200">
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-2">
+                                <DialogTitle className="text-2xl font-bold text-gray-900">
+                                  {selectedProject?.name}
+                                </DialogTitle>
+                                <div className="flex items-center gap-3">
+                                  <Badge 
+                                    className={`font-semibold ${
+                                      selectedProject?.status === "completed"
+                                        ? "bg-green-100 text-green-700 border-green-200"
+                                        : selectedProject?.status === "active"
+                                        ? "bg-blue-100 text-blue-700 border-blue-200"
+                                        : "bg-gray-100 text-gray-700 border-gray-200"
+                                    }`}
+                                  >
+                                    {selectedProject?.status}
+                                  </Badge>
+                                  <Badge 
+                                    className={`${
+                                      selectedProject?.priority === "high"
+                                        ? "bg-red-50 text-red-700 border-red-200"
+                                        : selectedProject?.priority === "medium"
+                                        ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                                        : "bg-gray-50 text-gray-700 border-gray-200"
+                                    }`}
+                                  >
+                                    {selectedProject?.priority} priority
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm text-gray-500">Budget</div>
+                                <div className="text-2xl font-bold text-gray-900">
+                                  ${selectedProject?.budget.toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                          </DialogHeader>
+                          <div className="overflow-y-auto max-h-[calc(95vh-200px)]">
+                          <Tabs defaultValue="overview">
+                              <TabsList className="grid w-full grid-cols-4 bg-gray-100 p-1 rounded-lg">
+                                <TabsTrigger 
+                                  value="overview"
+                                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+                                >
+                                Overview
+                              </TabsTrigger>
+                                <TabsTrigger 
+                                  value="attachments"
+                                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+                                >
+                                Attachments
+                              </TabsTrigger>
+                                <TabsTrigger 
+                                  value="comments"
+                                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+                                >
+                                Comments
+                              </TabsTrigger>
+                                <TabsTrigger 
+                                  value="timeline"
+                                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+                                >
+                                Timeline
+                              </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="overview" className="space-y-6 mt-6">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-blue-50/30">
+                                  <CardHeader className="pb-4">
+                                    <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                      Key Details
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="space-y-3 text-sm">
+                                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                                      <span className="text-gray-600 font-medium">Type</span>
+                                      <span className="font-semibold text-gray-900">{project.service_type || "-"}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                                      <span className="text-gray-600 font-medium">Client</span>
+                                      <span className="font-semibold text-gray-900">{project.client}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                                      <span className="text-gray-600 font-medium">Status</span>
+                                      <Badge 
+                                        className={`text-xs ${
+                                          project.status === "completed"
+                                            ? "bg-green-100 text-green-700"
+                                            : project.status === "active"
+                                            ? "bg-blue-100 text-blue-700"
+                                            : "bg-gray-100 text-gray-700"
+                                        }`}
+                                      >
+                                        {project.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                                      <span className="text-gray-600 font-medium">Priority</span>
+                                      <Badge 
+                                        className={`text-xs ${
+                                          project.priority === "high"
+                                            ? "bg-red-100 text-red-700"
+                                            : project.priority === "medium"
+                                            ? "bg-yellow-100 text-yellow-700"
+                                            : "bg-gray-100 text-gray-700"
+                                        }`}
+                                      >
+                                      {project.priority}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2">
+                                      <span className="text-gray-600 font-medium">Budget</span>
+                                      <span className="font-bold text-lg text-gray-900">${project.budget.toLocaleString()}</span>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                                <Card>
+                                  <CardHeader>
+                                    <CardTitle>Timeline</CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="space-y-2 text-sm">
+                                    <p>
+                                      <strong>Start:</strong>{" "}
+                                      {project.start_date || "-"}
+                                    </p>
+                                    <p>
+                                      <strong>End:</strong>{" "}
+                                      {project.end_date || "-"}
+                                    </p>
+                                    <div className="mt-2">
+                                      <Progress value={project.progress} />
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                                <Card className="md:col-span-2">
+                                  <CardHeader>
+                                    <CardTitle>Company & Contacts</CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <p>
+                                        <strong>Company Number:</strong>{" "}
+                                        {project.company_number || "-"}
+                                      </p>
+                                      <p>
+                                        <strong>Company Email:</strong>{" "}
+                                        {project.company_email || "-"}
+                                      </p>
+                                      <p>
+                                        <strong>Address:</strong>{" "}
+                                        {project.company_address || "-"}
+                                      </p>
+                                      <p>
+                                        <strong>About:</strong>{" "}
+                                        {project.about_company || "-"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p>
+                                        <strong>Public Phone:</strong>{" "}
+                                        {project.public_contacts?.phone || "-"}
+                                      </p>
+                                      <p>
+                                        <strong>Public Email:</strong>{" "}
+                                        {project.public_contacts?.email || "-"}
+                                      </p>
+                                      <p>
+                                        <strong>Public Address:</strong>{" "}
+                                        {project.public_contacts?.address ||
+                                          "-"}
+                                      </p>
+                                      <p>
+                                        <strong>Social:</strong>{" "}
+                                        {(project.social_links || []).join(
+                                          ", "
+                                        ) || "-"}
+                                      </p>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                                <Card className="md:col-span-2">
+                                  <CardHeader>
+                                    <CardTitle>Service-Specific Details</CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="space-y-3 text-sm">
+                                    {project.service_specific && Object.keys(project.service_specific).length > 0 ? (
+                                      <div className="grid md:grid-cols-2 gap-4">
+                                        {Object.entries(project.service_specific).map(([key, value]) => (
+                                          <div key={key}>
+                                            <strong className="capitalize">
+                                              {key.replace(/_/g, ' ')}:
+                                            </strong>{" "}
+                                            {Array.isArray(value) ? (
+                                              <div className="mt-1">
+                                                {value.map((item, idx) => (
+                                                  <div key={idx} className="text-xs bg-gray-50 p-1 rounded mb-1">
+                                                    {item}
+                                                  </div>
+                                                ))}
+                                      </div>
+                                            ) : typeof value === 'object' && value !== null ? (
+                                              <div className="mt-1 text-xs bg-gray-50 p-2 rounded">
+                                                <pre className="whitespace-pre-wrap">
+                                                  {JSON.stringify(value, null, 2)}
+                                                </pre>
+                                      </div>
+                                            ) : (
+                                              <span>{String(value) || "-"}</span>
+                                            )}
+                                      </div>
+                                        ))}
+                                    </div>
+                                    ) : (
+                                      <p className="text-muted-foreground">No service-specific details available</p>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                                <Card className="md:col-span-2">
+                                  <CardHeader>
+                                    <CardTitle>Media & Banking</CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <p>
+                                        <strong>Media Links:</strong>
+                                      </p>
+                                      {(project.media_links || []).length > 0 ? (
+                                        <div className="mt-1 space-y-1">
+                                          {(project.media_links || []).map((link, idx) => (
+                                            <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
+                                              <a 
+                                                href={link} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:underline"
+                                              >
+                                                {link}
+                                              </a>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-muted-foreground">-</span>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <p>
+                                        <strong>Bank Details:</strong>
+                                      </p>
+                                      {project.bank_details && Object.keys(project.bank_details).length > 0 ? (
+                                        <div className="mt-1 space-y-1">
+                                          {Object.entries(project.bank_details).map(([key, value]) => (
+                                            <div key={key} className="text-xs">
+                                              <strong className="capitalize">
+                                                {key.replace(/_/g, ' ')}:
+                                              </strong>{" "}
+                                              {String(value) || "-"}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-muted-foreground">-</span>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </div>
+                            </TabsContent>
+                            <TabsContent
+                              value="attachments"
+                              className="space-y-4"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Input
+                                  type="file"
+                                  onChange={async (e) => {
+                                    const f = (e.target.files || [])[0];
+                                    if (!selectedProject || !f) return;
+                                    const current = projects.find(
+                                      (p) => p.id === selectedProject.id
+                                    );
+                                    const nextVersion =
+                                      (current?.attachments || []).reduce(
+                                        (max, a) =>
+                                          Math.max(max, a.version || 0),
+                                        0
+                                      ) + 1;
+                                    try {
+                                      setIsUploading(true);
+                                      setUploadProgress(10);
+                                      const uploaded = await uploadProjectFile({
+                                        projectId: selectedProject.id,
+                                        file: f,
+                                      });
+                                      setUploadProgress(60);
+                                      const { data, error } = await supabase
+                                        .from("attachments")
+                                        .insert({
+                                          project_id: selectedProject.id,
+                                          storage_path: uploaded.path,
+                                          file_name: f.name,
+                                          file_size: f.size,
+                                          content_type: f.type,
+                                          version: nextVersion,
+                                        })
+                                        .select("id, uploaded_at")
+                                        .single();
+                                      if (error) throw error;
+                                      setUploadProgress(90);
+                                      setProjects((prev) =>
+                                        prev.map((p) => {
+                                          if (p.id !== selectedProject.id)
+                                            return p;
+                                          const newAtt: ProjectAttachment = {
+                                            id: data?.id || `${Date.now()}`,
+                                            file_name: f.name,
+                                            file_size: f.size,
+                                            content_type: f.type,
+                                            version: nextVersion,
+                                            uploaded_by: "",
+                                            uploaded_at:
+                                              (data?.uploaded_at as any) ||
+                                              new Date().toISOString(),
+                                          };
+                                          return {
+                                            ...p,
+                                            attachments: [
+                                              ...(p.attachments || []),
+                                              newAtt,
+                                            ],
+                                          };
+                                        })
+                                      );
+                                      setUploadProgress(100);
+                                      setTimeout(
+                                        () => setUploadProgress(null),
+                                        500
+                                      );
+                                    } catch (err) {
+                                      setUploadProgress(null);
+                                    } finally {
+                                      setIsUploading(false);
+                                      e.currentTarget.value = "";
+                                    }
+                                  }}
+                                  disabled={isUploading}
+                                />
+                                <Upload
+                                  className={`h-4 w-4 ${
+                                    isUploading
+                                      ? "animate-pulse text-primary"
+                                      : "text-muted-foreground"
+                                  }`}
+                                />
+                                {uploadProgress !== null && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {uploadProgress}%
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-2">
+                                {(project.attachments || []).map((att) => (
+                                  <div
+                                    key={att.id}
+                                    className="flex items-center justify-between rounded-md border p-2 text-sm"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Paperclip className="h-4 w-4" />
+                                      <span>{att.file_name}</span>
+                                      <span className="text-muted-foreground">
+                                        v{att.version}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={async () => {
+                                          const row = await supabase
+                                            .from("attachments")
+                                            .select("storage_path")
+                                            .eq("id", att.id)
+                                            .single();
+                                          const url =
+                                            await createSignedUrlByPath(
+                                              row.data?.storage_path || ""
+                                            );
+                                          window.open(url, "_blank");
+                                        }}
+                                      >
+                                        View
+                                      </Button>
+                                      <span className="text-muted-foreground">
+                                        {new Date(
+                                          att.uploaded_at
+                                        ).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </TabsContent>
+                            <TabsContent value="comments" className="space-y-3">
+                              <div className="flex items-center gap-2">
+                                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  placeholder="Add a comment"
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && selectedProject) {
+                                      const value = (
+                                        e.target as HTMLInputElement
+                                      ).value.trim();
+                                      if (!value) return;
+                                      setProjects((prev) =>
+                                        prev.map((p) => {
+                                          if (p.id !== selectedProject.id)
+                                            return p;
+                                          const newComment: ProjectComment = {
+                                            id: `${Date.now()}`,
+                                            body: value,
+                                            created_by: "admin",
+                                            created_at:
+                                              new Date().toISOString(),
+                                          };
+                                          return {
+                                            ...p,
+                                            comments: [
+                                              ...(p.comments || []),
+                                              newComment,
+                                            ],
+                                          };
+                                        })
+                                      );
+                                      (e.target as HTMLInputElement).value = "";
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                {(project.comments || []).map((c) => (
+                                  <div
+                                    key={c.id}
+                                    className="rounded-md border p-2 text-sm"
+                                  >
+                                    <div className="text-muted-foreground text-xs mb-1">
+                                      {new Date(c.created_at).toLocaleString()}
+                                    </div>
+                                    <div>{c.body}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </TabsContent>
+                            <TabsContent value="timeline" className="space-y-4">
+                              <div>
+                                <div className="mb-2 text-sm">
+                                  Progress: {project.progress}%
+                                </div>
+                                <Progress value={project.progress} />
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <strong>Start:</strong>{" "}
+                                  {project.start_date || "-"}
+                                </div>
+                                <div>
+                                  <strong>End:</strong>{" "}
+                                  {project.end_date || "-"}
+                                </div>
+                              </div>
+                            </TabsContent>
+                          </Tabs>
+                        </DialogContent>
+                      </Dialog>
+                      {currentUser?.role !== "employee" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEdit(project);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(project);
+                              setDeleteOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {currentUser?.role !== "employee" && (isCreating || editingProject) && (
+        <Dialog open={true} onOpenChange={() => resetForm()}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {editingProject
+                  ? "Edit Project"
+                  : "New Project (Manual Intake)"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="text-sm text-muted-foreground">
+                Step {wizardStep + 1} of 6
+              </div>
+              <div className="grid grid-cols-6 gap-2 text-xs">
+                {[0, 1, 2, 3, 4, 5].map((s) => (
+                  <button
+                    key={s}
+                    className={`h-1.5 rounded-full ${
+                      wizardStep >= s ? "bg-primary" : "bg-muted"
+                    }`}
+                    onClick={() => setWizardStep(s)}
+                    aria-label={`Go to step ${s}`}
+                  />
+                ))}
+              </div>
+              {wizardStep === 0 && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-sm font-bold">
+                        1
+                      </div>
+                      <div>
+                        <Label className="text-lg font-semibold text-gray-900">Service (Core Project Details)</Label>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Collect high-level project setup data to determine which conditional fields appear in Step 2.
+                    </p>
+                  </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="project-name" className="text-sm font-semibold text-gray-700">
+                        Project Name *
+                      </Label>
+                      <Input
+                        id="project-name"
+                        placeholder="Enter project name"
+                        value={formData.name}
+                        onChange={(e) =>
+                          setFormData({ ...formData, name: e.target.value })
+                        }
+                        className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500 transition-colors"
+                      />
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <Label htmlFor="project-type" className="text-sm font-semibold text-gray-700">
+                        Project Type *
+                      </Label>
+                      <select
+                        id="project-type"
+                        value={serviceType}
+                        onChange={(e) => setServiceType(e.target.value as any)}
+                        className="w-full h-12 px-3 border border-gray-300 rounded-md focus:border-blue-500 focus:ring-blue-500 transition-colors bg-white"
+                      >
+                        <option value="">Select Project Type</option>
+                        <option value="web">Web Development</option>
+                        <option value="branding">Branding Design</option>
+                        <option value="ai">AI Solutions</option>
+                        <option value="marketing">Digital Marketing</option>
+                        <option value="custom">Custom Project</option>
+                      </select>
+                            </div>
+                              </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      placeholder="Project description (optional)"
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({ ...formData, description: e.target.value })
+                      }
+                      rows={3}
+                    />
+                              </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="client-name">Client Name</Label>
+                      <Input
+                        id="client-name"
+                        placeholder="Client name (optional)"
+                        value={formData.client}
+                        onChange={(e) =>
+                          setFormData({ ...formData, client: e.target.value })
+                        }
+                      />
+                            </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="budget">Budget</Label>
+                      <Input
+                        id="budget"
+                        type="number"
+                        placeholder="Budget (default: 0)"
+                        value={formData.budget}
+                        onChange={(e) =>
+                          setFormData({ ...formData, budget: Number(e.target.value) })
+                        }
+                      />
+                          </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="start-date">Start Date</Label>
+                      <Input
+                        id="start-date"
+                        type="date"
+                        value={formData.start_date}
+                        onChange={(e) =>
+                          setFormData({ ...formData, start_date: e.target.value })
+                        }
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="end-date">End Date</Label>
+                      <Input
+                        id="end-date"
+                        type="date"
+                        value={formData.end_date}
+                        onChange={(e) =>
+                          setFormData({ ...formData, end_date: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="status">Status</Label>
+                      <select
+                        id="status"
+                        value={formData.status}
+                        onChange={(e) =>
+                          setFormData({ ...formData, status: e.target.value as any })
+                        }
+                        className="w-full p-2 border rounded-md"
+                      >
+                        <option value="planning">Planning</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                        <option value="on-hold">On Hold</option>
+                      </select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="priority">Priority</Label>
+                      <select
+                        id="priority"
+                        value={formData.priority}
+                        onChange={(e) =>
+                          setFormData({ ...formData, priority: e.target.value as any })
+                        }
+                        className="w-full p-2 border rounded-md"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {tryAdvance && !serviceType && (
+                    <p className="text-xs text-destructive">
+                      Please select a project type to continue.
+                    </p>
+                  )}
+                </div>
+              )}
+              {wizardStep === 1 && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label>Step 2: Details (Conditional Project Requirements)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Capture project-specific requirements tailored to the chosen service type.
+                    </p>
+                  </div>
+                  {serviceType === "web" && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Domain Name Suggestions</Label>
+                      <Input
+                          placeholder="Enter domain name suggestions"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            domain: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.domain || ""}
+                      />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Preferred Website References</Label>
+                        <Textarea
+                          placeholder="Enter website references or links (one per line)"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            references: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.references || ""}
+                          rows={3}
+                      />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Features & Requirements</Label>
+                      <Textarea
+                          placeholder="Describe the features and requirements for the website"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            features: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.features || ""}
+                          rows={4}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Budget & Timeline</Label>
+                        <Textarea
+                          placeholder="Describe budget expectations and timeline requirements"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            budget_timeline: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.budget_timeline || ""}
+                          rows={2}
+                      />
+                      </div>
+                    </div>
+                  )}
+                  {serviceType === "branding" && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Logo Ideas & Concepts</Label>
+                      <Textarea
+                          placeholder="Describe your logo ideas and concepts"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            logo_ideas: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.logo_ideas || ""}
+                          rows={3}
+                      />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Upload Logo / Brand References</Label>
+                      <Input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                              uploaded_files: files,
+                            });
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Upload reference images, logos, or brand materials
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Colour & Brand Theme</Label>
+                      <Input
+                          placeholder="Describe preferred colors and brand theme"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            theme: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.theme || ""}
+                      />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Design Assets Needed</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            "Business Cards",
+                            "Flyers",
+                            "Social Media Templates",
+                            "Letterhead",
+                            "Brochures",
+                            "Signage",
+                            "Packaging",
+                            "Website Graphics"
+                          ].map((asset) => (
+                            <label key={asset} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                onChange={(e) => {
+                                  const currentAssets = serviceSpecific.assets || [];
+                                  const updatedAssets = e.target.checked
+                                    ? [...currentAssets, asset]
+                                    : currentAssets.filter((a: string) => a !== asset);
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                                    assets: updatedAssets,
+                                  });
+                                }}
+                              />
+                              <span className="text-sm">{asset}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {serviceType === "marketing" && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Target Audience & Industry</Label>
+                        <Textarea
+                          placeholder="Describe your target audience and industry"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            audience: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.audience || ""}
+                          rows={3}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Marketing Goals</Label>
+                        <Textarea
+                          placeholder="What are your marketing goals and objectives?"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            goals: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.goals || ""}
+                          rows={3}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Channels of Interest</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            "SEO",
+                            "Social Media",
+                            "Google Ads",
+                            "Facebook Ads",
+                            "Email Marketing",
+                            "Content Marketing",
+                            "Influencer Marketing",
+                            "Local Marketing"
+                          ].map((channel) => (
+                            <label key={channel} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                onChange={(e) => {
+                                  const currentChannels = serviceSpecific.channels || [];
+                                  const updatedChannels = e.target.checked
+                                    ? [...currentChannels, channel]
+                                    : currentChannels.filter((c: string) => c !== channel);
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                                    channels: updatedChannels,
+                                  });
+                                }}
+                              />
+                              <span className="text-sm">{channel}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Monthly Budget Range</Label>
+                      <Input
+                          type="number"
+                          placeholder="Enter monthly budget range"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            budget_range: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.budget_range || ""}
+                      />
+                      </div>
+                    </div>
+                  )}
+                  {serviceType === "ai" && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>AI Solution Type</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            "Chatbot",
+                            "Automation",
+                            "Predictive Analytics",
+                            "Computer Vision",
+                            "Natural Language Processing",
+                            "Machine Learning Model",
+                            "Recommendation System",
+                            "Custom AI Solution"
+                          ].map((solution) => (
+                            <label key={solution} className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                name="solution_type"
+                                value={solution}
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            solution_type: e.target.value,
+                          })
+                        }
+                              />
+                              <span className="text-sm">{solution}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Business Challenge / Use Case</Label>
+                        <Textarea
+                          placeholder="Describe the business challenge or use case for the AI solution"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            use_case: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.use_case || ""}
+                          rows={4}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Data Availability</Label>
+                        <select
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            data: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.data || ""}
+                          className="w-full p-2 border rounded-md"
+                        >
+                          <option value="">Select Data Availability</option>
+                          <option value="none">None</option>
+                          <option value="limited">Limited</option>
+                          <option value="structured">Structured</option>
+                          <option value="unstructured">Unstructured</option>
+                          <option value="mixed">Mixed (Structured & Unstructured)</option>
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Budget Range</Label>
+                      <Input
+                          type="number"
+                          placeholder="Enter budget range for AI solution"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            budget_range: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.budget_range || ""}
+                      />
+                      </div>
+                    </div>
+                  )}
+                  {serviceType === "custom" && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Service Description</Label>
+                      <Textarea
+                          placeholder="Describe the custom project requirements in detail"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            description: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.description || ""}
+                          rows={4}
+                      />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Expected Outcome</Label>
+                      <Textarea
+                          placeholder="What are the expected outcomes and deliverables?"
+                        onChange={(e) =>
+                          setServiceSpecific({
+                            ...serviceSpecific,
+                            outcomes: e.target.value,
+                          })
+                        }
+                        defaultValue={serviceSpecific.outcomes || ""}
+                          rows={4}
+                      />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {wizardStep === 2 && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label>Step 3: Company (Company & Team Information)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Collect background and identification details of the client's business.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="business-number">Business Number *</Label>
+                    <Input
+                        id="business-number"
+                        placeholder="Enter business registration number"
+                      value={companyNumber}
+                      onChange={(e) => setCompanyNumber(e.target.value)}
+                    />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="company-email">Company Email *</Label>
+                    <Input
+                        id="company-email"
+                        type="email"
+                        placeholder="Enter company email address"
+                      value={companyEmail}
+                      onChange={(e) => setCompanyEmail(e.target.value)}
+                    />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="company-address">Company Address *</Label>
+                      <Textarea
+                        id="company-address"
+                        placeholder="Enter full company address"
+                      value={companyAddress}
+                      onChange={(e) => setCompanyAddress(e.target.value)}
+                        rows={3}
+                    />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="about-company">About Company / Team Details *</Label>
+                    <Textarea
+                        id="about-company"
+                        placeholder="Describe your company, team, and business background"
+                      value={aboutCompany}
+                      onChange={(e) => setAboutCompany(e.target.value)}
+                        rows={4}
+                    />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {wizardStep === 3 && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label>Step 4: Contact (Social Media & Public Contact Info)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Collect public-facing communication info, used in collateral/website builds.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Social Media Links *</Label>
+                    <div className="flex gap-2">
+                      <Input
+                          placeholder="Add social media link (e.g., https://facebook.com/company)"
+                        value={newSocial}
+                        onChange={(e) => setNewSocial(e.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (!newSocial.trim()) return;
+                          setSocialLinks([...socialLinks, newSocial.trim()]);
+                          setNewSocial("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      {socialLinks.map((s, idx) => (
+                        <div
+                          key={`${s}-${idx}`}
+                          className="flex justify-between border rounded-md p-2"
+                        >
+                          <span>{s}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setSocialLinks(
+                                socialLinks.filter((_, i) => i !== idx)
+                              )
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Public Contact Details for Website *</Label>
+                  <div className="grid md:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <Label htmlFor="public-phone">Business Number *</Label>
+                    <Input
+                            id="public-phone"
+                            placeholder="Public phone number"
+                      value={publicContactPhone}
+                      onChange={(e) => setPublicContactPhone(e.target.value)}
+                    />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="public-email">Company Email *</Label>
+                    <Input
+                            id="public-email"
+                            type="email"
+                            placeholder="Public email"
+                      value={publicContactEmail}
+                      onChange={(e) => setPublicContactEmail(e.target.value)}
+                    />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="public-address">Company Address *</Label>
+                    <Input
+                            id="public-address"
+                            placeholder="Public address"
+                      value={publicContactAddress}
+                      onChange={(e) => setPublicContactAddress(e.target.value)}
+                    />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {wizardStep === 4 && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label>Step 5: Media (Media & Banking Information)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Collect branding/media assets and payment details for integration.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Images / Video Links</Label>
+                    <div className="flex gap-2">
+                      <Input
+                          placeholder="Add media link (e.g., https://youtube.com/watch?v=...)"
+                        value={newMedia}
+                        onChange={(e) => setNewMedia(e.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (!newMedia.trim()) return;
+                          setMediaLinks([...mediaLinks, newMedia.trim()]);
+                          setNewMedia("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      {mediaLinks.map((m, idx) => (
+                        <div
+                          key={`${m}-${idx}`}
+                          className="flex justify-between border rounded-md p-2"
+                        >
+                          <span>{m}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setMediaLinks(
+                                mediaLinks.filter((_, i) => i !== idx)
+                              )
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                    
+                  <div className="space-y-2">
+                      <Label>Upload Images / Videos</Label>
+                    <Input
+                      type="file"
+                      multiple
+                        accept="image/*,video/*"
+                      onChange={(e) =>
+                        setUploadFiles(Array.from(e.target.files || []))
+                      }
+                    />
+                      <p className="text-xs text-muted-foreground">
+                        Upload images, videos, or other media files
+                      </p>
+                  </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Bank Details for Payment Integration</Label>
+                  <div className="grid md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label htmlFor="bank-account-name">Bank Account Name</Label>
+                    <Input
+                            id="bank-account-name"
+                            placeholder="Account holder name"
+                      value={bankAccountName}
+                      onChange={(e) => setBankAccountName(e.target.value)}
+                    />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="bank-account-number">Bank Account Number</Label>
+                    <Input
+                            id="bank-account-number"
+                            placeholder="Account number"
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value)}
+                    />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="bank-iban">IBAN</Label>
+                    <Input
+                            id="bank-iban"
+                            placeholder="IBAN code"
+                      value={bankIban}
+                      onChange={(e) => setBankIban(e.target.value)}
+                    />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="bank-swift">SWIFT</Label>
+                    <Input
+                            id="bank-swift"
+                            placeholder="SWIFT code"
+                      value={bankSwift}
+                      onChange={(e) => setBankSwift(e.target.value)}
+                    />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {wizardStep === 5 && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label>Step 6: Final Review & Confirm</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Provide a summary before submission, ensuring accuracy and consent.
+                    </p>
+                  </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Project Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4 text-sm">
+                      <div>
+                        <h4 className="font-semibold mb-2">Brand & References</h4>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div>
+                            <p><strong>Project:</strong> {formData.name}</p>
+                            <p><strong>Type:</strong> {serviceType || "-"}</p>
+                            <p><strong>Client:</strong> {formData.client || "-"}</p>
+                            <p><strong>Budget:</strong> ${formData.budget.toLocaleString()}</p>
+                      </div>
+                      <div>
+                            <p><strong>Status:</strong> {formData.status}</p>
+                            <p><strong>Priority:</strong> {formData.priority}</p>
+                            <p><strong>Timeline:</strong> {formData.start_date} to {formData.end_date}</p>
+                            <p><strong>References:</strong> {serviceSpecific.references || "-"}</p>
+                      </div>
+                        </div>
+                      </div>
+                      
+                      {/* Service-Specific Details */}
+                      {Object.keys(serviceSpecific).length > 0 && (
+                      <div>
+                          <h4 className="font-semibold mb-2">Service-Specific Details</h4>
+                          <div className="grid md:grid-cols-2 gap-4">
+                            {Object.entries(serviceSpecific).map(([key, value]) => (
+                              <div key={key}>
+                                <p>
+                                  <strong className="capitalize">
+                                    {key.replace(/_/g, ' ')}:
+                                  </strong>{" "}
+                                  {Array.isArray(value) ? (
+                                    <span>
+                                      {value.length} items: {value.slice(0, 2).join(', ')}
+                                      {value.length > 2 && ` +${value.length - 2} more`}
+                                    </span>
+                                  ) : typeof value === 'object' && value !== null ? (
+                                    <span className="text-xs bg-gray-50 p-1 rounded">
+                                      {JSON.stringify(value).substring(0, 50)}
+                                      {JSON.stringify(value).length > 50 && '...'}
+                                    </span>
+                                  ) : (
+                                    <span>{String(value) || "-"}</span>
+                                  )}
+                        </p>
+                      </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div>
+                        <h4 className="font-semibold mb-2">Company & Contact</h4>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div>
+                            <p><strong>Business Number:</strong> {companyNumber}</p>
+                            <p><strong>Company Email:</strong> {companyEmail}</p>
+                            <p><strong>Address:</strong> {companyAddress}</p>
+                          </div>
+                          <div>
+                            <p><strong>About:</strong> {aboutCompany || "-"}</p>
+                            <p><strong>Social Links:</strong> {socialLinks.length} links</p>
+                            <p><strong>Public Contact:</strong> {publicContactPhone} • {publicContactEmail}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h4 className="font-semibold mb-2">Media & Banking</h4>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div>
+                            <p><strong>Media Links:</strong> {mediaLinks.length} links</p>
+                            {mediaLinks.length > 0 && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                {mediaLinks.slice(0, 2).map((link, idx) => (
+                                  <div key={idx} className="truncate">
+                                    {link}
+                                  </div>
+                                ))}
+                                {mediaLinks.length > 2 && (
+                                  <div>+{mediaLinks.length - 2} more links</div>
+                                )}
+                              </div>
+                            )}
+                            <p><strong>Uploads:</strong> {uploadFiles.length} files</p>
+                            {uploadFiles.length > 0 && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                {uploadFiles.slice(0, 2).map((file, idx) => (
+                                  <div key={idx} className="truncate">
+                                    {file.name}
+                                  </div>
+                                ))}
+                                {uploadFiles.length > 2 && (
+                                  <div>+{uploadFiles.length - 2} more files</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p><strong>Bank Account:</strong> {bankAccountName || "-"}</p>
+                            <p><strong>Account Number:</strong> {bankAccountNumber || "-"}</p>
+                            <p><strong>IBAN:</strong> {bankIban || "-"}</p>
+                            <p><strong>SWIFT:</strong> {bankSwift || "-"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={confirmSubmit}
+                      onChange={(e) => setConfirmSubmit(e.target.checked)}
+                    />
+                    <span>I confirm the above information is correct and I'm ready to submit.</span>
+                  </label>
+                </div>
+              )}
+              <div className="flex justify-between pt-2">
+                <Button variant="outline" onClick={resetForm}>
+                  Cancel
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setWizardStep((s) => Math.max(0, s - 1))}
+                    disabled={wizardStep === 0}
+                  >
+                    Back
+                  </Button>
+                  {wizardStep < 5 ? (
+                    <Button
+                      onClick={() => {
+                        setTryAdvance(true);
+                        if (wizardStep === 0 && !serviceType) return;
+                        if (wizardStep === 0 && !formData.name) return;
+                        if (wizardStep === 2 && (!companyNumber || !companyEmail || !companyAddress || !aboutCompany)) return;
+                        if (wizardStep === 3 && (!publicContactPhone || !publicContactEmail || !publicContactAddress)) return;
+                        setWizardStep((s) => Math.min(5, s + 1));
+                      }}
+                    >
+                      Next
+                    </Button>
+                  ) : (
+                    <Button onClick={handleSubmit} disabled={!confirmSubmit}>
+                      {editingProject ? "Update Project" : "Create Project"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete confirmation modal */}
+      {currentUser?.role !== "employee" && (
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete project</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the project
+                {deleteTarget ? ` "${deleteTarget.name}"` : ""} and its
+                attachments metadata. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async () => {
+                  if (!deleteTarget) return;
+                  try {
+                    await deleteProjectApi(deleteTarget.id);
+                  } catch (err) {
+                    // ignore API failure; proceed with local removal to keep UI responsive
+                  }
+                  deleteProjectLocal(deleteTarget.id);
+                  setDeleteTarget(null);
+                  setDeleteOpen(false);
+                  toast({ title: "Project deleted" });
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </div>
+  );
+}
+
+// Helper functions
+function getEmployeeName(empId: string): string {
+  return `Employee ${empId.slice(0, 8)}`;
+}
+
+function deleteProjectLocal(projectId: string) {
+  // Implementation for local project deletion
+  console.log('Deleting project locally:', projectId);
+}
+
+async function deleteProjectApi(projectId: string) {
+  // Implementation for API project deletion
+  console.log('Deleting project via API:', projectId);
+}

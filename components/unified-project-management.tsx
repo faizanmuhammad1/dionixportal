@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -133,6 +133,35 @@ interface ProjectComment {
   created_at: string;
 }
 
+interface Submission {
+  submission_id: string;
+  client_id: string;
+  project_type: string;
+  description?: string;
+  client_name?: string;
+  budget: number;
+  start_date?: string;
+  end_date?: string;
+  status: "pending" | "approved" | "rejected";
+  priority: "low" | "medium" | "high";
+  step2_data?: Record<string, any>;
+  business_number?: string;
+  company_email?: string;
+  company_address?: string;
+  about_company?: string;
+  social_media_links?: string;
+  public_business_number?: string;
+  public_company_email?: string;
+  public_address?: string;
+  media_links?: string;
+  uploaded_media?: Record<string, any>;
+  bank_details?: string;
+  confirmation_checked: boolean;
+  created_at: string;
+  approved_at?: string;
+  approved_by?: string;
+}
+
 interface Employee {
   id: string;
   name: string;
@@ -145,6 +174,7 @@ export function UnifiedProjectManagement() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -154,15 +184,21 @@ export function UnifiedProjectManagement() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskDescription, setNewTaskDescription] = useState("");
-  const [newTaskAssignee, setNewTaskAssignee] = useState("");
-  const [newTaskDueDate, setNewTaskDueDate] = useState("");
-  const [newTaskPriority, setNewTaskPriority] =
-    useState<Task["priority"]>("medium");
-  const [newTaskStatus, setNewTaskStatus] = useState<Task["status"]>("todo");
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
+  const [approvalData, setApprovalData] = useState({
+    project_name: "",
+    description: "",
+    client_name: "",
+    budget: 0,
+    start_date: "",
+    end_date: "",
+    status: "planning" as const,
+    priority: "medium" as const,
+  });
   const [wizardStep, setWizardStep] = useState(0);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [serviceType, setServiceType] = useState<
     "web" | "branding" | "marketing" | "ai" | "custom" | ""
   >("");
@@ -195,17 +231,17 @@ export function UnifiedProjectManagement() {
     const { data, error } = await supabase
       .from("projects")
       .select(
-        `id, name, description, status, priority, start_date, end_date, budget, client_name, company_number, company_email, company_address, about_company, social_links, public_contacts, media_links, bank_details, service_specific, type,
-         tasks ( id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
-         attachments ( id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
-         comments ( id, project_id, task_id, body, file_refs, created_by, created_at ),
+        `project_id, project_name, description, status, priority, start_date, end_date, budget, client_name, business_number, company_email, company_address, about_company, social_media_links, public_business_number, public_company_email, public_address, media_links, bank_details, step2_data, project_type,
+         tasks ( task_id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
+         attachments ( attachment_id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
+         comments ( comment_id, project_id, task_id, body, file_refs, created_by, created_at ),
          project_members ( user_id )`
       )
       .order("created_at", { ascending: false });
     if (!error && data) {
       const mapped = (data as any[]).map((p) => {
         const taskList = (p.tasks || []).map((t: any) => ({
-          id: t.id,
+          id: t.task_id,
           title: t.title,
           description: t.description,
           status: t.status,
@@ -222,7 +258,7 @@ export function UnifiedProjectManagement() {
           : 0;
         const members = (p.project_members || []).map((m: any) => m.user_id);
         const attachments = (p.attachments || []).map((a: any) => ({
-          id: a.id,
+          id: a.attachment_id,
           file_name: a.file_name,
           file_size: a.file_size,
           content_type: a.content_type,
@@ -233,14 +269,14 @@ export function UnifiedProjectManagement() {
           client_visible: a.client_visible || false,
         })) as ProjectAttachment[];
         const comments = (p.comments || []).map((c: any) => ({
-          id: c.id,
+          id: c.comment_id,
           body: c.body,
           created_by: c.created_by || "",
           created_at: c.created_at,
         })) as ProjectComment[];
         return {
-          id: p.id,
-          name: p.name,
+          id: p.project_id,
+          name: p.project_name,
           description: p.description || "",
           status: p.status,
           priority: p.priority,
@@ -249,18 +285,22 @@ export function UnifiedProjectManagement() {
           assigned_employees: members,
           progress,
           budget: Number(p.budget || 0),
-        client: p.client_name || "",
+          client: p.client_name || "",
           tasks: taskList,
-          service_type: p.type || undefined,
-          company_number: p.company_number || undefined,
+          service_type: p.project_type || undefined,
+          company_number: p.business_number || undefined,
           company_email: p.company_email || undefined,
           company_address: p.company_address || undefined,
           about_company: p.about_company || undefined,
-          social_links: p.social_links || [],
-          public_contacts: p.public_contacts || {},
-          media_links: p.media_links || [],
-          bank_details: p.bank_details || {},
-          service_specific: p.service_specific || {},
+          social_links: p.social_media_links ? p.social_media_links.split(',') : [],
+          public_contacts: {
+            phone: p.public_business_number || undefined,
+            email: p.public_company_email || undefined,
+            address: p.public_address || undefined,
+          },
+          media_links: p.media_links ? p.media_links.split(',') : [],
+          bank_details: p.bank_details ? JSON.parse(p.bank_details) : {},
+          service_specific: p.step2_data || {},
           attachments,
           comments,
         } as Project;
@@ -384,11 +424,11 @@ export function UnifiedProjectManagement() {
       } catch {}
       await fetchEmployees();
       await refetchAllProjects();
-      // Default employees to My Tasks tab for quicker access
+      // Default employees to My Projects tab for quicker access
       setActiveTab((prev) =>
         prev === "overview" &&
         (currentUser?.role || fetchedUser?.role) === "employee"
-          ? "tasks"
+          ? "projects"
           : prev
       );
       setLoading(false);
@@ -460,12 +500,6 @@ export function UnifiedProjectManagement() {
     return matchesText;
   });
 
-  const visibleTasks = (() => {
-    if (currentUser && currentUser.role === "employee") {
-      return tasks.filter((t) => t.assignee === currentUser.id);
-    }
-    return tasks;
-  })();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -541,56 +575,160 @@ export function UnifiedProjectManagement() {
     setUploadFiles([]);
   };
 
-  const handleSubmit = () => {
-    const attachments: ProjectAttachment[] = uploadFiles.map((f, idx) => ({
-      id: `${Date.now()}-${idx}`,
-      file_name: f.name,
-      file_size: f.size,
-      content_type: f.type,
-      version: 1,
-      uploaded_by: "admin",
-      uploaded_at: new Date().toISOString(),
-    }));
+  const handleSubmit = async () => {
+    if (isSubmitting) return; // Prevent multiple submissions
+    setIsSubmitting(true);
+    try {
+      // Validate required fields
+      if (!formData.name) {
+        toast({ 
+          title: "Validation Error", 
+          description: "Project name is required",
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
 
-    const newProject: Project = {
-      id: editingProject ? editingProject.id : Date.now().toString(),
-      ...formData,
-      tasks: editingProject ? editingProject.tasks : [],
-      service_type: serviceType || undefined,
-      company_number: companyNumber || undefined,
-      company_email: companyEmail || undefined,
-      company_address: companyAddress || undefined,
-      about_company: aboutCompany || undefined,
-      social_links: socialLinks,
-        public_contacts: {
-        phone: publicContactPhone || undefined,
-        email: publicContactEmail || undefined,
-        address: publicContactAddress || undefined,
-      },
-      media_links: mediaLinks,
-        bank_details: {
-        account_name: bankAccountName || undefined,
-        account_number: bankAccountNumber || undefined,
-        iban: bankIban || undefined,
-        swift: bankSwift || undefined,
-      },
-      service_specific: serviceSpecific,
-      attachments: editingProject?.attachments
-        ? [...editingProject.attachments]
-        : [...attachments],
-      comments: editingProject?.comments ? [...editingProject.comments] : [],
-    };
-      
+      if (!serviceType) {
+        toast({ 
+          title: "Validation Error", 
+          description: "Please select a project type",
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate Step 3 required fields
+      if (!companyNumber || !companyEmail || !companyAddress || !aboutCompany) {
+        toast({ 
+          title: "Validation Error", 
+          description: "Please fill in all required company information",
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate Step 4 required fields
+      if (!socialLinks.length || !publicContactPhone || !publicContactEmail || !publicContactAddress) {
+        toast({ 
+          title: "Validation Error", 
+          description: "Please fill in all required public contact information",
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const step1Data = {
+        project_name: formData.name,
+        project_type: serviceType,
+        description: formData.description,
+        client_name: formData.client,
+        budget: formData.budget,
+        start_date: formData.start_date || null,
+        end_date: formData.end_date || null,
+        status: formData.status,
+        priority: formData.priority,
+      };
+
+      const step2Data = serviceSpecific;
+
+      const step3Data = {
+        business_number: companyNumber,
+        company_email: companyEmail,
+        company_address: companyAddress,
+        about_company: aboutCompany,
+      };
+
+      const step4Data = {
+        social_media_links: socialLinks.join(','),
+        public_business_number: publicContactPhone,
+        public_company_email: publicContactEmail,
+        public_address: publicContactAddress,
+      };
+
+      const step5Data = {
+        media_links: mediaLinks.join(','),
+        uploaded_media: uploadFiles.map(f => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })),
+        bank_details: JSON.stringify({
+          account_name: bankAccountName,
+          account_number: bankAccountNumber,
+          iban: bankIban,
+          swift: bankSwift,
+        }),
+      };
+
       if (editingProject) {
-          setProjects(
-        projects.map((p) => (p.id === editingProject.id ? newProject : p))
-      );
+        // Update existing project
+        const { data, error } = await supabase
+          .from("projects")
+          .update({
+            project_name: formData.name,
+            project_type: serviceType,
+            description: formData.description,
+            status: formData.status,
+            priority: formData.priority,
+            budget: formData.budget,
+            start_date: formData.start_date,
+            end_date: formData.end_date,
+            business_number: companyNumber,
+            company_email: companyEmail,
+            company_address: companyAddress,
+            about_company: aboutCompany,
+            social_media_links: socialLinks.join(','),
+            public_business_number: publicContactPhone,
+            public_company_email: publicContactEmail,
+            public_address: publicContactAddress,
+            media_links: mediaLinks.join(','),
+            bank_details: JSON.stringify({
+              account_name: bankAccountName,
+              account_number: bankAccountNumber,
+              iban: bankIban,
+              swift: bankSwift,
+            }),
+            step2_data: serviceSpecific,
+          })
+          .eq("project_id", editingProject.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        toast({ title: "Project updated successfully" });
       } else {
-      setProjects([...projects, newProject]);
-    }
-    // persist
-    storeUpsertProject(newProject as unknown as StoreProject);
+        // Create new project using RPC function
+        const { data, error } = await supabase.rpc("create_project", {
+          client_id_param: currentUser?.id,
+          step1_data: step1Data,
+          step2_data: step2Data,
+          step3_data: step3Data,
+          step4_data: step4Data,
+          step5_data: step5Data,
+          admin_id: currentUser?.id,
+        });
+
+        if (error) throw error;
+        toast({ title: "Project created successfully" });
+      }
+
+      await refetchAllProjects();
       resetForm();
+    } catch (error) {
+      console.error("Error saving project:", error);
+      toast({ 
+        title: "Error", 
+        description: error instanceof Error ? error.message : "Failed to save project",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const startEdit = (project: Project) => {
@@ -639,6 +777,25 @@ export function UnifiedProjectManagement() {
     return employees.find((e) => e.id === id)?.name || "Unknown";
   };
 
+  const validateStep2 = () => {
+    if (!serviceType) return false;
+    
+    switch (serviceType) {
+      case "web":
+        return !!(serviceSpecific.domain_suggestions || serviceSpecific.references || serviceSpecific.features?.length);
+      case "branding":
+        return !!(serviceSpecific.logo_ideas || serviceSpecific.color_preferences || serviceSpecific.design_assets?.length);
+      case "ai":
+        return !!(serviceSpecific.ai_solution_type || serviceSpecific.business_challenge || serviceSpecific.data_availability);
+      case "marketing":
+        return !!(serviceSpecific.target_audience || serviceSpecific.marketing_goals || serviceSpecific.channels?.length);
+      case "custom":
+        return !!(serviceSpecific.service_description || serviceSpecific.expected_outcome);
+      default:
+        return true;
+    }
+  };
+
   const teamEmployees = employees.filter((e) => e.email !== "admin@dionix.ai");
 
   return (
@@ -670,15 +827,12 @@ export function UnifiedProjectManagement() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList
           className={`grid w-full ${
-            currentUser?.role === "employee" ? "grid-cols-3" : "grid-cols-4"
+            currentUser?.role === "employee" ? "grid-cols-2" : "grid-cols-3"
           }`}
         >
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="projects">
             {currentUser?.role === "employee" ? "My Projects" : "All Projects"}
-          </TabsTrigger>
-          <TabsTrigger value="tasks">
-            {currentUser?.role === "employee" ? "My Tasks" : "Task Board"}
           </TabsTrigger>
           {currentUser?.role !== "employee" && (
             <TabsTrigger value="team">Team View</TabsTrigger>
@@ -719,7 +873,7 @@ export function UnifiedProjectManagement() {
                 <CheckSquare className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{visibleTasks.length}</div>
+                <div className="text-2xl font-bold">{tasks.length}</div>
               </CardContent>
             </Card>
             <Card>
@@ -768,7 +922,7 @@ export function UnifiedProjectManagement() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {visibleTasks
+                  {tasks
                     .filter((t) => t.status !== "completed")
                     .slice(0, 3)
                     .map((task) => (
@@ -893,11 +1047,10 @@ export function UnifiedProjectManagement() {
                             <DialogTitle>{project.name}</DialogTitle>
                           </DialogHeader>
                           <Tabs defaultValue="overview">
-                            <TabsList className="grid w-full grid-cols-5">
+                            <TabsList className="grid w-full grid-cols-4">
                               <TabsTrigger value="overview">
                                 Overview
                               </TabsTrigger>
-                              <TabsTrigger value="tasks">Tasks</TabsTrigger>
                               <TabsTrigger value="attachments">
                                 Attachments
                               </TabsTrigger>
@@ -999,223 +1152,148 @@ export function UnifiedProjectManagement() {
                                     </div>
                                   </CardContent>
                                 </Card>
-                              </div>
-                            </TabsContent>
-                            <TabsContent value="tasks">
-                              {/* Add Task to this project (admins only) */}
-                              {currentUser?.role !== "employee" && (
-                                <Card className="mb-4">
+                                
+                                {/* Service-Specific Details */}
+                                {project.service_specific && Object.keys(project.service_specific).length > 0 && (
+                                  <Card className="md:col-span-2">
+                                    <CardHeader>
+                                      <CardTitle>Service-Specific Details</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-2 text-sm">
+                                      {project.service_type === "web" && (
+                                        <>
+                                          {project.service_specific.domain_suggestions && (
+                                            <p><strong>Domain Suggestions:</strong> {project.service_specific.domain_suggestions}</p>
+                                          )}
+                                          {project.service_specific.references && (
+                                            <p><strong>Website References:</strong> {project.service_specific.references}</p>
+                                          )}
+                                          {project.service_specific.features && (
+                                            <p><strong>Features:</strong> {Array.isArray(project.service_specific.features) ? project.service_specific.features.join(", ") : project.service_specific.features}</p>
+                                          )}
+                                          {project.service_specific.additional_requirements && (
+                                            <p><strong>Additional Requirements:</strong> {project.service_specific.additional_requirements}</p>
+                                          )}
+                                        </>
+                                      )}
+                                      
+                                      {project.service_type === "branding" && (
+                                        <>
+                                          {project.service_specific.logo_ideas && (
+                                            <p><strong>Logo Ideas:</strong> {project.service_specific.logo_ideas}</p>
+                                          )}
+                                          {project.service_specific.color_preferences && (
+                                            <p><strong>Color Preferences:</strong> {project.service_specific.color_preferences}</p>
+                                          )}
+                                          {project.service_specific.design_assets && (
+                                            <p><strong>Design Assets:</strong> {Array.isArray(project.service_specific.design_assets) ? project.service_specific.design_assets.join(", ") : project.service_specific.design_assets}</p>
+                                          )}
+                                          {project.service_specific.target_audience && (
+                                            <p><strong>Target Audience:</strong> {project.service_specific.target_audience}</p>
+                                          )}
+                                        </>
+                                      )}
+                                      
+                                      {project.service_type === "ai" && (
+                                        <>
+                                          {project.service_specific.ai_solution_type && (
+                                            <p><strong>AI Solution Type:</strong> {project.service_specific.ai_solution_type}</p>
+                                          )}
+                                          {project.service_specific.business_challenge && (
+                                            <p><strong>Business Challenge:</strong> {project.service_specific.business_challenge}</p>
+                                          )}
+                                          {project.service_specific.data_availability && (
+                                            <p><strong>Data Availability:</strong> {project.service_specific.data_availability}</p>
+                                          )}
+                                          {project.service_specific.expected_outcome && (
+                                            <p><strong>Expected Outcome:</strong> {project.service_specific.expected_outcome}</p>
+                                          )}
+                                        </>
+                                      )}
+                                      
+                                      {project.service_type === "marketing" && (
+                                        <>
+                                          {project.service_specific.target_audience && (
+                                            <p><strong>Target Audience:</strong> {project.service_specific.target_audience}</p>
+                                          )}
+                                          {project.service_specific.marketing_goals && (
+                                            <p><strong>Marketing Goals:</strong> {project.service_specific.marketing_goals}</p>
+                                          )}
+                                          {project.service_specific.channels && (
+                                            <p><strong>Channels:</strong> {Array.isArray(project.service_specific.channels) ? project.service_specific.channels.join(", ") : project.service_specific.channels}</p>
+                                          )}
+                                          {project.service_specific.monthly_budget && (
+                                            <p><strong>Monthly Budget:</strong> {project.service_specific.monthly_budget}</p>
+                                          )}
+                                        </>
+                                      )}
+                                      
+                                      {project.service_type === "custom" && (
+                                        <>
+                                          {project.service_specific.service_description && (
+                                            <p><strong>Service Description:</strong> {project.service_specific.service_description}</p>
+                                          )}
+                                          {project.service_specific.expected_outcome && (
+                                            <p><strong>Expected Outcome:</strong> {project.service_specific.expected_outcome}</p>
+                                          )}
+                                          {project.service_specific.budget_range && (
+                                            <p><strong>Budget Range:</strong> {project.service_specific.budget_range}</p>
+                                          )}
+                                        </>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+                                )}
+                                
+                                {/* Media & Financial Details (Step 5) */}
+                                <Card className="md:col-span-2">
                                   <CardHeader>
-                                    <CardTitle>Add Task</CardTitle>
+                                    <CardTitle>Media & Financial Details</CardTitle>
                                   </CardHeader>
-                                  <CardContent>
-                                    <div className="grid md:grid-cols-2 gap-3">
-                                      <Input
-                                        placeholder="Title"
-                                        value={newTaskTitle}
-                                        onChange={(e) =>
-                                          setNewTaskTitle(e.target.value)
-                                        }
-                                      />
-                                      <Input
-                                        placeholder="Assignee (select below)"
-                                        value={getEmployeeName(newTaskAssignee)}
-                                        disabled
-                                      />
-                                      <Textarea
-                                        placeholder="Description"
-                                        value={newTaskDescription}
-                                        onChange={(e) =>
-                                          setNewTaskDescription(e.target.value)
-                                        }
-                                        className="md:col-span-2"
-                                      />
-                                      <div className="grid grid-cols-2 gap-3">
-                                        <select
-                                          value={newTaskAssignee}
-                                          onChange={(e) =>
-                                            setNewTaskAssignee(e.target.value)
-                                          }
-                                          className="w-full p-2 border rounded-md"
-                                        >
-                                          <option value="">
-                                            Select assignee
-                                          </option>
-                                          {employees.map((e) => (
-                                            <option key={e.id} value={e.id}>
-                                              {e.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <Input
-                                          type="date"
-                                          value={newTaskDueDate}
-                                          onChange={(e) =>
-                                            setNewTaskDueDate(e.target.value)
-                                          }
-                                        />
+                                  <CardContent className="space-y-2 text-sm">
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                      <div>
+                                        <h4 className="font-medium mb-2">Media Assets</h4>
+                                        {project.media_links && project.media_links.length > 0 ? (
+                                          <div className="space-y-1">
+                                            {project.media_links.map((link, index) => (
+                                              <p key={index} className="text-xs break-all">
+                                                <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                                  {link}
+                                                </a>
+                                              </p>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="text-muted-foreground">No media links provided</p>
+                                        )}
                                       </div>
-                                      <div className="grid grid-cols-2 gap-3">
-                                        <select
-                                          value={newTaskPriority}
-                                          onChange={(e) =>
-                                            setNewTaskPriority(
-                                              e.target.value as Task["priority"]
-                                            )
-                                          }
-                                          className="w-full p-2 border rounded-md"
-                                        >
-                                          <option value="low">Low</option>
-                                          <option value="medium">Medium</option>
-                                          <option value="high">High</option>
-                                        </select>
-                                        <select
-                                          value={newTaskStatus}
-                                          onChange={(e) =>
-                                            setNewTaskStatus(
-                                              e.target.value as Task["status"]
-                                            )
-                                          }
-                                          className="w-full p-2 border rounded-md"
-                                        >
-                                          <option value="todo">
-                                            Not Started
-                                          </option>
-                                          <option value="in-progress">
-                                            In Progress
-                                          </option>
-                                          <option value="review">Review</option>
-                                          <option value="completed">
-                                            Completed
-                                          </option>
-                                        </select>
-                                      </div>
-                                      <div className="md:col-span-2 flex justify-end">
-                                        <Button
-                                          onClick={async () => {
-                                            if (!selectedProject) return;
-                                            if (
-                                              !newTaskTitle.trim() ||
-                                              !newTaskAssignee
-                                            )
-                                              return;
-                                            const insertPayload: any = {
-                                              project_id: selectedProject.id,
-                                              title: newTaskTitle.trim(),
-                                              description:
-                                                newTaskDescription.trim(),
-                                              status: newTaskStatus,
-                                              priority: newTaskPriority,
-                                              assignee_id: newTaskAssignee,
-                                              due_date: newTaskDueDate || null,
-                                            };
-                                            const { data: inserted, error } =
-                                              await supabase
-                                                .from("tasks")
-                                                .insert(insertPayload)
-                                                .select(
-                                                  "id, project_id, title, description, status, priority, assignee_id, due_date, created_at"
-                                                )
-                                                .single();
-                                            if (error) return;
-
-                                            // Ensure member is listed in project_members
-                                            await supabase
-                                              .from("project_members")
-                                              .upsert(
-                                                {
-                                                  project_id:
-                                                    selectedProject.id,
-                                                  user_id: newTaskAssignee,
-                                                  role: "member",
-                                                } as any,
-                                                {
-                                                  onConflict:
-                                                    "project_id,user_id" as any,
-                                                }
-                                              )
-                                              .select("project_id")
-                                              .maybeSingle();
-
-                                            const task: Task = {
-                                              id: inserted.id,
-                                              title: inserted.title,
-                                              description:
-                                                inserted.description || "",
-                                              status: inserted.status,
-                                              assignee:
-                                                inserted.assignee_id || "",
-                                              due_date: inserted.due_date || "",
-                                              priority: inserted.priority,
-                                              project_id: inserted.project_id,
-                                            };
-                                            setTasks((prev) => [...prev, task]);
-                                            setProjects((prev) =>
-                                              prev.map((p) =>
-                                                p.id === selectedProject.id
-                                                  ? {
-                                                      ...p,
-                                                      tasks: [...p.tasks, task],
-                                                      assigned_employees:
-                                                        p.assigned_employees.includes(
-                                                          newTaskAssignee
-                                                        )
-                                                          ? p.assigned_employees
-                                                          : [
-                                                              ...p.assigned_employees,
-                                                              newTaskAssignee,
-                                                            ],
-                                                    }
-                                                  : p
-                                              )
-                                            );
-                                            // reset form
-                                            setNewTaskTitle("");
-                                            setNewTaskDescription("");
-                                            setNewTaskAssignee("");
-                                            setNewTaskDueDate("");
-                                            setNewTaskPriority("medium");
-                                            setNewTaskStatus("todo");
-                                          }}
-                                        >
-                                          Add Task
-                                        </Button>
+                                      
+                                      <div>
+                                        <h4 className="font-medium mb-2">Bank Details</h4>
+                                        {project.bank_details && Object.keys(project.bank_details).length > 0 ? (
+                                          <div className="space-y-1">
+                                            {project.bank_details.account_name && (
+                                              <p><strong>Account Name:</strong> {project.bank_details.account_name}</p>
+                                            )}
+                                            {project.bank_details.account_number && (
+                                              <p><strong>Account Number:</strong> {project.bank_details.account_number}</p>
+                                            )}
+                                            {project.bank_details.iban && (
+                                              <p><strong>IBAN:</strong> {project.bank_details.iban}</p>
+                                            )}
+                                            {project.bank_details.swift && (
+                                              <p><strong>SWIFT:</strong> {project.bank_details.swift}</p>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <p className="text-muted-foreground">No bank details provided</p>
+                                        )}
                                       </div>
                                     </div>
                                   </CardContent>
                                 </Card>
-                              )}
-
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Task</TableHead>
-                                    <TableHead>Assignee</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Due Date</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {project.tasks.map((task) => (
-                                    <TableRow key={task.id}>
-                                      <TableCell>{task.title}</TableCell>
-                                      <TableCell>
-                                        {getEmployeeName(task.assignee)}
-                                      </TableCell>
-                                      <TableCell>
-                                        <Badge
-                                          className={getTaskStatusColor(
-                                            task.status
-                                          )}
-                                        >
-                                          {task.status}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell>{task.due_date}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
+                              </div>
                             </TabsContent>
                             <TabsContent
                               value="attachments"
@@ -1453,77 +1531,9 @@ export function UnifiedProjectManagement() {
               </Card>
             ))}
           </div>
-        </TabsContent>
+         </TabsContent>
 
-        <TabsContent value="tasks" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {currentUser?.role === "employee" ? "My Tasks" : "All Tasks"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {visibleTasks.length === 0 ? (
-                <div className="text-sm text-muted-foreground py-6">
-                  No tasks assigned yet. Check back later.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Project</TableHead>
-                      {currentUser?.role !== "employee" && (
-                        <TableHead>Assignee</TableHead>
-                      )}
-                      <TableHead>Status</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Due Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibleTasks.map((task) => {
-                      const project = projects.find(
-                        (p) => p.id === task.project_id
-                      );
-                      return (
-                        <TableRow key={task.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{task.title}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {task.description}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{project?.name || "Unknown"}</TableCell>
-                          {currentUser?.role !== "employee" && (
-                            <TableCell>
-                              {getEmployeeName(task.assignee)}
-                            </TableCell>
-                          )}
-                          <TableCell>
-                            <Badge className={getTaskStatusColor(task.status)}>
-                              {task.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={getPriorityColor(task.priority)}>
-                              {task.priority}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{task.due_date}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {currentUser?.role !== "employee" && (
+         {currentUser?.role !== "employee" && (
           <TabsContent value="team" className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {teamEmployees.map((employee) => {
@@ -1597,7 +1607,7 @@ export function UnifiedProjectManagement() {
             </DialogHeader>
             <div className="space-y-6">
               <div className="text-sm text-muted-foreground">
-                Step {wizardStep} of 5
+                Step {wizardStep + 1} of 6
               </div>
               <div className="grid grid-cols-6 gap-2 text-xs">
                 {[0, 1, 2, 3, 4, 5].map((s) => (
@@ -1607,532 +1617,840 @@ export function UnifiedProjectManagement() {
                       wizardStep >= s ? "bg-primary" : "bg-muted"
                     }`}
                     onClick={() => setWizardStep(s)}
-                    aria-label={`Go to step ${s}`}
+                    aria-label={`Go to step ${s + 1}`}
                   />
                 ))}
               </div>
               {wizardStep === 0 && (
                 <div className="space-y-4">
                   <div className="space-y-1">
-                    <Label>Select Project Type</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Pick the service that best matches the project. You can
-                      change this later.
+                    <Label className="text-lg font-semibold">Step 1: Service (Core Project Details)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Collect high-level project setup data. Determines branching logic for Step 2.
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {[
-                      {
-                        key: "web",
-                        label: "Web Development",
-                        emoji: "🚀",
-                        desc: "Websites, e‑commerce, portals",
-                      },
-                      {
-                        key: "branding",
-                        label: "Branding & Design",
-                        emoji: "✨",
-                        desc: "Logos, identity, assets",
-                      },
-                      {
-                        key: "marketing",
-                        label: "Digital Marketing",
-                        emoji: "📈",
-                        desc: "Campaigns, SEO, socials",
-                      },
-                      {
-                        key: "ai",
-                        label: "AI Solutions",
-                        emoji: "🤖",
-                        desc: "Automation, assistants, ML",
-                      },
-                      {
-                        key: "custom",
-                        label: "Custom Project",
-                        emoji: "📦",
-                        desc: "Anything bespoke",
-                      },
-                    ].map((opt) => {
-                      const selected = serviceType === (opt.key as any);
-                      return (
-                        <button
-                          type="button"
-                          key={opt.key}
-                          data-selected={selected}
-                          onClick={() => setServiceType(opt.key as any)}
-                          className={`group w-full rounded-lg border p-4 text-left transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/50 min-h-[120px] ${
-                            selected
-                              ? "border-primary bg-primary/5"
-                              : "border-border"
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="text-base leading-none">
-                              {opt.emoji}
-                            </div>
-                            <div className="flex flex-col">
-                              <div className="font-medium text-foreground text-sm md:text-base leading-tight break-words whitespace-normal min-h-[40px] flex items-center">
-                                {opt.label}
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {opt.desc}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Project Name *</Label>
+                      <Input
+                        placeholder="Enter project name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Project Type *</Label>
+                      <Select value={serviceType} onValueChange={(value) => setServiceType(value as any)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select project type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="web">Web Development</SelectItem>
+                          <SelectItem value="branding">Branding Design</SelectItem>
+                          <SelectItem value="ai">AI Solutions</SelectItem>
+                          <SelectItem value="marketing">Digital Marketing</SelectItem>
+                          <SelectItem value="custom">Custom Project</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label>Description</Label>
+                      <Textarea
+                        placeholder="Brief project description (optional)"
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        rows={3}
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Client Name</Label>
+                      <Input
+                        placeholder="Client or company name (optional)"
+                        value={formData.client}
+                        onChange={(e) => setFormData({ ...formData, client: e.target.value })}
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Budget</Label>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={formData.budget}
+                          onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
+                        />
+                      </div>
+                      <div>
+                        <Label>Priority</Label>
+                        <Select value={formData.priority} onValueChange={(value) => setFormData({ ...formData, priority: value as any })}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Start Date</Label>
+                        <Input
+                          type="date"
+                          value={formData.start_date}
+                          onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label>End Date</Label>
+                        <Input
+                          type="date"
+                          value={formData.end_date}
+                          onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label>Status</Label>
+                      <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value as any })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="planning">Planning</SelectItem>
+                          <SelectItem value="active">In Progress</SelectItem>
+                          <SelectItem value="on-hold">On Hold</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  {tryAdvance && !serviceType && (
+                  
+                  {tryAdvance && (!formData.name || !serviceType) && (
                     <p className="text-xs text-destructive">
-                      Please select a project type to continue.
+                      Please fill in project name and select project type to continue.
                     </p>
                   )}
                 </div>
               )}
               {wizardStep === 1 && (
                 <div className="space-y-4">
-                  <Label>Service-Specific Details</Label>
+                  <div className="space-y-1">
+                    <Label className="text-lg font-semibold">Step 2: Details (Conditional Project Requirements)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Capture project-specific requirements tailored to the selected service.
+                    </p>
+                  </div>
                   {serviceType === "web" && (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <Input
-                        placeholder="Domain"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            domain: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.domain || ""}
-                      />
-                      <Input
-                        placeholder="Website References (comma-separated)"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            references: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.references || ""}
-                      />
-                      <Textarea
-                        placeholder="Features"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            features: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.features || ""}
-                      />
-                      <Input
-                        placeholder="Budget / Timeline"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            budget_timeline: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.budget_timeline || ""}
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-sm font-medium">Domain Name Suggestions</Label>
+                        <Input
+                          placeholder="e.g., example.com, mysite.dev"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              domain_suggestions: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.domain_suggestions || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Website References</Label>
+                        <Textarea
+                          placeholder="Enter website URLs (one per line or comma-separated)"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              references: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.references || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Features & Requirements</Label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {["Blog", "User Login", "Contact Form", "Gallery", "E-commerce", "Search", "Newsletter", "Social Media Integration"].map((feature) => (
+                            <label key={feature} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={serviceSpecific.features?.includes(feature) || false}
+                                onChange={(e) => {
+                                  const currentFeatures = serviceSpecific.features || [];
+                                  const newFeatures = e.target.checked
+                                    ? [...currentFeatures, feature]
+                                    : currentFeatures.filter((f: string) => f !== feature);
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    features: newFeatures,
+                                  });
+                                }}
+                              />
+                              <span className="text-sm">{feature}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <Textarea
+                          placeholder="Additional requirements..."
+                          className="mt-2"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              additional_requirements: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.additional_requirements || ""}
+                        />
+                      </div>
                     </div>
                   )}
                   {serviceType === "branding" && (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <Textarea
-                        placeholder="Logo Ideas"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            logo_ideas: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.logo_ideas || ""}
-                      />
-                      <Input
-                        placeholder="References (comma-separated)"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            references: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.references || ""}
-                      />
-                      <Input
-                        placeholder="Colour / Theme"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            theme: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.theme || ""}
-                      />
-                      <Textarea
-                        placeholder="Design Assets"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            assets: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.assets || ""}
-                      />
-                    </div>
-                  )}
-                  {serviceType === "marketing" && (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <Input
-                        placeholder="Target Audience"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            audience: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.audience || ""}
-                      />
-                      <Input
-                        placeholder="Goals"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            goals: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.goals || ""}
-                      />
-                      <Input
-                        placeholder="Channels"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            channels: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.channels || ""}
-                      />
-                      <Input
-                        placeholder="Budget Range"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            budget_range: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.budget_range || ""}
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-sm font-medium">Logo Ideas & Concepts</Label>
+                        <Textarea
+                          placeholder="Describe your logo ideas, style preferences, and concepts"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              logo_ideas: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.logo_ideas || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Upload Brand References (Optional)</Label>
+                        <Input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              uploaded_references: files.map(f => ({
+                                name: f.name,
+                                size: f.size,
+                                type: f.type,
+                              })),
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Colour & Theme Preferences</Label>
+                        <Input
+                          placeholder="e.g., Blue, White, Modern, Minimalist"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              color_preferences: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.color_preferences || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Design Assets Needed</Label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {["Business Cards", "Flyers", "Social Media Templates", "Letterhead", "Brochures", "Banners"].map((asset) => (
+                            <label key={asset} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={serviceSpecific.design_assets?.includes(asset) || false}
+                                onChange={(e) => {
+                                  const currentAssets = serviceSpecific.design_assets || [];
+                                  const newAssets = e.target.checked
+                                    ? [...currentAssets, asset]
+                                    : currentAssets.filter((a: string) => a !== asset);
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    design_assets: newAssets,
+                                  });
+                                }}
+                              />
+                              <span className="text-sm">{asset}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <Input
+                          placeholder="Other assets needed..."
+                          className="mt-2"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              other_assets: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.other_assets || ""}
+                        />
+                      </div>
                     </div>
                   )}
                   {serviceType === "ai" && (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <Input
-                        placeholder="Solution Type"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            solution_type: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.solution_type || ""}
-                      />
-                      <Input
-                        placeholder="Use Case"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            use_case: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.use_case || ""}
-                      />
-                      <Input
-                        placeholder="Data Availability"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            data: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.data || ""}
-                      />
-                      <Input
-                        placeholder="Budget Range"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            budget_range: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.budget_range || ""}
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-sm font-medium">AI Solution Type</Label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {["Chatbot", "Automation", "Predictive Analytics", "Computer Vision", "Natural Language Processing", "Other"].map((type) => (
+                            <label key={type} className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                name="ai_solution_type"
+                                value={type}
+                                checked={serviceSpecific.ai_solution_type === type}
+                                onChange={(e) =>
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    ai_solution_type: e.target.value,
+                                  })
+                                }
+                              />
+                              <span className="text-sm">{type}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {serviceSpecific.ai_solution_type === "Other" && (
+                          <Input
+                            placeholder="Specify other AI solution type..."
+                            className="mt-2"
+                            onChange={(e) =>
+                              setServiceSpecific({
+                                ...serviceSpecific,
+                                other_ai_type: e.target.value,
+                              })
+                            }
+                            defaultValue={serviceSpecific.other_ai_type || ""}
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Business Challenge / Use Case</Label>
+                        <Textarea
+                          placeholder="Describe the business challenge and how AI can help"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              business_challenge: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.business_challenge || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Data Availability</Label>
+                        <Select
+                          value={serviceSpecific.data_availability || ""}
+                          onValueChange={(value) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              data_availability: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select data availability" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="limited">Limited</SelectItem>
+                            <SelectItem value="structured">Structured</SelectItem>
+                            <SelectItem value="unstructured">Unstructured</SelectItem>
+                            <SelectItem value="mixed">Mixed (Structured & Unstructured)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Budget Range</Label>
+                        <Select
+                          value={serviceSpecific.budget_range || ""}
+                          onValueChange={(value) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              budget_range: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select budget range" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="under-10k">Under $10K</SelectItem>
+                            <SelectItem value="10k-25k">$10K - $25K</SelectItem>
+                            <SelectItem value="25k-50k">$25K - $50K</SelectItem>
+                            <SelectItem value="50k-100k">$50K - $100K</SelectItem>
+                            <SelectItem value="over-100k">Over $100K</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+                  {serviceType === "marketing" && (
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-sm font-medium">Target Audience & Industry</Label>
+                        <Textarea
+                          placeholder="Describe your target audience and industry"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              target_audience: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.target_audience || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Marketing Goals</Label>
+                        <Textarea
+                          placeholder="What are your marketing objectives?"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              marketing_goals: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.marketing_goals || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Channels of Interest</Label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {["SEO", "Social Media", "Google Ads", "Facebook Ads", "Email Marketing", "Content Marketing", "Influencer Marketing", "Other"].map((channel) => (
+                            <label key={channel} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={serviceSpecific.channels?.includes(channel) || false}
+                                onChange={(e) => {
+                                  const currentChannels = serviceSpecific.channels || [];
+                                  const newChannels = e.target.checked
+                                    ? [...currentChannels, channel]
+                                    : currentChannels.filter((c: string) => c !== channel);
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    channels: newChannels,
+                                  });
+                                }}
+                              />
+                              <span className="text-sm">{channel}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {serviceSpecific.channels?.includes("Other") && (
+                          <Input
+                            placeholder="Specify other channels..."
+                            className="mt-2"
+                            onChange={(e) =>
+                              setServiceSpecific({
+                                ...serviceSpecific,
+                                other_channels: e.target.value,
+                              })
+                            }
+                            defaultValue={serviceSpecific.other_channels || ""}
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Monthly Budget Range</Label>
+                        <Select
+                          value={serviceSpecific.monthly_budget || ""}
+                          onValueChange={(value) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              monthly_budget: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select monthly budget" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="under-1k">Under $1K</SelectItem>
+                            <SelectItem value="1k-5k">$1K - $5K</SelectItem>
+                            <SelectItem value="5k-10k">$5K - $10K</SelectItem>
+                            <SelectItem value="10k-25k">$10K - $25K</SelectItem>
+                            <SelectItem value="over-25k">Over $25K</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   )}
                   {serviceType === "custom" && (
-                    <div className="space-y-3">
-                      <Textarea
-                        placeholder="Project Description"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            description: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.description || ""}
-                      />
-                      <Textarea
-                        placeholder="Expected Outcomes"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                            outcomes: e.target.value,
-                          })
-                        }
-                        defaultValue={serviceSpecific.outcomes || ""}
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-sm font-medium">Service Description</Label>
+                        <Textarea
+                          placeholder="Describe the custom service you need"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              service_description: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.service_description || ""}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium">Expected Outcome</Label>
+                        <Textarea
+                          placeholder="What do you expect to achieve with this project?"
+                          onChange={(e) =>
+                            setServiceSpecific({
+                              ...serviceSpecific,
+                              expected_outcome: e.target.value,
+                            })
+                          }
+                          defaultValue={serviceSpecific.expected_outcome || ""}
+                        />
+                      </div>
                     </div>
+                  )}
+                  {tryAdvance && wizardStep === 1 && !validateStep2() && (
+                    <p className="text-xs text-destructive">
+                      Please fill in at least one field for the selected project type to continue.
+                    </p>
                   )}
                 </div>
               )}
               {wizardStep === 2 && (
                 <div className="space-y-4">
-                  <Label>Company & Contact Information</Label>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <Input
-                      placeholder="Project Name"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
-                    />
-                    <Input
-                      placeholder="Client Name"
-                      value={formData.client}
-                      onChange={(e) =>
-                        setFormData({ ...formData, client: e.target.value })
-                      }
-                    />
-                    <Input
-                      placeholder="Business Number"
-                      value={companyNumber}
-                      onChange={(e) => setCompanyNumber(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Company Email"
-                      value={companyEmail}
-                      onChange={(e) => setCompanyEmail(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Company Address"
-                      value={companyAddress}
-                      onChange={(e) => setCompanyAddress(e.target.value)}
-                    />
-                    <Textarea
-                      placeholder="About Company / Team"
-                      value={aboutCompany}
-                      onChange={(e) => setAboutCompany(e.target.value)}
-                    />
+                  <div className="space-y-1">
+                    <Label className="text-lg font-semibold">Step 3: Company (Business Information)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Collect internal, official company identifiers.
+                    </p>
                   </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Business Number *</Label>
+                      <Input
+                        placeholder="Enter business registration number"
+                        value={companyNumber}
+                        onChange={(e) => setCompanyNumber(e.target.value)}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Company Email *</Label>
+                      <Input
+                        type="email"
+                        placeholder="company@example.com"
+                        value={companyEmail}
+                        onChange={(e) => setCompanyEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Company Address *</Label>
+                      <Textarea
+                        placeholder="Full company address"
+                        value={companyAddress}
+                        onChange={(e) => setCompanyAddress(e.target.value)}
+                        rows={3}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>About Company / Team *</Label>
+                      <Textarea
+                        placeholder="Describe your company, team, and what you do"
+                        value={aboutCompany}
+                        onChange={(e) => setAboutCompany(e.target.value)}
+                        rows={4}
+                        required
+                      />
+                    </div>
+                  </div>
+                  
+                  {tryAdvance && wizardStep === 2 && (!companyNumber || !companyEmail || !companyAddress || !aboutCompany) && (
+                    <p className="text-xs text-destructive">
+                      Please fill in all required company information to continue.
+                    </p>
+                  )}
                 </div>
               )}
               {wizardStep === 3 && (
                 <div className="space-y-4">
-                  <Label>Social Media & Public Info</Label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Add social link"
-                        value={newSocial}
-                        onChange={(e) => setNewSocial(e.target.value)}
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (!newSocial.trim()) return;
-                          setSocialLinks([...socialLinks, newSocial.trim()]);
-                          setNewSocial("");
-                        }}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    <div className="text-sm space-y-1">
-                      {socialLinks.map((s, idx) => (
-                        <div
-                          key={`${s}-${idx}`}
-                          className="flex justify-between border rounded-md p-2"
-                        >
-                          <span>{s}</span>
+                  <div className="space-y-1">
+                    <Label className="text-lg font-semibold">Step 4: Contact (Public Contact Information)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Collect public-facing details for website/collateral.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Social Media Links *</Label>
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Add social media link (e.g., https://facebook.com/company)"
+                            value={newSocial}
+                            onChange={(e) => setNewSocial(e.target.value)}
+                          />
                           <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setSocialLinks(
-                                socialLinks.filter((_, i) => i !== idx)
-                              )
-                            }
+                            variant="outline"
+                            onClick={() => {
+                              if (!newSocial.trim()) return;
+                              setSocialLinks([...socialLinks, newSocial.trim()]);
+                              setNewSocial("");
+                            }}
                           >
-                            Remove
+                            Add
                           </Button>
                         </div>
-                      ))}
+                        <div className="text-sm space-y-1">
+                          {socialLinks.map((s, idx) => (
+                            <div
+                              key={`${s}-${idx}`}
+                              className="flex justify-between border rounded-md p-2"
+                            >
+                              <span className="truncate">{s}</span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setSocialLinks(
+                                    socialLinks.filter((_, i) => i !== idx)
+                                  )
+                                }
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label>Public Business Number *</Label>
+                      <Input
+                        placeholder="Phone number for public display"
+                        value={publicContactPhone}
+                        onChange={(e) => setPublicContactPhone(e.target.value)}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Public Company Email *</Label>
+                      <Input
+                        type="email"
+                        placeholder="Email for public display"
+                        value={publicContactEmail}
+                        onChange={(e) => setPublicContactEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Public Address *</Label>
+                      <Textarea
+                        placeholder="Address for public display"
+                        value={publicContactAddress}
+                        onChange={(e) => setPublicContactAddress(e.target.value)}
+                        rows={3}
+                        required
+                      />
                     </div>
                   </div>
-                  <div className="grid md:grid-cols-3 gap-3">
-                    <Input
-                      placeholder="Public Phone"
-                      value={publicContactPhone}
-                      onChange={(e) => setPublicContactPhone(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Public Email"
-                      value={publicContactEmail}
-                      onChange={(e) => setPublicContactEmail(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Public Address"
-                      value={publicContactAddress}
-                      onChange={(e) => setPublicContactAddress(e.target.value)}
-                    />
-                  </div>
+                  
+                  {tryAdvance && wizardStep === 3 && (!socialLinks.length || !publicContactPhone || !publicContactEmail || !publicContactAddress) && (
+                    <p className="text-xs text-destructive">
+                      Please fill in all required public contact information to continue.
+                    </p>
+                  )}
                 </div>
               )}
               {wizardStep === 4 && (
                 <div className="space-y-4">
-                  <Label>Media & Financial Details</Label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Add media link"
-                        value={newMedia}
-                        onChange={(e) => setNewMedia(e.target.value)}
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (!newMedia.trim()) return;
-                          setMediaLinks([...mediaLinks, newMedia.trim()]);
-                          setNewMedia("");
-                        }}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    <div className="text-sm space-y-1">
-                      {mediaLinks.map((m, idx) => (
-                        <div
-                          key={`${m}-${idx}`}
-                          className="flex justify-between border rounded-md p-2"
-                        >
-                          <span>{m}</span>
+                  <div className="space-y-1">
+                    <Label className="text-lg font-semibold">Step 5: Media (Assets & Payment Info)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Collect creative/media assets and optional banking/payment details.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Media Links</Label>
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Add media link (images, videos, etc.)"
+                            value={newMedia}
+                            onChange={(e) => setNewMedia(e.target.value)}
+                          />
                           <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setMediaLinks(
-                                mediaLinks.filter((_, i) => i !== idx)
-                              )
-                            }
+                            variant="outline"
+                            onClick={() => {
+                              if (!newMedia.trim()) return;
+                              setMediaLinks([...mediaLinks, newMedia.trim()]);
+                              setNewMedia("");
+                            }}
                           >
-                            Remove
+                            Add
                           </Button>
                         </div>
-                      ))}
+                        <div className="text-sm space-y-1">
+                          {mediaLinks.map((m, idx) => (
+                            <div
+                              key={`${m}-${idx}`}
+                              className="flex justify-between border rounded-md p-2"
+                            >
+                              <span className="truncate">{m}</span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setMediaLinks(
+                                    mediaLinks.filter((_, i) => i !== idx)
+                                  )
+                                }
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Uploads (multiple allowed)</Label>
-                    <Input
-                      type="file"
-                      multiple
-                      onChange={(e) =>
-                        setUploadFiles(Array.from(e.target.files || []))
-                      }
-                    />
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <Input
-                      placeholder="Bank Account Name"
-                      value={bankAccountName}
-                      onChange={(e) => setBankAccountName(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Bank Account Number"
-                      value={bankAccountNumber}
-                      onChange={(e) => setBankAccountNumber(e.target.value)}
-                    />
-                    <Input
-                      placeholder="IBAN"
-                      value={bankIban}
-                      onChange={(e) => setBankIban(e.target.value)}
-                    />
-                    <Input
-                      placeholder="SWIFT"
-                      value={bankSwift}
-                      onChange={(e) => setBankSwift(e.target.value)}
-                    />
+                    
+                    <div>
+                      <Label>Upload Media Files</Label>
+                      <Input
+                        type="file"
+                        multiple
+                        accept="image/*,video/*,.pdf,.doc,.docx"
+                        onChange={(e) =>
+                          setUploadFiles(Array.from(e.target.files || []))
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Upload images, videos, documents, or other media files
+                      </p>
+                    </div>
+                    
+                    <div className="border-t pt-4">
+                      <Label className="text-base font-medium">Bank Details for Payment Integration (Optional)</Label>
+                      <div className="grid md:grid-cols-2 gap-3 mt-3">
+                        <Input
+                          placeholder="Bank Account Name"
+                          value={bankAccountName}
+                          onChange={(e) => setBankAccountName(e.target.value)}
+                        />
+                        <Input
+                          placeholder="Bank Account Number"
+                          value={bankAccountNumber}
+                          onChange={(e) => setBankAccountNumber(e.target.value)}
+                        />
+                        <Input
+                          placeholder="IBAN"
+                          value={bankIban}
+                          onChange={(e) => setBankIban(e.target.value)}
+                        />
+                        <Input
+                          placeholder="SWIFT Code"
+                          value={bankSwift}
+                          onChange={(e) => setBankSwift(e.target.value)}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
               {wizardStep === 5 && (
                 <div className="space-y-4">
-                  <Label>Review & Confirmation</Label>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Project Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p>
-                          <strong>Brand & References</strong>
-                        </p>
-                        <p>Type: {serviceType || "-"}</p>
-                        <p>References: {serviceSpecific.references || "-"}</p>
-                        <p>
-                          Theme/Features:{" "}
-                          {serviceSpecific.theme ||
-                            serviceSpecific.features ||
-                            "-"}
-                        </p>
-                      </div>
-                      <div>
-                        <p>
-                          <strong>Company & Contact</strong>
-                        </p>
-                        <p>
-                          {companyNumber} • {companyEmail}
-                        </p>
-                        <p>{companyAddress}</p>
-                        <p>{aboutCompany || "-"}</p>
-                      </div>
-                      <div>
-                        <p>
-                          <strong>Social & Services</strong>
-                        </p>
-                        <p>Social: {socialLinks.join(", ") || "-"}</p>
-                        <p>
-                          Public: {publicContactPhone || "-"} •{" "}
-                          {publicContactEmail || "-"}
-                        </p>
-                      </div>
-                      <div>
-                        <p>
-                          <strong>Media & Payments</strong>
-                        </p>
-                        <p>Media Links: {mediaLinks.length}</p>
-                        <p>Uploads: {uploadFiles.length}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={confirmSubmit}
-                      onChange={(e) => setConfirmSubmit(e.target.checked)}
-                    />
-                    <span>I confirm the information is correct</span>
-                  </label>
+                  <div className="space-y-1">
+                    <Label className="text-lg font-semibold">Step 6: Final Review & Confirm</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Show summary + obtain confirmation before submission.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Brand & References</CardTitle>
+                        <CardDescription>Step 1 + Step 2 + Step 5 summary</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div><strong>Project:</strong> {formData.name}</div>
+                        <div><strong>Type:</strong> {serviceType || "-"}</div>
+                        <div><strong>Description:</strong> {formData.description || "-"}</div>
+                        <div><strong>Budget:</strong> ${formData.budget || 0}</div>
+                        <div><strong>Timeline:</strong> {formData.start_date || "-"} to {formData.end_date || "-"}</div>
+                        {serviceType === "web" && (
+                          <div><strong>Domain Suggestions:</strong> {serviceSpecific.domain_suggestions || "-"}</div>
+                        )}
+                        {serviceType === "branding" && (
+                          <div><strong>Logo Ideas:</strong> {serviceSpecific.logo_ideas || "-"}</div>
+                        )}
+                        {mediaLinks.length > 0 && (
+                          <div><strong>Media Links:</strong> {mediaLinks.length} links</div>
+                        )}
+                        {uploadFiles.length > 0 && (
+                          <div><strong>Uploaded Files:</strong> {uploadFiles.length} files</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Company & Contact</CardTitle>
+                        <CardDescription>Step 3 + Step 4 summary</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div><strong>Business Number:</strong> {companyNumber || "-"}</div>
+                        <div><strong>Company Email:</strong> {companyEmail || "-"}</div>
+                        <div><strong>Company Address:</strong> {companyAddress || "-"}</div>
+                        <div><strong>About Company:</strong> {aboutCompany || "-"}</div>
+                        <div><strong>Public Phone:</strong> {publicContactPhone || "-"}</div>
+                        <div><strong>Public Email:</strong> {publicContactEmail || "-"}</div>
+                        <div><strong>Public Address:</strong> {publicContactAddress || "-"}</div>
+                        {socialLinks.length > 0 && (
+                          <div><strong>Social Media:</strong> {socialLinks.length} links</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                    
+                    <div className="border rounded-lg p-4 bg-muted/50">
+                      <label className="flex items-start gap-3 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={confirmSubmit}
+                          onChange={(e) => setConfirmSubmit(e.target.checked)}
+                          className="mt-1"
+                          required
+                        />
+                        <span>
+                          <strong>I confirm the above information is correct and ready to submit.</strong>
+                          <br />
+                          <span className="text-muted-foreground">
+                            By checking this box, you confirm that all information provided is accurate and complete.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="flex justify-between pt-2">
@@ -2151,20 +2469,25 @@ export function UnifiedProjectManagement() {
                     <Button
                       onClick={() => {
                         setTryAdvance(true);
-                        if (wizardStep === 0 && !serviceType) return;
-                        if (
-                          wizardStep === 2 &&
-                          (!formData.name || !formData.client)
-                        )
-                          return;
+                        if (wizardStep === 0 && (!formData.name || !serviceType)) return;
+                        if (wizardStep === 1 && !validateStep2()) return;
+                        if (wizardStep === 2 && (!companyNumber || !companyEmail || !companyAddress || !aboutCompany)) return;
+                        if (wizardStep === 3 && (!socialLinks.length || !publicContactPhone || !publicContactEmail || !publicContactAddress)) return;
                         setWizardStep((s) => Math.min(5, s + 1));
                       }}
                     >
                       Next
                     </Button>
                   ) : (
-                    <Button onClick={handleSubmit} disabled={!confirmSubmit}>
-                      {editingProject ? "Update Project" : "Create Project"}
+                    <Button onClick={handleSubmit} disabled={!confirmSubmit || isSubmitting}>
+                      {isSubmitting ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          {editingProject ? "Updating..." : "Creating..."}
+                        </>
+                      ) : (
+                        editingProject ? "Update Project" : "Create Project"
+                      )}
                     </Button>
                   )}
                 </div>
