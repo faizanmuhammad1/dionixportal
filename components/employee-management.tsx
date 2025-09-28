@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,7 @@ export function EmployeeManagement() {
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [newEmployee, setNewEmployee] = useState({
     email: "",
     firstName: "",
@@ -66,6 +68,7 @@ export function EmployeeManagement() {
 
   const fetchEmployees = async () => {
     try {
+      setIsLoading(true)
       const res = await fetch("/api/employees", { cache: "no-store" })
       
       if (!res.ok) {
@@ -77,6 +80,8 @@ export function EmployeeManagement() {
       setEmployees(data)
     } catch (error) {
       console.error("Error fetching employees:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -341,64 +346,100 @@ export function EmployeeManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEmployees.map((employee) => (
-                <TableRow key={employee.id}>
-                  <TableCell className="font-medium">
-                    {employee.first_name} {employee.last_name}
-                  </TableCell>
-                  <TableCell>{employee.email}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{employee.department}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{employee.position}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="capitalize">
-                      {employee.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={employee.status === "active" ? "default" : "secondary"}>{employee.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {employee.last_login ? new Date(employee.last_login).toLocaleDateString() : "Never"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" title="Send Email">
-                        <Mail className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" title="Edit Employee" onClick={() => {
-                        setEditingEmployee(employee)
-                        setIsCreateDialogOpen(true)
-                        setNewEmployee({
-                          email: employee.email,
-                          firstName: employee.first_name || "",
-                          lastName: employee.last_name || "",
-                          role: (employee.role as any) || "employee",
-                          password: "",
-                          department: employee.department || "",
-                          position: employee.position || "",
-                        })
-                      }}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Deactivate" 
-                        disabled={deactivatingId === employee.id}
-                        onClick={() => handleDeleteClick(employee)}
-                      >
-                        {deactivatingId === employee.id ? (
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {isLoading ? (
+                // Loading skeleton rows
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={`skeleton-${index}`}>
+                    <TableCell>
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-32" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-20" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-28" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-16" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-16" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-20" />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                filteredEmployees.map((employee) => (
+                  <TableRow key={employee.id}>
+                    <TableCell className="font-medium">
+                      {employee.first_name} {employee.last_name}
+                    </TableCell>
+                    <TableCell>{employee.email}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{employee.department}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{employee.position}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="capitalize">
+                        {employee.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={employee.status === "active" ? "default" : "secondary"}>{employee.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {employee.last_login ? new Date(employee.last_login).toLocaleDateString() : "Never"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" title="Send Email">
+                          <Mail className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" title="Edit Employee" onClick={() => {
+                          setEditingEmployee(employee)
+                          setIsCreateDialogOpen(true)
+                          setNewEmployee({
+                            email: employee.email,
+                            firstName: employee.first_name || "",
+                            lastName: employee.last_name || "",
+                            role: (employee.role as any) || "employee",
+                            password: "",
+                            department: employee.department || "",
+                            position: employee.position || "",
+                          })
+                        }}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          title="Deactivate" 
+                          disabled={deactivatingId === employee.id}
+                          onClick={() => handleDeleteClick(employee)}
+                        >
+                          {deactivatingId === employee.id ? (
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -410,8 +451,17 @@ export function EmployeeManagement() {
             <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalEmployees}</div>
-            <p className="text-xs text-muted-foreground">Across all departments</p>
+            {isLoading ? (
+              <>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-32" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{totalEmployees}</div>
+                <p className="text-xs text-muted-foreground">Across all departments</p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -419,8 +469,17 @@ export function EmployeeManagement() {
             <CardTitle className="text-sm font-medium">Active Employees</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeEmployees}</div>
-            <p className="text-xs text-muted-foreground">Currently active</p>
+            {isLoading ? (
+              <>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-24" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{activeEmployees}</div>
+                <p className="text-xs text-muted-foreground">Currently active</p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -428,8 +487,17 @@ export function EmployeeManagement() {
             <CardTitle className="text-sm font-medium">Departments</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{new Set(employees.map((emp) => emp.department)).size}</div>
-            <p className="text-xs text-muted-foreground">Active departments</p>
+            {isLoading ? (
+              <>
+                <Skeleton className="h-8 w-8 mb-2" />
+                <Skeleton className="h-3 w-28" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{new Set(employees.map((emp) => emp.department)).size}</div>
+                <p className="text-xs text-muted-foreground">Active departments</p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -437,8 +505,17 @@ export function EmployeeManagement() {
             <CardTitle className="text-sm font-medium">New This Month</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{newThisMonth}</div>
-            <p className="text-xs text-muted-foreground">Recent hires</p>
+            {isLoading ? (
+              <>
+                <Skeleton className="h-8 w-8 mb-2" />
+                <Skeleton className="h-3 w-20" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{newThisMonth}</div>
+                <p className="text-xs text-muted-foreground">Recent hires</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

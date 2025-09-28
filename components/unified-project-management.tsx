@@ -849,7 +849,11 @@ export function UnifiedProjectManagement() {
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{projects.length}</div>
+                {loading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold">{projects.length}</div>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -860,9 +864,13 @@ export function UnifiedProjectManagement() {
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {projects.filter((p) => p.status === "active").length}
-                </div>
+                {loading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold">
+                    {projects.filter((p) => p.status === "active").length}
+                  </div>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -873,7 +881,11 @@ export function UnifiedProjectManagement() {
                 <CheckSquare className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{tasks.length}</div>
+                {loading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold">{tasks.length}</div>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -884,7 +896,11 @@ export function UnifiedProjectManagement() {
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{employees.length}</div>
+                {loading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold">{employees.length}</div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -895,24 +911,38 @@ export function UnifiedProjectManagement() {
                 <CardTitle>Recent Projects</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {projects.slice(0, 3).map((project) => (
-                    <div
-                      key={project.id}
-                      className="flex items-center justify-between"
-                    >
-                      <div>
-                        <p className="font-medium">{project.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {project.client}
-                        </p>
+                {loading ? (
+                  <div className="space-y-4">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={`skeleton-project-${index}`} className="flex items-center justify-between">
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3 w-24" />
+                        </div>
+                        <Skeleton className="h-6 w-16" />
                       </div>
-                      <Badge className={getStatusColor(project.status)}>
-                        {project.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {projects.slice(0, 3).map((project) => (
+                      <div
+                        key={project.id}
+                        className="flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="font-medium">{project.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {project.client}
+                          </p>
+                        </div>
+                        <Badge className={getStatusColor(project.status)}>
+                          {project.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -921,27 +951,41 @@ export function UnifiedProjectManagement() {
                 <CardTitle>Upcoming Deadlines</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {tasks
-                    .filter((t) => t.status !== "completed")
-                    .slice(0, 3)
-                    .map((task) => (
-                      <div
-                        key={task.id}
-                        className="flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="font-medium">{task.title}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {getEmployeeName(task.assignee)}
-                          </p>
+                {loading ? (
+                  <div className="space-y-4">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={`skeleton-task-${index}`} className="flex items-center justify-between">
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-36" />
+                          <Skeleton className="h-3 w-20" />
                         </div>
-                        <Badge className={getTaskStatusColor(task.status)}>
-                          {task.status}
-                        </Badge>
+                        <Skeleton className="h-6 w-16" />
                       </div>
                     ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {tasks
+                      .filter((t) => t.status !== "completed")
+                      .slice(0, 3)
+                      .map((task) => (
+                        <div
+                          key={task.id}
+                          className="flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-medium">{task.title}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {getEmployeeName(task.assignee)}
+                            </p>
+                          </div>
+                          <Badge className={getTaskStatusColor(task.status)}>
+                            {task.status}
+                          </Badge>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -961,8 +1005,61 @@ export function UnifiedProjectManagement() {
           <div className="grid gap-4">
             {loading && (
               <>
-                <Skeleton className="h-28 w-full" />
-                <Skeleton className="h-28 w-full" />
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Card key={`skeleton-${index}`} className="animate-pulse">
+                    <CardContent className="p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="space-y-2">
+                          <Skeleton className="h-6 w-48" />
+                          <Skeleton className="h-4 w-32" />
+                        </div>
+                        <div className="flex gap-2">
+                          <Skeleton className="h-6 w-16" />
+                          <Skeleton className="h-6 w-16" />
+                        </div>
+                      </div>
+                      
+                      <Skeleton className="h-4 w-full mb-4" />
+                      <Skeleton className="h-4 w-3/4 mb-4" />
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="h-4 w-4" />
+                          <Skeleton className="h-4 w-20" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="h-4 w-4" />
+                          <Skeleton className="h-4 w-24" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="h-4 w-4" />
+                          <Skeleton className="h-4 w-16" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="h-4 w-4" />
+                          <Skeleton className="h-4 w-20" />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <Skeleton className="h-4 w-16" />
+                          <Skeleton className="h-4 w-12" />
+                        </div>
+                        <Skeleton className="h-2 w-full" />
+                      </div>
+                      
+                      <div className="flex justify-between items-center mt-4">
+                        <div className="flex gap-2">
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                        <Skeleton className="h-6 w-20" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </>
             )}
             {!loading && filteredProjects.length === 0 && (

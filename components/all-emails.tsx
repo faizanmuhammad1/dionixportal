@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Mail, Search, Star, Archive, Trash2, Reply, Forward } from "lucide-react"
 
 interface Email {
@@ -24,67 +25,78 @@ export function AllEmails() {
   const [emails, setEmails] = useState<Email[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Mock email data - replace with actual email API integration
-    const mockEmails: Email[] = [
-      {
-        id: "1",
-        from: "client@example.com",
-        subject: "Project Update Required",
-        preview: "Hi, I need an update on the current project status. Could you please provide...",
-        timestamp: "2024-01-15T10:30:00Z",
-        isRead: false,
-        isStarred: true,
-        priority: "high",
-        category: "Client",
-      },
-      {
-        id: "2",
-        from: "team@dionix.ai",
-        subject: "Weekly Team Meeting",
-        preview: "Reminder: Our weekly team meeting is scheduled for tomorrow at 2 PM...",
-        timestamp: "2024-01-15T09:15:00Z",
-        isRead: true,
-        isStarred: false,
-        priority: "normal",
-        category: "Internal",
-      },
-      {
-        id: "3",
-        from: "support@vendor.com",
-        subject: "System Maintenance Notice",
-        preview: "We will be performing scheduled maintenance on our systems this weekend...",
-        timestamp: "2024-01-14T16:45:00Z",
-        isRead: true,
-        isStarred: false,
-        priority: "low",
-        category: "System",
-      },
-      {
-        id: "4",
-        from: "hr@dionix.ai",
-        subject: "New Employee Onboarding",
-        preview: "Please review the onboarding checklist for our new team member...",
-        timestamp: "2024-01-14T14:20:00Z",
-        isRead: false,
-        isStarred: false,
-        priority: "normal",
-        category: "HR",
-      },
-      {
-        id: "5",
-        from: "billing@service.com",
-        subject: "Invoice #INV-2024-001",
-        preview: "Your monthly invoice is ready for review. Please find the details...",
-        timestamp: "2024-01-14T11:30:00Z",
-        isRead: true,
-        isStarred: false,
-        priority: "normal",
-        category: "Finance",
-      },
-    ]
-    setEmails(mockEmails)
+    // Simulate loading delay
+    const loadEmails = async () => {
+      setLoading(true)
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Mock email data - replace with actual email API integration
+      const mockEmails: Email[] = [
+        {
+          id: "1",
+          from: "client@example.com",
+          subject: "Project Update Required",
+          preview: "Hi, I need an update on the current project status. Could you please provide...",
+          timestamp: "2024-01-15T10:30:00Z",
+          isRead: false,
+          isStarred: true,
+          priority: "high",
+          category: "Client",
+        },
+        {
+          id: "2",
+          from: "team@dionix.ai",
+          subject: "Weekly Team Meeting",
+          preview: "Reminder: Our weekly team meeting is scheduled for tomorrow at 2 PM...",
+          timestamp: "2024-01-15T09:15:00Z",
+          isRead: true,
+          isStarred: false,
+          priority: "normal",
+          category: "Internal",
+        },
+        {
+          id: "3",
+          from: "support@vendor.com",
+          subject: "System Maintenance Notice",
+          preview: "We will be performing scheduled maintenance on our systems this weekend...",
+          timestamp: "2024-01-14T16:45:00Z",
+          isRead: true,
+          isStarred: false,
+          priority: "low",
+          category: "System",
+        },
+        {
+          id: "4",
+          from: "hr@dionix.ai",
+          subject: "New Employee Onboarding",
+          preview: "Please review the onboarding checklist for our new team member...",
+          timestamp: "2024-01-14T14:20:00Z",
+          isRead: false,
+          isStarred: false,
+          priority: "normal",
+          category: "HR",
+        },
+        {
+          id: "5",
+          from: "billing@service.com",
+          subject: "Invoice #INV-2024-001",
+          preview: "Your monthly invoice is ready for review. Please find the details...",
+          timestamp: "2024-01-14T11:30:00Z",
+          isRead: true,
+          isStarred: false,
+          priority: "normal",
+          category: "Finance",
+        },
+      ]
+      setEmails(mockEmails)
+      setLoading(false)
+    }
+    
+    loadEmails()
   }, [])
 
   const filteredEmails = emails.filter(
@@ -113,8 +125,17 @@ export function AllEmails() {
           <p className="text-muted-foreground">Manage all incoming emails and communications</p>
         </div>
         <div className="flex items-center gap-4">
-          <Badge variant="secondary">{unreadCount} Unread</Badge>
-          <Badge variant="outline">{starredCount} Starred</Badge>
+          {loading ? (
+            <>
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-20" />
+            </>
+          ) : (
+            <>
+              <Badge variant="secondary">{unreadCount} Unread</Badge>
+              <Badge variant="outline">{starredCount} Starred</Badge>
+            </>
+          )}
         </div>
       </div>
 
@@ -151,7 +172,42 @@ export function AllEmails() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEmails.map((email) => (
+              {loading ? (
+                // Loading skeleton rows
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={`skeleton-${index}`}>
+                    <TableCell>
+                      <Skeleton className="h-8 w-8" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-40" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-48" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-64" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-20" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-16" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                filteredEmails.map((email) => (
                 <TableRow
                   key={email.id}
                   className={`cursor-pointer ${!email.isRead ? "bg-muted/50" : ""}`}
@@ -205,7 +261,8 @@ export function AllEmails() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

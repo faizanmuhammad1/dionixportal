@@ -48,6 +48,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase";
 import { getCurrentUser, type User } from "@/lib/auth";
 
@@ -252,20 +253,20 @@ export function ClientProjectSubmissions() {
           submission_id: activeSubmissionId,
           project_name: projectName || "New Project",
           project_type: projectType,
-          priority: projectPriority,
-          status: projectStatus,
-          description: description || null,
-          start_date: startDate || null,
-          end_date: endDate || null,
-          budget: budget ? Number(budget) : null,
-          client_name: clientName || null,
-          company_number: companyNumber || publicPhone || null,
-          company_email: companyEmail || null,
-          company_address: companyAddress || null,
-          about_company: aboutCompany || null,
-          public_business_number: publicPhone || null,
-          public_company_email: publicCompanyEmail || null,
-          public_company_address: publicCompanyAddress || null,
+        priority: projectPriority,
+        status: projectStatus,
+        description: description || null,
+        start_date: startDate || null,
+        end_date: endDate || null,
+        budget: budget ? Number(budget) : null,
+        client_name: clientName || null,
+        company_number: companyNumber || publicPhone || null,
+        company_email: companyEmail || null,
+        company_address: companyAddress || null,
+        about_company: aboutCompany || null,
+        public_business_number: publicPhone || null,
+        public_company_email: publicCompanyEmail || null,
+        public_company_address: publicCompanyAddress || null,
           social_links: socialLinks || null,
           media_links: mediaLinks || null,
           bank_details: JSON.stringify({
@@ -530,11 +531,26 @@ export function ClientProjectSubmissions() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    Loading...
+                // Loading skeleton rows
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={`skeleton-${index}`}>
+                    <TableCell>
+                      <Skeleton className="h-4 w-48" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-64" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-20" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-32" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-8 w-8" />
                   </TableCell>
                 </TableRow>
+                ))
               ) : submissions.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground">
@@ -1139,7 +1155,21 @@ export function ClientProjectSubmissions() {
           </DialogHeader>
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-sm">
             {viewLoading && (
-              <div className="text-muted-foreground">Loading...</div>
+              <div className="space-y-4">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-full" />
+                </div>
+              </div>
             )}
             {!viewLoading && !viewData && (
               <div className="text-muted-foreground">No data</div>
