@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -281,7 +282,11 @@ export function EnhancedEmailCenter() {
           <p className="text-muted-foreground">Manage all your business communications in one place</p>
         </div>
         <div className="flex items-center gap-4">
-          <Badge variant="secondary">{unreadCount} Unread</Badge>
+          {loadingInbox ? (
+            <Skeleton className="h-6 w-20" />
+          ) : (
+            <Badge variant="secondary">{unreadCount} Unread</Badge>
+          )}
           <Button variant="outline" size="sm" onClick={() => loadInbox(true)} disabled={loadingInbox || EMAIL_CENTER_DISABLED}>
             <RefreshCcw className={`h-4 w-4 mr-2 ${loadingInbox ? 'animate-spin' : ''}`} />
             Refresh
@@ -403,9 +408,6 @@ export function EnhancedEmailCenter() {
               {inboxError && (
                 <div className="text-sm text-destructive mb-3">{inboxError}</div>
               )}
-              {loadingInbox && (
-                <div className="text-sm text-muted-foreground mb-3">Loading inbox…</div>
-              )}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -420,7 +422,42 @@ export function EnhancedEmailCenter() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredEmails.map((email) => (
+                  {loadingInbox ? (
+                    // Loading skeleton rows
+                    Array.from({ length: 5 }).map((_, index) => (
+                      <TableRow key={`skeleton-${index}`}>
+                        <TableCell>
+                          <Skeleton className="h-8 w-8" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-40" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-48" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-64" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-6 w-20" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-6 w-16" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-24" />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Skeleton className="h-8 w-8" />
+                            <Skeleton className="h-8 w-8" />
+                            <Skeleton className="h-8 w-8" />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    filteredEmails.map((email) => (
                     <TableRow
                       key={email.id}
                       className={`cursor-pointer hover:bg-muted/50 ${!email.isRead ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}
@@ -482,7 +519,8 @@ export function EnhancedEmailCenter() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

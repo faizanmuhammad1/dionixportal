@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { MessageSquare, Clock, AlertCircle, Mail, FolderOpen, Briefcase, Plus, Eye, ArrowRight } from "lucide-react"
 import type { User, FormSubmission, ClientProject, JobApplication } from "@/lib/auth"
 import { getFormSubmissions, getClientProjects, getJobApplications } from "@/lib/auth"
@@ -133,8 +134,17 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{loading ? "..." : stats.totalSubmissions}</div>
-                <p className="text-xs text-muted-foreground">Click to view all submissions</p>
+                {loading ? (
+                  <>
+                    <Skeleton className="h-8 w-16 mb-2" />
+                    <Skeleton className="h-3 w-32" />
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">{stats.totalSubmissions}</div>
+                    <p className="text-xs text-muted-foreground">Click to view all submissions</p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card
@@ -146,8 +156,17 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{loading ? "..." : stats.activeProjects}</div>
-                <p className="text-xs text-muted-foreground">{stats.pendingProjects} pending review</p>
+                {loading ? (
+                  <>
+                    <Skeleton className="h-8 w-16 mb-2" />
+                    <Skeleton className="h-3 w-32" />
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">{stats.activeProjects}</div>
+                    <p className="text-xs text-muted-foreground">{stats.pendingProjects} pending review</p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate("career-hub")}>
@@ -156,8 +175,17 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 <Briefcase className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{loading ? "..." : stats.jobApplications}</div>
-                <p className="text-xs text-muted-foreground">{stats.newApplications} new applications</p>
+                {loading ? (
+                  <>
+                    <Skeleton className="h-8 w-16 mb-2" />
+                    <Skeleton className="h-3 w-32" />
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">{stats.jobApplications}</div>
+                    <p className="text-xs text-muted-foreground">{stats.newApplications} new applications</p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card
@@ -182,8 +210,17 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{activeEmployees}</div>
-                <p className="text-xs text-muted-foreground">Active employees (excluding admins)</p>
+                {loading ? (
+                  <>
+                    <Skeleton className="h-8 w-16 mb-2" />
+                    <Skeleton className="h-3 w-40" />
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">{activeEmployees}</div>
+                    <p className="text-xs text-muted-foreground">Active employees (excluding admins)</p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -201,7 +238,25 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 </Button>
               </CardHeader>
               <CardContent className="max-h-96 overflow-y-auto space-y-4">
-                {formSubmissions.slice(0, 3).map((submission, index) => (
+                {loading ? (
+                  // Loading skeleton for recent activity
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <div key={`skeleton-activity-${index}`} className="flex items-start space-x-4 p-3 border rounded-lg">
+                      <Skeleton className="h-8 w-8 rounded-full flex-shrink-0" />
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-3 w-32" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-6 w-12" />
+                        <Skeleton className="h-4 w-4" />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    {formSubmissions.slice(0, 3).map((submission, index) => (
                   <div
                     key={submission.id}
                     className="flex items-start space-x-4 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
@@ -280,7 +335,8 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                     </div>
                   </div>
                 ))}
-                {loading && <div className="text-center py-4 text-muted-foreground">Loading recent activity...</div>}
+                  </>
+                )}
               </CardContent>
             </Card>
 
