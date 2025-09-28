@@ -60,6 +60,8 @@ export class SessionManager {
   private static instance: SessionManager;
   private sessionCache: Map<string, SessionUser> = new Map();
   private sessionTimeout: number = 24 * 60 * 60 * 1000; // 24 hours
+  private lastFetchTime: Map<string, number> = new Map();
+  private fetchCooldown: number = 5000; // 5 seconds cooldown between fetches
 
   private constructor() {}
 
@@ -75,60 +77,85 @@ export class SessionManager {
     try {
       const supabase = createClient();
       
-      // Get current auth user
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Session loading timeout")), 5000); // Reduced to 5 seconds
+      });
+
+      const sessionPromise = this._getCurrentSessionInternal(supabase);
       
-      if (authError || !user) {
-        return null;
-      }
-
-      // Check if session is cached and still valid
-      const cachedSession = this.sessionCache.get(user.id);
-      if (cachedSession && this.isSessionValid(cachedSession)) {
-        return cachedSession;
-      }
-
-      // Fetch fresh user data from profiles table
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (profileError || !profile) {
-        console.error("Profile not found:", profileError);
-        return null;
-      }
-
-      // Check if user is active
-      if (profile.status !== "active") {
-        console.warn("User account is inactive:", user.id);
-        return null;
-      }
-
-      // Create session user object
-      const sessionUser: SessionUser = {
-        id: user.id,
-        email: user.email!,
-        role: profile.role as any,
-        firstName: profile.first_name || "User",
-        lastName: profile.last_name || "",
-        department: profile.department,
-        position: profile.position,
-        status: profile.status as any,
-        permissions: ROLE_PERMISSIONS[profile.role] || [],
-        lastLogin: user.last_sign_in_at,
-        sessionExpiry: new Date(Date.now() + this.sessionTimeout)
-      };
-
-      // Cache the session
-      this.sessionCache.set(user.id, sessionUser);
-
-      return sessionUser;
+      return await Promise.race([sessionPromise, timeoutPromise]);
     } catch (error) {
       console.error("Session management error:", error);
       return null;
     }
+  }
+
+  private async _getCurrentSessionInternal(supabase: any): Promise<SessionUser | null> {
+    // Get current auth user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      return null;
+    }
+
+    // Check if we're in cooldown period
+    const lastFetch = this.lastFetchTime.get(user.id);
+    const now = Date.now();
+    if (lastFetch && (now - lastFetch) < this.fetchCooldown) {
+      // Return cached session if available during cooldown
+      const cachedSession = this.sessionCache.get(user.id);
+      if (cachedSession) {
+        return cachedSession;
+      }
+    }
+
+    // Check if session is cached and still valid
+    const cachedSession = this.sessionCache.get(user.id);
+    if (cachedSession && this.isSessionValid(cachedSession)) {
+      return cachedSession;
+    }
+
+    // Update last fetch time
+    this.lastFetchTime.set(user.id, now);
+
+    // Fetch fresh user data from profiles table
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profile) {
+      console.error("Profile not found:", profileError);
+      return null;
+    }
+
+    // Check if user is active
+    if (profile.status !== "active") {
+      console.warn("User account is inactive:", user.id);
+      return null;
+    }
+
+    // Create session user object
+    const sessionUser: SessionUser = {
+      id: user.id,
+      email: user.email!,
+      role: profile.role as any,
+      firstName: profile.first_name || "User",
+      lastName: profile.last_name || "",
+      department: profile.department,
+      position: profile.position,
+      status: profile.status as any,
+      permissions: ROLE_PERMISSIONS[profile.role] || [],
+      lastLogin: user.last_sign_in_at,
+      sessionExpiry: new Date(Date.now() + this.sessionTimeout)
+    };
+
+    // Cache the session
+    this.sessionCache.set(user.id, sessionUser);
+
+    return sessionUser;
   }
 
   // Server-side session validation (moved to api-middleware.ts)
@@ -171,6 +198,13 @@ export class SessionManager {
   // Clear all sessions
   clearAllSessions(): void {
     this.sessionCache.clear();
+    this.lastFetchTime.clear();
+  }
+
+  // Clear specific user session
+  clearUserSession(userId: string): void {
+    this.sessionCache.delete(userId);
+    this.lastFetchTime.delete(userId);
   }
 
   // Refresh session (extend expiry)

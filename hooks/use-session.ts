@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { SessionUser, sessionManager } from "@/lib/session-manager";
 
 export interface UseSessionReturn {
@@ -19,10 +19,17 @@ export function useSession(): UseSessionReturn {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const isLoadingRef = useRef(false);
+  const authListenerRef = useRef<any>(null);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load session on mount
+  // Load session on mount - only once
   const loadSession = useCallback(async () => {
+    if (isLoadingRef.current) return;
+    
     try {
+      isLoadingRef.current = true;
       setLoading(true);
       setError(null);
       
@@ -34,23 +41,40 @@ export function useSession(): UseSessionReturn {
       setUser(null);
     } finally {
       setLoading(false);
+      setIsInitialized(true);
+      isLoadingRef.current = false;
     }
   }, []);
 
-  // Refresh session
+  // Refresh session - silent refresh without loading state
   const refreshSession = useCallback(async () => {
-    await loadSession();
-  }, [loadSession]);
+    if (!isInitialized || isLoadingRef.current) return;
+    
+    try {
+      isLoadingRef.current = true;
+      const session = await sessionManager.getCurrentSession();
+      setUser(session);
+    } catch (err) {
+      console.error("Session refresh error:", err);
+      setError(err instanceof Error ? err.message : "Failed to refresh session");
+    } finally {
+      isLoadingRef.current = false;
+    }
+  }, [isInitialized]);
 
   // Sign out
   const signOut = useCallback(async () => {
     try {
+      setLoading(true);
       const { signOut: authSignOut } = await import("@/lib/auth");
       await authSignOut();
       sessionManager.clearAllSessions();
       setUser(null);
+      setError(null);
     } catch (err) {
       console.error("Sign out error:", err);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -75,21 +99,62 @@ export function useSession(): UseSessionReturn {
     return sessionManager.isRoleAuthorized(user, roles);
   }, [user]);
 
-  // Load session on mount
+  // Load session on mount - only once
   useEffect(() => {
-    loadSession();
-  }, [loadSession]);
+    if (!isInitialized) {
+      loadSession();
+    }
+  }, [loadSession, isInitialized]);
 
-  // Set up session refresh interval
+  // Listen for auth state changes - only after initialization
   useEffect(() => {
-    if (!user) return;
+    if (!isInitialized) return;
+
+    const { createClient } = require("@/lib/supabase");
+    const supabase = createClient();
+
+    // Clear any existing timeout
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event: string, session: any) => {
+        console.log("Auth state changed:", event, session?.user?.id);
+        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+          // Debounce rapid auth state changes
+          refreshTimeoutRef.current = setTimeout(async () => {
+            await refreshSession();
+          }, 500); // Increased debounce time
+        }
+      }
+    );
+
+    authListenerRef.current = subscription;
+
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      if (authListenerRef.current) {
+        authListenerRef.current.unsubscribe();
+      }
+    };
+  }, [refreshSession, isInitialized]);
+
+  // Set up session refresh interval - only for authenticated users
+  useEffect(() => {
+    if (!user || !isInitialized) return;
 
     const interval = setInterval(() => {
-      sessionManager.refreshSession(user.id);
+      // Only refresh if not currently loading
+      if (!isLoadingRef.current) {
+        sessionManager.refreshSession(user.id);
+      }
     }, 30 * 60 * 1000); // Refresh every 30 minutes
 
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, isInitialized]);
 
   return {
     user,
@@ -140,7 +205,11 @@ export function useAccessControl(options: {
 }) {
   const { user, loading } = useSession();
   
-  const hasAccess = user ? sessionManager.requireAccess(options)(user) : false;
+  const hasAccess = user ? (
+    (options.roles && options.roles.length > 0 ? sessionManager.isRoleAuthorized(user, options.roles) : true) &&
+    (options.permissions && options.permissions.length > 0 ? 
+      (options.requireAll ? sessionManager.hasAllPermissions(user, options.permissions) : sessionManager.hasAnyPermission(user, options.permissions)) : true)
+  ) : false;
 
   return {
     hasAccess,

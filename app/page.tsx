@@ -19,7 +19,8 @@ import { useSession } from "@/hooks/use-session";
 import { ProtectedRoute } from "@/components/protected-route";
 
 export default function HomePage() {
-  const { user, loading, signOut } = useSession();
+  const { user, loading, signOut, refreshSession } = useSession();
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [currentView, setCurrentView] = useState<
     | "dashboard"
     | "contact-center"
@@ -154,8 +155,9 @@ export default function HomePage() {
 
   // Authentication is now handled by useSession hook
 
-  const handleLogin = (loggedInUser: User) => {
-    // Session will be automatically managed by useSession hook
+  const handleLogin = async (loggedInUser: User) => {
+    // Refresh session to get updated user data
+    await refreshSession();
     // Default employee landing to project center (tasks/projects)
     if (loggedInUser.role === "employee") {
       setCurrentView("project-center");
@@ -176,6 +178,31 @@ export default function HomePage() {
   const handleNavigation = (view: typeof currentView) => {
     setCurrentView(view);
   };
+
+  // Add timeout mechanism to prevent infinite loading
+  useEffect(() => {
+    if (loading) {
+      const timeout = setTimeout(() => {
+        setLoadingTimeout(true);
+      }, 10000); // Reduced to 10 second timeout
+
+      return () => clearTimeout(timeout);
+    } else {
+      setLoadingTimeout(false);
+    }
+  }, [loading]);
+
+  // Add a fallback mechanism to force refresh if loading gets stuck
+  useEffect(() => {
+    if (loading && !loadingTimeout) {
+      const fallbackTimeout = setTimeout(() => {
+        console.warn("Loading timeout reached, forcing refresh");
+        window.location.reload();
+      }, 20000); // 20 second absolute timeout
+
+      return () => clearTimeout(fallbackTimeout);
+    }
+  }, [loading, loadingTimeout]);
 
   const handleDashboardNavigation = (section: string) => {
     // Map dashboard sections to view names
@@ -198,6 +225,17 @@ export default function HomePage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading...</p>
+          {loadingTimeout && (
+            <div className="mt-4">
+              <p className="text-sm text-red-600 mb-2">Loading is taking longer than expected</p>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Refresh Page
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
