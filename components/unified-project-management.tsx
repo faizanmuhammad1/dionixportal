@@ -249,7 +249,7 @@ export function UnifiedProjectManagement() {
           assigned_employees: members,
           progress,
           budget: Number(p.budget || 0),
-          client: p.client_name || "",
+        client: p.client_name || "",
           tasks: taskList,
           service_type: p.type || undefined,
           company_number: p.company_number || undefined,
@@ -271,20 +271,20 @@ export function UnifiedProjectManagement() {
   }
 
   async function fetchEmployees() {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, first_name, last_name, role, status");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, role, status");
     if (error) return;
-    const list = (data || [])
-      .filter((p: any) => (p.role || "").toLowerCase() === "employee")
-      .filter((p: any) => (p.status ?? "active") === "active")
-      .map((p: any) => ({
-        id: p.id,
-        name: `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
-        email: "",
-        role: "employee",
-      })) as Employee[];
-    setEmployees(list);
+      const list = (data || [])
+        .filter((p: any) => (p.role || "").toLowerCase() === "employee")
+        .filter((p: any) => (p.status ?? "active") === "active")
+        .map((p: any) => ({
+          id: p.id,
+          name: `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
+          email: "",
+          role: "employee",
+        })) as Employee[];
+      setEmployees(list);
   }
 
   const mockProjects: Project[] = [
@@ -562,13 +562,13 @@ export function UnifiedProjectManagement() {
       company_address: companyAddress || undefined,
       about_company: aboutCompany || undefined,
       social_links: socialLinks,
-      public_contacts: {
+        public_contacts: {
         phone: publicContactPhone || undefined,
         email: publicContactEmail || undefined,
         address: publicContactAddress || undefined,
       },
       media_links: mediaLinks,
-      bank_details: {
+        bank_details: {
         account_name: bankAccountName || undefined,
         account_number: bankAccountNumber || undefined,
         iban: bankIban || undefined,
@@ -580,17 +580,17 @@ export function UnifiedProjectManagement() {
         : [...attachments],
       comments: editingProject?.comments ? [...editingProject.comments] : [],
     };
-
-    if (editingProject) {
-      setProjects(
+      
+      if (editingProject) {
+          setProjects(
         projects.map((p) => (p.id === editingProject.id ? newProject : p))
       );
-    } else {
+      } else {
       setProjects([...projects, newProject]);
     }
     // persist
     storeUpsertProject(newProject as unknown as StoreProject);
-    resetForm();
+      resetForm();
   };
 
   const startEdit = (project: Project) => {
@@ -629,9 +629,9 @@ export function UnifiedProjectManagement() {
   };
 
   const deleteProjectLocal = (id: string) => {
-    const nextProjects = projects.filter((p) => p.id !== id);
-    setProjects(nextProjects);
-    setTasks(tasks.filter((t) => t.project_id !== id));
+      const nextProjects = projects.filter((p) => p.id !== id);
+      setProjects(nextProjects);
+      setTasks(tasks.filter((t) => t.project_id !== id));
     storeSaveProjects(nextProjects as unknown as StoreProject[]);
   };
 

@@ -15,10 +15,11 @@ import { UnifiedProjectManagement } from "@/components/unified-project-managemen
 import { EmployeeProjectCenter } from "@/components/employee-project-center";
 import { ComingSoon } from "@/components/coming-soon";
 import { getCurrentUser, signOut, type User } from "@/lib/auth";
+import { useSession } from "@/hooks/use-session";
+import { ProtectedRoute } from "@/components/protected-route";
 
 export default function HomePage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading, signOut } = useSession();
   const [currentView, setCurrentView] = useState<
     | "dashboard"
     | "contact-center"
@@ -151,25 +152,10 @@ export default function HomePage() {
     // Here you would save to your database
   };
 
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        const currentUser = await getCurrentUser();
-        if (currentUser) {
-          setUser(currentUser);
-        }
-      } catch (error) {
-        console.error("Error checking auth:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    checkAuth();
-  }, []);
+  // Authentication is now handled by useSession hook
 
   const handleLogin = (loggedInUser: User) => {
-    setUser(loggedInUser);
+    // Session will be automatically managed by useSession hook
     // Default employee landing to project center (tasks/projects)
     if (loggedInUser.role === "employee") {
       setCurrentView("project-center");
@@ -179,10 +165,10 @@ export default function HomePage() {
   const handleLogout = async () => {
     try {
       await signOut();
+      // Session will be automatically cleared by useSession hook
     } catch (error) {
       console.error("Error signing out:", error);
     } finally {
-      setUser(null);
       setCurrentView("dashboard");
     }
   };

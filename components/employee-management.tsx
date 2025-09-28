@@ -15,6 +15,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Mail, Edit, Trash2, Users, Search, UserPlus } from "lucide-react"
 
@@ -38,6 +48,8 @@ export function EmployeeManagement() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
   const [newEmployee, setNewEmployee] = useState({
     email: "",
     firstName: "",
@@ -53,10 +65,19 @@ export function EmployeeManagement() {
   }, [])
 
   const fetchEmployees = async () => {
-    const res = await fetch("/api/employees", { cache: "no-store" })
-    if (!res.ok) return
-    const data = await res.json()
-    setEmployees(data)
+    try {
+      const res = await fetch("/api/employees", { cache: "no-store" })
+      
+      if (!res.ok) {
+        const errorData = await res.json()
+        console.error("Failed to fetch employees:", errorData)
+        return
+      }
+      const data = await res.json()
+      setEmployees(data)
+    } catch (error) {
+      console.error("Error fetching employees:", error)
+    }
   }
 
   const handleCreateEmployee = async () => {
@@ -76,7 +97,6 @@ export function EmployeeManagement() {
           }),
         })
         if (!res.ok) throw new Error((await res.json()).error || "Failed")
-        console.log("Employee updated successfully")
       } else {
         // Create new employee
         const res = await fetch("/api/employees", {
@@ -93,7 +113,6 @@ export function EmployeeManagement() {
           }),
         })
         if (!res.ok) throw new Error((await res.json()).error || "Failed")
-        console.log("Employee created successfully")
       }
 
       setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", password: "", department: "", position: "" })
@@ -104,6 +123,33 @@ export function EmployeeManagement() {
       console.error("Error saving employee:", error.message)
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handleDeleteClick = (employee: Employee) => {
+    console.log("Delete clicked for employee:", employee.first_name, employee.last_name)
+    setEmployeeToDelete(employee)
+    setDeleteConfirmOpen(true)
+    console.log("Dialog should be open now")
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!employeeToDelete) return
+    
+    try {
+      setDeactivatingId(employeeToDelete.id)
+      await fetch(`/api/employees/${employeeToDelete.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "inactive" }),
+      })
+      fetchEmployees()
+    } catch (error) {
+      console.error("Error deactivating employee:", error)
+    } finally {
+      setDeactivatingId(null)
+      setDeleteConfirmOpen(false)
+      setEmployeeToDelete(null)
     }
   }
 
@@ -341,19 +387,7 @@ export function EmployeeManagement() {
                         size="sm" 
                         title="Deactivate" 
                         disabled={deactivatingId === employee.id}
-                        onClick={async () => {
-                          setDeactivatingId(employee.id)
-                          try {
-                            await fetch(`/api/employees/${employee.id}`, {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ status: "inactive" }),
-                            })
-                            fetchEmployees()
-                          } finally {
-                            setDeactivatingId(null)
-                          }
-                        }}
+                        onClick={() => handleDeleteClick(employee)}
                       >
                         {deactivatingId === employee.id ? (
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -408,6 +442,32 @@ export function EmployeeManagement() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmOpen && <div style={{position: 'fixed', top: 0, left: 0, background: 'red', color: 'white', zIndex: 9999, padding: '10px'}}>DIALOG SHOULD BE OPEN</div>}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate Employee</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to deactivate{" "}
+              <strong>
+                {employeeToDelete?.first_name} {employeeToDelete?.last_name}
+              </strong>? 
+              This action will remove their access to the portal. This action can be undone by reactivating the employee.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Deactivate Employee
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

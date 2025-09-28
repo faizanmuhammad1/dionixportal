@@ -1,103 +1,137 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createAdminSupabaseClient,
-  createServerSupabaseClient,
-} from "@/lib/supabase-server";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { withAuth, withCors } from "@/lib/api-middleware";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function getRequesterRole() {
-  try {
-    const supa = createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supa.auth.getUser();
-    if (!user) return null;
-    const { data } = await supa
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    return (data?.role as string) || null;
-  } catch {
-    return null;
-  }
-}
+export const GET = withAuth(
+  async ({ user, request }, { params }: { params: { id: string } }) => {
+    try {
+      const supabase = createServerSupabaseClient();
+      
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, role, first_name, last_name, department, position, status, created_at, updated_at")
+        .eq("id", params.id)
+        .single();
 
-export async function GET(
-  _: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const requesterRole = await getRequesterRole();
-  if (
-    !requesterRole ||
-    (requesterRole !== "admin" && requesterRole !== "manager")
-  ) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const supa = createAdminSupabaseClient();
-  const { data, error } = await supa
-    .from("profiles")
-    .select("id, role, first_name, last_name, department, position, status")
-    .eq("id", params.id)
-    .single();
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json(data);
-}
+      if (error) {
+        return withCors(NextResponse.json({ error: error.message }, { status: 404 }));
+      }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const requesterRole = await getRequesterRole();
-    if (requesterRole !== "admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return withCors(NextResponse.json(data));
+    } catch (e: any) {
+      return withCors(NextResponse.json({ error: e.message }, { status: 500 }));
     }
-    const body = await req.json();
-    const { role, first_name, last_name, department, position, status } = body;
+  },
+  {
+    roles: ["admin", "manager"],
+    permissions: ["employees:read"]
+  }
+);
 
-    const supa = createAdminSupabaseClient();
+export const PATCH = withAuth(
+  async ({ user, request }, { params }: { params: { id: string } }) => {
+    try {
+      const body = await request.json();
+      const { role, first_name, last_name, department, position, status } = body;
 
-    if (role) {
-      await supa.from("profiles").update({ role }).eq("id", params.id);
-      // also ensure user_roles table reflects change (optional + idempotent)
-      try {
-        await supa.from("user_roles").insert({ user_id: params.id, role });
-      } catch {}
+      const supabase = createServerSupabaseClient();
+
+      // Try to update in profiles table first
+      let { data, error } = await supabase
+        .from("profiles")
+        .update({ 
+          role, 
+          first_name, 
+          last_name, 
+          department, 
+          position, 
+          status,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", params.id)
+        .select("id, role, first_name, last_name, department, position, status")
+        .single();
+
+      // If not found in profiles, try employee_profiles
+      if (error && error.code === 'PGRST116') {
+        const { data: empData, error: empError } = await supabase
+          .from("employee_profiles")
+          .update({ 
+            role, 
+            first_name, 
+            last_name, 
+            department, 
+            position, 
+            status,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", params.id)
+          .select("id, email, role, first_name, last_name, department, position, status")
+          .single();
+        
+        if (empError) {
+          return withCors(NextResponse.json({ error: empError.message }, { status: 400 }));
+        }
+        data = empData;
+      } else if (error) {
+        return withCors(NextResponse.json({ error: error.message }, { status: 400 }));
+      }
+
+      return withCors(NextResponse.json(data));
+    } catch (e: any) {
+      return withCors(NextResponse.json({ error: e.message }, { status: 500 }));
     }
-
-    const { data, error } = await supa
-      .from("profiles")
-      .update({ first_name, last_name, department, position, status })
-      .eq("id", params.id)
-      .select("id, role, first_name, last_name, department, position, status")
-      .single();
-
-    if (error)
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    return NextResponse.json(data);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  },
+  {
+    roles: ["admin"], // Only admins can update employee details
+    permissions: ["employees:write"]
   }
-}
+);
 
-export async function DELETE(
-  _: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const requesterRole = await getRequesterRole();
-  if (requesterRole !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export const DELETE = withAuth(
+  async ({ user, request }, { params }: { params: { id: string } }) => {
+    try {
+      const supabase = createServerSupabaseClient();
+      
+      // Try to soft delete in profiles table first
+      let { error: profileError } = await supabase
+        .from("profiles")
+        .update({ 
+          status: "inactive",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", params.id);
+
+      // If not found in profiles, try employee_profiles
+      if (profileError && profileError.code === 'PGRST116') {
+        const { error: empError } = await supabase
+          .from("employee_profiles")
+          .update({ 
+            status: "inactive",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", params.id);
+        
+        if (empError) {
+          return withCors(NextResponse.json({ error: "Failed to deactivate user" }, { status: 500 }));
+        }
+      } else if (profileError) {
+        return withCors(NextResponse.json({ error: "Failed to deactivate user" }, { status: 500 }));
+      }
+
+      // Note: Auth user deactivation requires service key
+      // For now, just deactivate the profile
+
+      return withCors(NextResponse.json({ ok: true, message: "User deactivated successfully" }));
+    } catch (e: any) {
+      return withCors(NextResponse.json({ error: e.message }, { status: 500 }));
+    }
+  },
+  {
+    roles: ["admin"], // Only admins can delete employees
+    permissions: ["employees:delete"]
   }
-  const supa = createAdminSupabaseClient();
-  // soft delete: set status inactive and disable user
-  await supa
-    .from("profiles")
-    .update({ status: "inactive" })
-    .eq("id", params.id);
-  await supa.auth.admin.updateUserById(params.id, { ban_duration: "876000h" }); // 100 years ban
-  return NextResponse.json({ ok: true });
-}
+);
