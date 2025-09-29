@@ -29,6 +29,7 @@ export const ROLE_PERMISSIONS: RolePermissions = {
     "jobs:read", "jobs:write", "jobs:delete",
     "applications:read", "applications:write", "applications:delete",
     "emails:read", "emails:write", "emails:delete",
+    "submissions:read", "submissions:write", "submissions:approve", "submissions:reject", "submissions:delete",
     "analytics:read", "settings:read", "settings:write",
     "reports:read", "reports:write"
   ],

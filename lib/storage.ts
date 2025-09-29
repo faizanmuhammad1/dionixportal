@@ -6,13 +6,15 @@ export async function uploadProjectFile(params: {
   path?: string
 }) {
   const { projectId, file } = params
-  const key = `${params.path ? params.path.replace(/^\/+|\/+$/g, "") + "/" : ""}${file.name}`
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+  const prefix = params.path ? params.path.replace(/^\/+|\/+$/g, "") + "/" : ""
+  const key = `${prefix}${Date.now()}_${safeName}`
   const objectPath = `project/${projectId}/${key}`
 
   const supabase = createClient()
   const { data, error } = await supabase.storage
     .from("project-files")
-    .upload(objectPath, file, { upsert: false })
+    .upload(objectPath, file, { upsert: true, contentType: file.type })
 
   if (error) throw error
   return { bucket: "project-files", path: objectPath, key }

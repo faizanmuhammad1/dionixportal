@@ -69,7 +69,7 @@ export function EmployeeManagement() {
   const fetchEmployees = async () => {
     try {
       setIsLoading(true)
-      const res = await fetch("/api/employees", { cache: "no-store" })
+      const res = await fetch("/api/employees", { cache: "no-store", credentials: "same-origin" })
       
       if (!res.ok) {
         const errorData = await res.json()
@@ -100,6 +100,7 @@ export function EmployeeManagement() {
             department: newEmployee.department,
             position: newEmployee.position,
           }),
+          credentials: "same-origin",
         })
         if (!res.ok) throw new Error((await res.json()).error || "Failed")
       } else {
@@ -116,6 +117,7 @@ export function EmployeeManagement() {
             department: newEmployee.department,
             position: newEmployee.position,
           }),
+          credentials: "same-origin",
         })
         if (!res.ok) throw new Error((await res.json()).error || "Failed")
       }

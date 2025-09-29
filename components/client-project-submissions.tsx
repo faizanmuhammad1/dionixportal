@@ -24,6 +24,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,6 +47,7 @@ import {
   CheckCircle2,
   XCircle,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -108,6 +110,7 @@ export function ClientProjectSubmissions() {
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(
     null
   );
+  const [isDeleting, setIsDeleting] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const supabase = createClient();
   const { toast } = useToast();
@@ -169,7 +172,7 @@ export function ClientProjectSubmissions() {
         supabase.from("submissions").select("*").order("created_at", { ascending: false }),
         supabase
           .from("client_project_details")
-          .select("*")
+        .select("*")
           .order("created_at", { ascending: false }),
       ]);
 
@@ -285,58 +288,16 @@ export function ClientProjectSubmissions() {
 
   const openApprove = async (s: Submission) => {
     setActiveSubmissionId(s.submission_id);
+    // Only set Step 1 fields for approval
     setProjectName(s.client_name || "Unknown Client");
     setProjectType(s.project_type as ProjectType);
     setProjectPriority(s.priority);
     setProjectStatus("planning");
-
-    // Load submission data to prefill fields
-    setCompanyEmail(s.company_email || "");
-    setCompanyAddress(s.company_address || "");
-    setAboutCompany(s.about_company || "");
-    setPublicPhone(s.public_business_number || "");
-    setCompanyNumber(s.business_number || "");
-    setPublicCompanyEmail(s.public_company_email || "");
-    setPublicCompanyAddress(s.public_address || "");
-    setSocialLinks(s.social_media_links || "");
-    setMediaLinks(s.media_links || "");
-    
-    // Parse bank details if available
-    if (s.bank_details) {
-      try {
-        const bankData = JSON.parse(s.bank_details);
-        setBankAccountName(bankData.account_name || "");
-        setBankAccountNumber(bankData.account_number || "");
-        setBankIban(bankData.iban || "");
-        setBankSwift(bankData.swift || "");
-      } catch (e) {
-        // If parsing fails, treat as plain text
-        setBankAccountName(s.bank_details);
-      }
-    }
-
-    // Load service-specific data from step2_data
-    const step2Data = s.step2_data || {};
-    setSelectedService(s.project_type);
-    setDomainSuggestions(step2Data.domain_suggestions || "");
-    setWebsiteReferences(step2Data.references || "");
-    setFeaturesRequirements(step2Data.features?.join(", ") || "");
-    setLogoIdeas(step2Data.logo_ideas || "");
-    setBrandTheme(step2Data.color_preferences || "");
-    setDesignAssetsNeeded(step2Data.design_assets?.join(", ") || "");
-    setTargetAudienceIndustry(step2Data.target_audience || "");
-    setMarketingGoals(step2Data.marketing_goals || "");
-    setChannelsOfInterest(step2Data.channels?.join(", ") || "");
-    setBudgetRangeMonthly(step2Data.monthly_budget || "");
-    setAiSolutionType(step2Data.ai_solution_type || "");
-    setBusinessChallengeUseCase(step2Data.business_challenge || "");
-    setDataAvailability(step2Data.data_availability || "");
-    setBudgetRange(step2Data.budget_range || "");
-    setServiceDescription(step2Data.service_description || "");
-    setExpectedOutcome(step2Data.expected_outcome || "");
-
+    setDescription(s.description || "");
+    setStartDate(s.start_date || "");
+    setEndDate(s.end_date || "");
+    setBudget(s.budget.toString());
     setApproveOpen(true);
-
   };
 
   const confirmApprove = async () => {
@@ -464,9 +425,12 @@ export function ClientProjectSubmissions() {
 
   const confirmDelete = async () => {
     if (!activeSubmissionId) return;
+    
+    setIsDeleting(true);
     try {
       const response = await fetch(`/api/submissions/${activeSubmissionId}`, {
         method: 'DELETE',
+        credentials: 'same-origin',
       });
 
       if (!response.ok) {
@@ -486,6 +450,8 @@ export function ClientProjectSubmissions() {
         description: e?.message || String(e),
         variant: "destructive",
       });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -591,7 +557,7 @@ export function ClientProjectSubmissions() {
         };
         setViewData(normalized);
       } else {
-        setViewData(data);
+      setViewData(data);
       }
     } catch {
       setViewData(null);
@@ -899,66 +865,51 @@ export function ClientProjectSubmissions() {
       </Dialog>
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Approve Submission → Create Project</DialogTitle>
+            <DialogTitle>Approve Submission - Step 1 Details</DialogTitle>
+            <DialogDescription>
+              Complete the project details to approve this submission. Service type is auto-filled from the submission.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6 py-2 max-h-[70vh] overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Project name</label>
+          <div className="space-y-4">
+            {/* Service Type - Auto-filled and Read-only */}
+            <div>
+              <label className="text-sm font-medium">Service Type</label>
+              <Input
+                value={projectType}
+                disabled
+                className="bg-muted"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Auto-filled from submission
+              </p>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Project Name</label>
                 <Input
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="e.g., ACME Website Revamp"
+                placeholder="Enter project name"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">Priority</label>
-                <Select
-                  value={projectPriority}
-                  onValueChange={(v) =>
-                    setProjectPriority(v as Project["priority"])
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                  </SelectContent>
-                </Select>
+            
+            <div>
+              <label className="text-sm font-medium">Description</label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Enter project description"
+              />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">Service type</label>
-                <Select
-                  value={projectType}
-                  onValueChange={(v) => setProjectType(v as ProjectType)}
-                >
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Status</label>
+                <Select value={projectStatus} onValueChange={(value: any) => setProjectStatus(value)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="web">Web</SelectItem>
-                    <SelectItem value="branding">Branding</SelectItem>
-                    <SelectItem value="marketing">Marketing</SelectItem>
-                    <SelectItem value="ai">AI</SelectItem>
-                    <SelectItem value="custom">Custom</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Initial status</label>
-                <Select
-                  value={projectStatus}
-                  onValueChange={(v) =>
-                    setProjectStatus(v as Project["status"])
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="planning">Planning</SelectItem>
@@ -967,343 +918,61 @@ export function ClientProjectSubmissions() {
                   </SelectContent>
                 </Select>
               </div>
+              
+              <div>
+                <label className="text-sm font-medium">Priority</label>
+                <Select value={projectPriority} onValueChange={(value: any) => setProjectPriority(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm">Description</label>
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Short project overview"
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm font-medium">Budget</label>
+                <Input
+                  type="number"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                  placeholder="0"
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Start date</label>
+              <div>
+                <label className="text-sm font-medium">Start Date</label>
                 <Input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">End date</label>
+              
+              <div>
+                <label className="text-sm font-medium">End Date</label>
                 <Input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">Budget</label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="0"
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                />
-              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Client name</label>
-                <Input
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Company number</label>
-                <Input
-                  value={companyNumber}
-                  onChange={(e) => setCompanyNumber(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Company email</label>
-                <Input
-                  value={companyEmail}
-                  onChange={(e) => setCompanyEmail(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Company address</label>
-                <Input
-                  value={companyAddress}
-                  onChange={(e) => setCompanyAddress(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm">About company</label>
-              <Textarea
-                value={aboutCompany}
-                onChange={(e) => setAboutCompany(e.target.value)}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Public phone</label>
-                <Input
-                  value={publicPhone}
-                  onChange={(e) => setPublicPhone(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Public email</label>
-                <Input
-                  value={publicCompanyEmail}
-                  onChange={(e) => setPublicCompanyEmail(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Public address</label>
-                <Input
-                  value={publicCompanyAddress}
-                  onChange={(e) => setPublicCompanyAddress(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">
-                  Social links (comma separated)
-                </label>
-                <Input
-                  value={socialLinks}
-                  onChange={(e) => setSocialLinks(e.target.value)}
-                  placeholder="https://... , https://..."
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Media links (comma separated)</label>
-                <Input
-                  value={mediaLinks}
-                  onChange={(e) => setMediaLinks(e.target.value)}
-                  placeholder="https://... , https://..."
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Bank account name</label>
-                <Input
-                  value={bankAccountName}
-                  onChange={(e) => setBankAccountName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Bank account number</label>
-                <Input
-                  value={bankAccountNumber}
-                  onChange={(e) => setBankAccountNumber(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">IBAN</label>
-                <Input
-                  value={bankIban}
-                  onChange={(e) => setBankIban(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">SWIFT</label>
-                <Input
-                  value={bankSwift}
-                  onChange={(e) => setBankSwift(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Selected service</label>
-                <Input
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                  placeholder="e.g., web-development"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Target audience / industry</label>
-                <Input
-                  value={targetAudienceIndustry}
-                  onChange={(e) => setTargetAudienceIndustry(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {projectType === "web" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">Domain suggestions</label>
-                  <Textarea
-                    value={domainSuggestions}
-                    onChange={(e) => setDomainSuggestions(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Website references</label>
-                  <Textarea
-                    value={websiteReferences}
-                    onChange={(e) => setWebsiteReferences(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {projectType === "web" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">Features / requirements</label>
-                  <Textarea
-                    value={featuresRequirements}
-                    onChange={(e) => setFeaturesRequirements(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Budget / timeline</label>
-                  <Textarea
-                    value={budgetTimeline}
-                    onChange={(e) => setBudgetTimeline(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {projectType === "branding" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">Logo ideas / concepts</label>
-                  <Textarea
-                    value={logoIdeas}
-                    onChange={(e) => setLogoIdeas(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Color / brand theme</label>
-                  <Textarea
-                    value={brandTheme}
-                    onChange={(e) => setBrandTheme(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {projectType === "branding" && (
-              <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">Design assets needed (CSV)</label>
-                  <Input
-                    value={designAssetsNeeded}
-                    onChange={(e) => setDesignAssetsNeeded(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-            {projectType === "marketing" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">Marketing goals</label>
-                  <Textarea
-                    value={marketingGoals}
-                    onChange={(e) => setMarketingGoals(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Channels of interest (CSV)</label>
-                  <Input
-                    value={channelsOfInterest}
-                    onChange={(e) => setChannelsOfInterest(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm">Monthly budget range</label>
-                  <Input
-                    value={budgetRangeMonthly}
-                    onChange={(e) => setBudgetRangeMonthly(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-            {projectType === "ai" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">AI solution type (CSV)</label>
-                  <Input
-                    value={aiSolutionType}
-                    onChange={(e) => setAiSolutionType(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">
-                    Business challenge / use case
-                  </label>
-                  <Input
-                    value={businessChallengeUseCase}
-                    onChange={(e) =>
-                      setBusinessChallengeUseCase(e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Data availability</label>
-                  <Textarea
-                    value={dataAvailability}
-                    onChange={(e) => setDataAvailability(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Overall budget range</label>
-                  <Input
-                    value={budgetRange}
-                    onChange={(e) => setBudgetRange(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-            {projectType === "custom" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm">Service description</label>
-                  <Textarea
-                    value={serviceDescription}
-                    onChange={(e) => setServiceDescription(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm">Expected outcome</label>
-                  <Textarea
-                    value={expectedOutcome}
-                    onChange={(e) => setExpectedOutcome(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Intentionally removed non service-specific duplicates. These fields appear only in the matching service sections above. */}
-
-            <div className="space-y-2">
-              <small className="text-muted-foreground">
-                Fields shown are filtered by Service type.
-              </small>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setApproveOpen(false)}>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setApproveOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={confirmApprove} disabled={!projectName}>
-              Create Project
+              <Button onClick={confirmApprove}>
+                Approve Project
             </Button>
-          </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1420,9 +1089,9 @@ export function ClientProjectSubmissions() {
                             {JSON.stringify(prettyValue(value), null, 2)}
                           </pre>
                         ) : (
-                          <div className="text-muted-foreground whitespace-pre-wrap">
+                        <div className="text-muted-foreground whitespace-pre-wrap">
                             {String(prettyValue(value))}
-                          </div>
+                        </div>
                         )}
                       </div>
                     ) : null;
@@ -1672,8 +1341,8 @@ export function ClientProjectSubmissions() {
                                   <div className="text-muted-foreground">{String(v)}</div>
                                 )}
                               </div>
-                            ))}
-                          </Section>
+                                ))}
+                              </Section>
                         );
                       })()}
                     </>
@@ -1742,11 +1411,26 @@ export function ClientProjectSubmissions() {
             </p>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+            <Button 
+              variant="ghost" 
+              onClick={() => setDeleteOpen(false)}
+              disabled={isDeleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              Delete
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -60,7 +60,7 @@ export function EnhancedEmailCenter() {
     setSelectedEmail(email)
     markAsRead(email.id)
     // Sync seen flag to Hostinger mailbox
-    fetch("/api/email/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: email.id }) }).catch(() => {})
+    fetch("/api/email/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: email.id }), credentials: "same-origin" }).catch(() => {})
     // Smooth scroll to top where the preview is rendered
     if (typeof window !== "undefined") {
       ;(topRef.current?.scrollIntoView ? topRef.current.scrollIntoView({ behavior: "smooth", block: "start" }) : window.scrollTo({ top: 0, behavior: "smooth" }))
@@ -98,7 +98,7 @@ export function EnhancedEmailCenter() {
     try {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 15000)
-      const res = await fetch("/api/email/inbox", { signal: controller.signal })
+      const res = await fetch("/api/email/inbox", { signal: controller.signal, credentials: "same-origin" })
       clearTimeout(timer)
       if (!res.ok) throw new Error((await res.json()).error || "Failed to fetch inbox")
       const data = await res.json()
@@ -200,7 +200,7 @@ export function EnhancedEmailCenter() {
       try {
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), 12000)
-        const res = await fetch("/api/email/inbox", { signal: controller.signal })
+        const res = await fetch("/api/email/inbox", { signal: controller.signal, credentials: "same-origin" })
         clearTimeout(timer)
         if (!res.ok) return
         const data = await res.json()
@@ -352,6 +352,7 @@ export function EnhancedEmailCenter() {
                     const res = await fetch("/api/email/delete", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
+                      credentials: "same-origin",
                       body: JSON.stringify({ uid }),
                     })
                     if (!res.ok) throw new Error((await res.json()).error || "Failed to delete")
@@ -631,7 +632,7 @@ export function EnhancedEmailCenter() {
                       form.append("subject", composeSubject)
                       form.append("html", composeText)
                       files.forEach((f, idx) => form.append(`file${idx}`, f))
-                      const res = await fetch("/api/email/send", { method: "POST", body: form })
+                      const res = await fetch("/api/email/send", { method: "POST", body: form, credentials: "same-origin" })
                       if (!res.ok) throw new Error((await res.json()).error || "Failed to send email")
                       toast({ title: "Email sent" })
                       setComposeOpen(false)

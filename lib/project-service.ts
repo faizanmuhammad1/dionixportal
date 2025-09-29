@@ -5,6 +5,12 @@ import { uploadProjectFile, createSignedUrl, removeProjectFile } from './storage
 
 export class ProjectService {
   private supabase = createClient();
+  
+  constructor(supabaseClient?: any) {
+    if (supabaseClient) {
+      this.supabase = supabaseClient;
+    }
+  }
 
   /**
    * Create a new project
@@ -85,6 +91,67 @@ export class ProjectService {
     }
   }
 
+  async listComments(projectId: string) {
+    const res = await fetch(`/api/projects/${projectId}/comments`, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("Failed to load comments");
+    const json = await res.json();
+    return json.comments as any[];
+  }
+
+  async addComment(projectId: string, payload: { body: string; task_id?: string; file_refs?: any }) {
+    const res = await fetch(`/api/projects/${projectId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "same-origin",
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      throw new Error(`Failed to create comment: ${err || res.status}`);
+    }
+    const json = await res.json();
+    return json.comment as any;
+  }
+
+  async listAttachments(projectId: string) {
+    const res = await fetch(`/api/projects/${projectId}/attachments`, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("Failed to load attachments");
+    const json = await res.json();
+    return json.attachments as any[];
+  }
+
+  async addAttachment(projectId: string, payload: { storage_path: string; file_name: string; file_size?: number; content_type?: string; task_id?: string; client_visible?: boolean }) {
+    const res = await fetch(`/api/projects/${projectId}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "same-origin",
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      throw new Error(`Failed to create attachment: ${err || res.status}`);
+    }
+    const json = await res.json();
+    return json.attachment as any;
+  }
+
+  async deleteAttachment(projectId: string, attachmentId: string) {
+    const res = await fetch(`/api/projects/${projectId}/attachments?attachment_id=${encodeURIComponent(attachmentId)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error("Failed to delete attachment");
+    return true;
+  }
+
+  async deleteComment(projectId: string, commentId: string) {
+    const res = await fetch(`/api/projects/${projectId}/comments?comment_id=${encodeURIComponent(commentId)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error("Failed to delete comment");
+    return true;
+  }
   /**
    * Get a project by ID
    */
@@ -189,8 +256,8 @@ export class ProjectService {
       // Prepare update data
       const updateData: any = {};
       
-      if (updates.name) updateData.name = updates.name;
-      if (updates.type) updateData.type = updates.type;
+      if (updates.name) updateData.project_name = updates.name;
+      if (updates.type) updateData.project_type = updates.type;
       if (updates.description !== undefined) updateData.description = updates.description;
       if (updates.client_name !== undefined) updateData.client_name = updates.client_name;
       if (updates.budget !== undefined) updateData.budget = updates.budget;
@@ -198,21 +265,25 @@ export class ProjectService {
       if (updates.end_date !== undefined) updateData.end_date = updates.end_date;
       if (updates.status) updateData.status = updates.status;
       if (updates.priority) updateData.priority = updates.priority;
-      if (updates.service_specific) updateData.service_specific = updates.service_specific;
-      if (updates.company_number !== undefined) updateData.company_number = updates.company_number;
+      if (updates.service_specific) updateData.step2_data = updates.service_specific;
+      if (updates.company_number !== undefined) updateData.business_number = updates.company_number;
       if (updates.company_email !== undefined) updateData.company_email = updates.company_email;
       if (updates.company_address !== undefined) updateData.company_address = updates.company_address;
       if (updates.about_company !== undefined) updateData.about_company = updates.about_company;
-      if (updates.social_links) updateData.social_links = updates.social_links;
-      if (updates.public_contacts) updateData.public_contacts = updates.public_contacts;
-      if (updates.media_links) updateData.media_links = updates.media_links;
-      if (updates.bank_details) updateData.bank_details = updates.bank_details;
+      if (updates.social_links) updateData.social_media_links = Array.isArray(updates.social_links) ? updates.social_links.join(',') : updates.social_links;
+      if (updates.public_contacts) {
+        if (updates.public_contacts.phone !== undefined) updateData.public_business_number = updates.public_contacts.phone;
+        if (updates.public_contacts.email !== undefined) updateData.public_company_email = updates.public_contacts.email;
+        if (updates.public_contacts.address !== undefined) updateData.public_address = updates.public_contacts.address;
+      }
+      if (updates.media_links) updateData.media_links = Array.isArray(updates.media_links) ? updates.media_links.join(',') : updates.media_links;
+      if (updates.bank_details) updateData.bank_details = typeof updates.bank_details === 'string' ? updates.bank_details : JSON.stringify(updates.bank_details);
 
       // Update project
       const { data, error } = await this.supabase
         .from('projects')
         .update(updateData)
-        .eq('id', projectId)
+        .eq('project_id', projectId)
         .select()
         .single();
 
@@ -232,28 +303,51 @@ export class ProjectService {
    */
   async deleteProject(projectId: string): Promise<void> {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await this.supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('User not authenticated');
+      console.log(`Starting deletion of project ${projectId}`);
+
+      // First, get all attachments for this project to delete files from storage
+      const { data: attachments, error: attachmentsError } = await this.supabase
+        .from('attachments')
+        .select('storage_path, file_name')
+        .eq('project_id', projectId);
+
+      if (attachmentsError) {
+        console.error('Error fetching attachments:', attachmentsError);
+        // Continue with project deletion even if we can't fetch attachments
+      } else if (attachments && attachments.length > 0) {
+        console.log(`Found ${attachments.length} attachments to delete from storage`);
+        
+        // Delete files from Supabase Storage
+        for (const attachment of attachments) {
+          try {
+            if (attachment.storage_path) {
+              const { error: storageError } = await this.supabase.storage
+                .from('project-files')
+                .remove([attachment.storage_path]);
+              
+              if (storageError) {
+                console.error(`Failed to delete file ${attachment.storage_path}:`, storageError);
+              } else {
+                console.log(`Deleted file: ${attachment.file_name}`);
+              }
+            }
+          } catch (fileError) {
+            console.error(`Error deleting file ${attachment.file_name}:`, fileError);
+          }
+        }
       }
 
-      // Get project to delete associated files
-      const project = await this.getProject(projectId);
-      if (project && project.media_links.length > 0) {
-        // Note: In the new schema, we store media as links, not file paths
-        // File cleanup would need to be handled differently
-      }
-
-      // Delete project (activities will be deleted automatically due to CASCADE)
+      // Delete project (comments and attachments will be deleted automatically due to CASCADE)
       const { error } = await this.supabase
         .from('projects')
         .delete()
-        .eq('id', projectId);
+        .eq('project_id', projectId);
 
       if (error) {
         throw new Error(`Delete project failed: ${error.message}`);
       }
+
+      console.log(`Project ${projectId} deleted successfully`);
     } catch (error) {
       console.error('Delete project error:', error);
       throw error;

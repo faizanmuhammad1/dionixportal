@@ -11,12 +11,16 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Paperclip, Upload } from "lucide-react"
 import { addTaskToProject, getProjectById, getProjects, saveProjects, type Project, type ProjectAttachment, type Task } from "@/lib/project-store"
+import { projectService } from "@/lib/project-service"
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const [project, setProject] = useState<Project | null>(null)
   const [all, setAll] = useState<Project[]>([])
+  const [comments, setComments] = useState<any[]>([])
+  const [attachments, setAttachments] = useState<any[]>([])
+  const [commentDraft, setCommentDraft] = useState("")
 
   const [newTaskTitle, setNewTaskTitle] = useState("")
   const [newTaskDescription, setNewTaskDescription] = useState("")
@@ -29,6 +33,16 @@ export default function ProjectDetailPage() {
     const list = getProjects()
     setAll(list)
     setProject(getProjectById(params.id))
+    ;(async () => {
+      try {
+        const [c, a] = await Promise.all([
+          projectService.listComments(params.id),
+          projectService.listAttachments(params.id),
+        ])
+        setComments(c)
+        setAttachments(a)
+      } catch {}
+    })()
   }, [params.id])
 
   const employees = useMemo(() => {
@@ -191,20 +205,23 @@ export default function ProjectDetailPage() {
               <CardTitle>Upload</CardTitle>
             </CardHeader>
             <CardContent className="flex items-center gap-3">
-              <Input type="file" multiple onChange={(e) => {
+              <Input type="file" multiple onChange={async (e) => {
                 const files = Array.from(e.target.files || [])
-                const nextVersion = (project.attachments?.[0]?.version || 0) + 1
-                const newAtts: ProjectAttachment[] = files.map((f, idx) => ({
-                  id: `${Date.now()}-${idx}`,
-                  file_name: f.name,
-                  file_size: f.size,
-                  content_type: f.type,
-                  version: nextVersion,
-                  uploaded_by: "admin",
-                  uploaded_at: new Date().toISOString(),
-                }))
-                const updated: Project = { ...project, attachments: [...(project.attachments || []), ...newAtts] }
-                save(updated)
+                for (const f of files) {
+                  try {
+                    // Assume file already uploaded to storage elsewhere; here we just record metadata
+                    const meta = await projectService.addAttachment(params.id, {
+                      storage_path: `project-files/${params.id}/${Date.now()}_${encodeURIComponent(f.name)}`,
+                      file_name: f.name,
+                      file_size: f.size,
+                      content_type: f.type,
+                    })
+                    setAttachments((prev) => [meta, ...prev])
+                  } catch (err) {
+                    console.error("Attachment upload failed", err)
+                  }
+                }
+                e.currentTarget.value = ""
               }} />
               <Upload className="h-4 w-4 text-muted-foreground" />
             </CardContent>
@@ -214,17 +231,16 @@ export default function ProjectDetailPage() {
               <CardTitle>Attachments</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {(project.attachments || []).map((att) => (
-                <div key={att.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
+              {attachments.map((att) => (
+                <div key={att.attachment_id} className="flex items-center justify-between rounded-md border p-2 text-sm">
                   <div className="flex items-center gap-2">
                     <Paperclip className="h-4 w-4" />
                     <span>{att.file_name}</span>
-                    <span className="text-muted-foreground">v{att.version}</span>
                   </div>
                   <span className="text-muted-foreground">{new Date(att.uploaded_at).toLocaleString()}</span>
                 </div>
               ))}
-              {(!project.attachments || project.attachments.length === 0) && (
+              {attachments.length === 0 && (
                 <div className="text-sm text-muted-foreground">No attachments uploaded.</div>
               )}
             </CardContent>
@@ -236,22 +252,36 @@ export default function ProjectDetailPage() {
             <CardHeader>
               <CardTitle>Add Comment</CardTitle>
             </CardHeader>
-            <CardContent>
-              <Input placeholder="Write a comment and press Enter" onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const value = (e.target as HTMLInputElement).value.trim()
-                  if (!value) return
-                  const updated: Project = {
-                    ...project,
-                    comments: [
-                      ...(project.comments || []),
-                      { id: `${Date.now()}`, body: value, created_by: "admin", created_at: new Date().toISOString() },
-                    ],
+            <CardContent className="flex items-center gap-2">
+              <Input
+                placeholder="Write a comment and press Enter"
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter") {
+                    const value = commentDraft.trim()
+                    if (!value) return
+                    try {
+                      const created = await projectService.addComment(params.id, { body: value })
+                      setComments((prev) => [created, ...prev])
+                      setCommentDraft("")
+                    } catch (err) {
+                      console.error("Create comment failed", err)
+                    }
                   }
-                  save(updated)
-                  ;(e.target as HTMLInputElement).value = ""
+                }}
+              />
+              <Button onClick={async () => {
+                const value = commentDraft.trim()
+                if (!value) return
+                try {
+                  const created = await projectService.addComment(params.id, { body: value })
+                  setComments((prev) => [created, ...prev])
+                  setCommentDraft("")
+                } catch (err) {
+                  console.error("Create comment failed", err)
                 }
-              }} />
+              }}>Post</Button>
             </CardContent>
           </Card>
           <Card>
@@ -259,13 +289,13 @@ export default function ProjectDetailPage() {
               <CardTitle>Discussion</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {(project.comments || []).map((c) => (
-                <div key={c.id} className="rounded-md border p-2 text-sm">
+              {comments.map((c) => (
+                <div key={c.comment_id} className="rounded-md border p-2 text-sm">
                   <div className="text-xs text-muted-foreground mb-1">{new Date(c.created_at).toLocaleString()}</div>
                   <div>{c.body}</div>
                 </div>
               ))}
-              {(!project.comments || project.comments.length === 0) && (
+              {comments.length === 0 && (
                 <div className="text-sm text-muted-foreground">No comments yet.</div>
               )}
             </CardContent>

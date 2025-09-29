@@ -5,13 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { getCurrentUser, type User } from "@/lib/auth";
-import { Eye, CheckCircle2, XCircle } from "lucide-react";
+import { Eye, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 interface Submission {
   submission_id: string;
@@ -59,6 +59,10 @@ export function SubmissionManagement() {
   const [projectBudget, setProjectBudget] = useState("");
   const [projectStartDate, setProjectStartDate] = useState("");
   const [projectEndDate, setProjectEndDate] = useState("");
+  const [isApproving, setIsApproving] = useState(false);
+  const [approvalStep, setApprovalStep] = useState<string>("");
+  const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
+  const [isRejecting, setIsRejecting] = useState(false);
 
   useEffect(() => {
     fetchSubmissions();
@@ -87,39 +91,138 @@ export function SubmissionManagement() {
     setViewOpen(true);
   };
 
+  const validateApprovalForm = () => {
+    const errors: Record<string, string> = {};
+    
+    // Required field validations
+    if (!projectName.trim()) {
+      errors.projectName = "Project name is required";
+    }
+    
+    if (!projectDescription.trim()) {
+      errors.projectDescription = "Description is required";
+    }
+    
+    if (!projectBudget || isNaN(parseFloat(projectBudget)) || parseFloat(projectBudget) <= 0) {
+      errors.projectBudget = "Valid budget amount is required";
+    }
+    
+    // Date validations
+    if (projectStartDate && projectEndDate) {
+      const startDate = new Date(projectStartDate);
+      const endDate = new Date(projectEndDate);
+      
+      if (startDate >= endDate) {
+        errors.projectEndDate = "End date must be after start date";
+      }
+      
+      if (startDate < new Date()) {
+        errors.projectStartDate = "Start date cannot be in the past";
+      }
+    }
+    
+    setApprovalErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleApproveSubmission = (submission: Submission) => {
+    console.log("Opening approve dialog for submission:", submission.submission_id);
+    console.log("Submission data:", submission);
+    
     setSelectedSubmission(submission);
-    setProjectName(submission.client_name || "");
-    setProjectDescription(submission.description || "");
+    setProjectName(submission.client_name || "Unknown Client");
+    setProjectDescription(submission.description || "No description provided");
     setProjectBudget(submission.budget.toString());
     setProjectStartDate(submission.start_date || "");
     setProjectEndDate(submission.end_date || "");
     setProjectPriority(submission.priority);
+    setProjectStatus("planning"); // Default status for new projects
+    setApprovalErrors({}); // Clear any previous errors
+    setViewOpen(false); // Make sure view dialog is closed
     setApproveOpen(true);
+    
+    // Debug: Log the initialized values
+    console.log("Initialized form values:", {
+      projectName: submission.client_name || "Unknown Client",
+      projectDescription: submission.description || "No description provided",
+      projectBudget: submission.budget.toString(),
+      projectStartDate: submission.start_date || "",
+      projectEndDate: submission.end_date || "",
+      projectPriority: submission.priority,
+      projectStatus: "planning"
+    });
   };
 
   const handleApprove = async () => {
     if (!selectedSubmission) return;
 
+    // Clear previous errors
+    setApprovalErrors({});
+
+    // Validate form before proceeding
+    if (!validateApprovalForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fix the errors in the form before proceeding",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
+      setIsApproving(true);
+      setApprovalStep("Preparing approval data...");
+      
+      // Debug: Log current form values
+      console.log("Form values:", {
+        projectName,
+        projectDescription,
+        projectBudget,
+        projectStartDate,
+        projectEndDate,
+        projectStatus,
+        projectPriority
+      });
+      
+      setApprovalStep("Validating form data...");
+      
+      // Step 1 data from admin (project management details)
       const step1Data = {
-        project_name: projectName,
-        description: projectDescription,
-        client_name: selectedSubmission.client_name,
-        budget: parseFloat(projectBudget) || selectedSubmission.budget,
-        start_date: projectStartDate || selectedSubmission.start_date,
-        end_date: projectEndDate || selectedSubmission.end_date,
+        project_name: projectName.trim(),
+        description: projectDescription.trim(),
+        budget: parseFloat(projectBudget),
+        start_date: projectStartDate || null,
+        end_date: projectEndDate || null,
         status: projectStatus,
         priority: projectPriority,
       };
 
+      // Ensure step1Data is never undefined
+      if (!step1Data || Object.keys(step1Data).length === 0) {
+        throw new Error("Step 1 data is missing or invalid");
+      }
+
+      setApprovalStep("Sending approval request...");
+
+      const requestData = {
+        submission_id: selectedSubmission.submission_id,
+        step1_data: step1Data,
+      };
+      
+      console.log("Sending approve request:", requestData);
+      console.log("Step1Data validation:", {
+        hasData: !!step1Data,
+        keys: Object.keys(step1Data),
+        values: step1Data
+      });
+
+      setApprovalStep("Creating project...");
+
       const response = await fetch("/api/submissions/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          submission_id: selectedSubmission.submission_id,
-          step1_data: step1Data,
-        }),
+        credentials: "same-origin",
+        body: JSON.stringify(requestData),
       });
 
       if (!response.ok) {
@@ -127,24 +230,66 @@ export function SubmissionManagement() {
         throw new Error(error.error || "Failed to approve submission");
       }
 
-      toast({ title: "Submission approved successfully" });
+      setApprovalStep("Finalizing approval...");
+
+      const result = await response.json();
+      
+      setApprovalStep("Approval completed!");
+      
+      toast({ 
+        title: "Submission approved successfully", 
+        description: `Project created with ID: ${result.project_id}` 
+      });
+      
+      // Small delay to show completion step
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       setApproveOpen(false);
       await fetchSubmissions();
     } catch (error) {
       console.error("Error approving submission:", error);
+      setApprovalStep("Approval failed");
+      
+      // Enhanced error handling
+      let errorMessage = "Failed to approve submission";
+      let errorTitle = "Approval Error";
+      
+      if (error instanceof Error) {
+        if (error.message.includes("Submission not found")) {
+          errorTitle = "Submission Not Found";
+          errorMessage = "The submission could not be found. It may have been deleted or already processed.";
+        } else if (error.message.includes("not an admin")) {
+          errorTitle = "Permission Denied";
+          errorMessage = "You don't have permission to approve submissions. Please contact an administrator.";
+        } else if (error.message.includes("not pending")) {
+          errorTitle = "Submission Already Processed";
+          errorMessage = "This submission has already been approved or rejected.";
+        } else if (error.message.includes("network") || error.message.includes("fetch")) {
+          errorTitle = "Network Error";
+          errorMessage = "Unable to connect to the server. Please check your internet connection and try again.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({ 
-        title: "Error", 
-        description: error instanceof Error ? error.message : "Failed to approve submission",
+        title: errorTitle, 
+        description: errorMessage,
         variant: "destructive" 
       });
+    } finally {
+      setIsApproving(false);
+      setApprovalStep("");
     }
   };
 
   const handleReject = async (submission: Submission) => {
+    setIsRejecting(true);
     try {
       const response = await fetch("/api/submissions/reject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({
           submission_id: submission.submission_id,
         }),
@@ -164,6 +309,8 @@ export function SubmissionManagement() {
         description: error instanceof Error ? error.message : "Failed to reject submission",
         variant: "destructive" 
       });
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -257,8 +404,13 @@ export function SubmissionManagement() {
                             size="sm"
                             variant="destructive"
                             onClick={() => handleReject(submission)}
+                            disabled={isRejecting}
                           >
-                            <XCircle className="h-4 w-4" />
+                            {isRejecting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <XCircle className="h-4 w-4" />
+                            )}
                           </Button>
                         </>
                       )}
@@ -275,7 +427,10 @@ export function SubmissionManagement() {
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Submission Details</DialogTitle>
+            <DialogTitle>View Submission Details</DialogTitle>
+            <DialogDescription>
+              Review all submission information before making a decision.
+            </DialogDescription>
           </DialogHeader>
           {selectedSubmission && (
             <div className="space-y-4">
@@ -356,16 +511,36 @@ export function SubmissionManagement() {
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Approve Submission</DialogTitle>
+            <DialogTitle>Approve Submission - Admin Step 1</DialogTitle>
+            <DialogDescription>
+              Add project management details (Step 1). Client's Steps 2-6 data will be automatically included from their submission.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Service Type - Auto-filled and Read-only */}
+            <div>
+              <label className="text-sm font-medium">Service Type</label>
+              <Input
+                value={selectedSubmission?.project_type || ""}
+                disabled
+                className="bg-muted"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Auto-filled from submission
+              </p>
+            </div>
+
             <div>
               <label className="text-sm font-medium">Project Name</label>
               <Input
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 placeholder="Enter project name"
+                className={approvalErrors.projectName ? "border-red-500" : ""}
               />
+              {approvalErrors.projectName && (
+                <p className="text-sm text-red-500 mt-1">{approvalErrors.projectName}</p>
+              )}
             </div>
             
             <div>
@@ -374,7 +549,11 @@ export function SubmissionManagement() {
                 value={projectDescription}
                 onChange={(e) => setProjectDescription(e.target.value)}
                 placeholder="Enter project description"
+                className={approvalErrors.projectDescription ? "border-red-500" : ""}
               />
+              {approvalErrors.projectDescription && (
+                <p className="text-sm text-red-500 mt-1">{approvalErrors.projectDescription}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -415,7 +594,11 @@ export function SubmissionManagement() {
                   value={projectBudget}
                   onChange={(e) => setProjectBudget(e.target.value)}
                   placeholder="0"
+                  className={approvalErrors.projectBudget ? "border-red-500" : ""}
                 />
+                {approvalErrors.projectBudget && (
+                  <p className="text-sm text-red-500 mt-1">{approvalErrors.projectBudget}</p>
+                )}
               </div>
               
               <div>
@@ -424,7 +607,11 @@ export function SubmissionManagement() {
                   type="date"
                   value={projectStartDate}
                   onChange={(e) => setProjectStartDate(e.target.value)}
+                  className={approvalErrors.projectStartDate ? "border-red-500" : ""}
                 />
+                {approvalErrors.projectStartDate && (
+                  <p className="text-sm text-red-500 mt-1">{approvalErrors.projectStartDate}</p>
+                )}
               </div>
               
               <div>
@@ -433,7 +620,11 @@ export function SubmissionManagement() {
                   type="date"
                   value={projectEndDate}
                   onChange={(e) => setProjectEndDate(e.target.value)}
+                  className={approvalErrors.projectEndDate ? "border-red-500" : ""}
                 />
+                {approvalErrors.projectEndDate && (
+                  <p className="text-sm text-red-500 mt-1">{approvalErrors.projectEndDate}</p>
+                )}
               </div>
             </div>
 
@@ -441,8 +632,15 @@ export function SubmissionManagement() {
               <Button variant="outline" onClick={() => setApproveOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleApprove}>
-                Approve Project
+              <Button onClick={handleApprove} disabled={isApproving}>
+                {isApproving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {approvalStep || "Approving..."}
+                  </>
+                ) : (
+                  "Approve Project"
+                )}
               </Button>
             </div>
           </div>

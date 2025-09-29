@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { projectService } from "@/lib/project-service";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -57,6 +58,7 @@ import {
   Paperclip,
   Upload,
   MessageSquare,
+  Loader2,
 } from "lucide-react";
 import {
   getProjects as storeGetProjects,
@@ -69,7 +71,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage";
 import { createClient } from "@/lib/supabase";
 import { getCurrentUser, type User } from "@/lib/auth";
-import { deleteProject as deleteProjectApi } from "@/lib/auth";
+// Removed direct Supabase client usage for deletion
+
+async function deleteProjectApi(projectId: string) {
+  const response = await fetch(`/api/projects/${projectId}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'same-origin',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete project');
+  }
+
+  return await response.json();
+}
 
 interface Project {
   id: string;
@@ -171,6 +190,9 @@ interface Employee {
 
 export function UnifiedProjectManagement() {
   const [activeTab, setActiveTab] = useState("overview");
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -184,6 +206,9 @@ export function UnifiedProjectManagement() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [approvalData, setApprovalData] = useState({
@@ -299,7 +324,14 @@ export function UnifiedProjectManagement() {
             address: p.public_address || undefined,
           },
           media_links: p.media_links ? p.media_links.split(',') : [],
-          bank_details: p.bank_details ? JSON.parse(p.bank_details) : {},
+          bank_details: p.bank_details ? (() => {
+            try {
+              return JSON.parse(p.bank_details);
+            } catch {
+              // If it's not valid JSON, treat it as a plain string
+              return { details: p.bank_details };
+            }
+          })() : {},
           service_specific: p.step2_data || {},
           attachments,
           comments,
@@ -666,40 +698,51 @@ export function UnifiedProjectManagement() {
     };
       
       if (editingProject) {
-        // Update existing project
-        const { data, error } = await supabase
-          .from("projects")
-          .update({
-            project_name: formData.name,
-            project_type: serviceType,
-            description: formData.description,
-            status: formData.status,
-            priority: formData.priority,
-            budget: formData.budget,
-            start_date: formData.start_date,
-            end_date: formData.end_date,
-            business_number: companyNumber,
-            company_email: companyEmail,
-            company_address: companyAddress,
-            about_company: aboutCompany,
-            social_media_links: socialLinks.join(','),
-            public_business_number: publicContactPhone,
-            public_company_email: publicContactEmail,
-            public_address: publicContactAddress,
-            media_links: mediaLinks.join(','),
-            bank_details: JSON.stringify({
-              account_name: bankAccountName,
-              account_number: bankAccountNumber,
-              iban: bankIban,
-              swift: bankSwift,
-            }),
-            step2_data: serviceSpecific,
-          })
-          .eq("project_id", editingProject.id)
-          .select()
-          .single();
+        // Update existing project via API
+        const updateData = {
+          name: formData.name,
+          type: serviceType,
+          description: formData.description,
+          status: formData.status,
+          priority: formData.priority,
+          budget: formData.budget,
+          start_date: formData.start_date,
+          end_date: formData.end_date,
+          company_number: companyNumber,
+          company_email: companyEmail,
+          company_address: companyAddress,
+          about_company: aboutCompany,
+          social_links: socialLinks,
+          public_contacts: {
+            phone: publicContactPhone,
+            email: publicContactEmail,
+            address: publicContactAddress,
+          },
+          media_links: mediaLinks,
+          bank_details: {
+            account_name: bankAccountName,
+            account_number: bankAccountNumber,
+            iban: bankIban,
+            swift: bankSwift,
+          },
+          service_specific: serviceSpecific,
+        };
 
-        if (error) throw error;
+        const response = await fetch(`/api/projects/${editingProject.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to update project');
+        }
+
+        const result = await response.json();
         toast({ title: "Project updated successfully" });
       } else {
         // Create new project using RPC function
@@ -1137,7 +1180,7 @@ export function UnifiedProjectManagement() {
                         onOpenChange={setDetailsOpen}
                       >
                         <DialogContent
-                          className="max-w-5xl max-h-[85vh] overflow-y-auto"
+                          className="max-w-[90vw] max-h-[95vh] overflow-y-auto overflow-x-hidden"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <DialogHeader>
@@ -1400,7 +1443,8 @@ export function UnifiedProjectManagement() {
                                 <Input
                                   type="file"
                                   onChange={async (e) => {
-                                    const f = (e.target.files || [])[0];
+                                    const inputEl = e.currentTarget as HTMLInputElement;
+                                    const f = (inputEl.files || [])[0];
                                     if (!selectedProject || !f) return;
                                     const current = projects.find(
                                       (p) => p.id === selectedProject.id
@@ -1419,34 +1463,25 @@ export function UnifiedProjectManagement() {
                                         file: f,
                                       });
                                       setUploadProgress(60);
-                                      const { data, error } = await supabase
-                                        .from("attachments")
-                                        .insert({
-                                          project_id: selectedProject.id,
-                                          storage_path: uploaded.path,
-                                          file_name: f.name,
-                                          file_size: f.size,
-                                          content_type: f.type,
-                                          version: nextVersion,
-                                        })
-                                        .select("id, uploaded_at")
-                                        .single();
-                                      if (error) throw error;
+                                  const apiRow = await projectService.addAttachment(selectedProject.id, {
+                                    storage_path: uploaded.path,
+                                    file_name: f.name,
+                                    file_size: f.size,
+                                    content_type: f.type,
+                                  });
                                       setUploadProgress(90);
                                       setProjects((prev) =>
                                         prev.map((p) => {
                                           if (p.id !== selectedProject.id)
                                             return p;
                                           const newAtt: ProjectAttachment = {
-                                            id: data?.id || `${Date.now()}`,
+                                        id: apiRow.attachment_id || `${Date.now()}`,
                                             file_name: f.name,
                                             file_size: f.size,
                                             content_type: f.type,
                                             version: nextVersion,
                                             uploaded_by: "",
-                                            uploaded_at:
-                                              (data?.uploaded_at as any) ||
-                                              new Date().toISOString(),
+                                        uploaded_at: apiRow.uploaded_at || new Date().toISOString(),
                                           };
                                           return {
                                             ...p,
@@ -1463,10 +1498,11 @@ export function UnifiedProjectManagement() {
                                         500
                                       );
                                     } catch (err) {
+                                      console.error("Attachment upload failed", err);
                                       setUploadProgress(null);
                                     } finally {
                                       setIsUploading(false);
-                                      e.currentTarget.value = "";
+                                      try { if (inputEl) inputEl.value = ""; } catch {}
                                     }
                                   }}
                                   disabled={isUploading}
@@ -1488,24 +1524,25 @@ export function UnifiedProjectManagement() {
                                 {(project.attachments || []).map((att) => (
                                   <div
                                     key={att.id}
-                                    className="flex items-center justify-between rounded-md border p-2 text-sm"
+                                    className="flex w-full items-center justify-between rounded-lg border bg-background p-3 text-sm shadow-sm hover:shadow-md transition-all overflow-hidden"
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <Paperclip className="h-4 w-4" />
-                                      <span>{att.file_name}</span>
-                                      <span className="text-muted-foreground">
-                                        v{att.version}
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      <Paperclip className="h-4 w-4 text-muted-foreground" />
+                                      <span className="truncate" title={att.file_name}>
+                                        {att.file_name}
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 shrink-0">
                                       <Button
                                         size="sm"
-                                        variant="outline"
+                                        variant="secondary"
+                                        className="transition-all hover:shadow-sm hover:-translate-y-0.5"
+                                        title="Open attachment"
                                         onClick={async () => {
                                           const row = await supabase
                                             .from("attachments")
                                             .select("storage_path")
-                                            .eq("id", att.id)
+                                            .eq("attachment_id", att.id)
                                             .single();
                                           const url =
                                             await createSignedUrlByPath(
@@ -1516,11 +1553,25 @@ export function UnifiedProjectManagement() {
                                       >
                                         View
                                       </Button>
-                                      <span className="text-muted-foreground">
-                                        {new Date(
-                                          att.uploaded_at
-                                        ).toLocaleString()}
-                                      </span>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="text-destructive hover:bg-destructive/10"
+                                        aria-label="Delete attachment"
+                                        onClick={async () => {
+                                          try {
+                                            setDeletingAttachmentId(att.id);
+                                            await projectService.deleteAttachment(project.id, att.id);
+                                            setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, attachments: (p.attachments || []).filter((a) => a.id !== att.id) } : p));
+                                          } catch {}
+                                          finally {
+                                            setDeletingAttachmentId(null);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className={`h-4 w-4 ${deletingAttachmentId === att.id ? 'animate-pulse' : ''}`} />
+                                        <span className="sr-only">Delete</span>
+                                      </Button>
                                     </div>
                                   </div>
                                 ))}
@@ -1531,36 +1582,39 @@ export function UnifiedProjectManagement() {
                                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
                                 <Input
                                   placeholder="Add a comment"
-                                  onKeyDown={(e) => {
+                                  onKeyDown={async (e) => {
                                     if (e.key === "Enter" && selectedProject) {
                                       const value = (
                                         e.target as HTMLInputElement
                                       ).value.trim();
                                       if (!value) return;
-                                      setProjects((prev) =>
-                                        prev.map((p) => {
-                                          if (p.id !== selectedProject.id)
-                                            return p;
-                                          const newComment: ProjectComment = {
-                                            id: `${Date.now()}`,
-                                            body: value,
-                                            created_by: "admin",
-                                            created_at:
-                                              new Date().toISOString(),
-                                          };
-                                          return {
-                                            ...p,
-                                            comments: [
-                                              ...(p.comments || []),
-                                              newComment,
-                                            ],
-                                          };
-                                        })
-                                      );
-                                      (e.target as HTMLInputElement).value = "";
+                                      if (isPostingComment) return;
+                                      try {
+                                        setIsPostingComment(true);
+                                        const created = await projectService.addComment(selectedProject.id, { body: value });
+                                        setProjects((prev) =>
+                                          prev.map((p) => {
+                                            if (p.id !== selectedProject.id) return p;
+                                            const newComment: ProjectComment = {
+                                              id: created.comment_id || `${Date.now()}`,
+                                              body: created.body,
+                                              created_by: created.created_by || "",
+                                              created_at: created.created_at || new Date().toISOString(),
+                                            };
+                                            return { ...p, comments: [newComment, ...(p.comments || [])] };
+                                          })
+                                        );
+                                        (e.target as HTMLInputElement).value = "";
+                                      } catch {}
+                                      finally {
+                                        setIsPostingComment(false);
+                                      }
                                     }
                                   }}
                                 />
+                                {isPostingComment && (
+                                  <span className="text-xs text-muted-foreground">Posting…</span>
+                                )}
                               </div>
                               <div className="space-y-2">
                                 {(project.comments || []).map((c) => (
@@ -1571,7 +1625,28 @@ export function UnifiedProjectManagement() {
                                     <div className="text-muted-foreground text-xs mb-1">
                                       {new Date(c.created_at).toLocaleString()}
                                     </div>
-                                    <div>{c.body}</div>
+                                    <div className="flex items-center justify-between">
+                                      <div>{c.body}</div>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="text-destructive hover:bg-destructive/10"
+                                        aria-label="Delete comment"
+                                        onClick={async () => {
+                                          try {
+                                            setDeletingCommentId(c.id);
+                                            await projectService.deleteComment(project.id, c.id);
+                                            setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, comments: (p.comments || []).filter((x) => x.id !== c.id) } : p));
+                                          } catch {}
+                                          finally {
+                                            setDeletingCommentId(null);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className={`h-4 w-4 ${deletingCommentId === c.id ? 'animate-pulse' : ''}`} />
+                                        <span className="sr-only">Delete</span>
+                                      </Button>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -1615,6 +1690,8 @@ export function UnifiedProjectManagement() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setDeleteTarget(project);
+                              setDeleteError(null);
+                              setIsDeleting(false);
                               setDeleteOpen(true);
                             }}
                           >
@@ -1694,7 +1771,7 @@ export function UnifiedProjectManagement() {
 
       {currentUser?.role !== "employee" && (isCreating || editingProject) && (
         <Dialog open={true} onOpenChange={() => resetForm()}>
-          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="max-w-[90vw] max-h-[95vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingProject
@@ -2596,33 +2673,83 @@ export function UnifiedProjectManagement() {
 
       {/* Delete confirmation modal */}
       {currentUser?.role !== "employee" && (
-        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialog open={deleteOpen} onOpenChange={(open) => {
+          if (!open && !isDeleting) {
+            setDeleteOpen(false);
+            setDeleteError(null);
+          }
+        }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete project</AlertDialogTitle>
               <AlertDialogDescription>
-                This will permanently delete the project
-                {deleteTarget ? ` "${deleteTarget.name}"` : ""} and its
-                tasks/attachments metadata. This action cannot be undone.
+                {deleteError ? (
+                  <div className="text-red-600">
+                    <strong>Error:</strong> {deleteError}
+                    <br />
+                    <span className="text-sm text-gray-600">Please try again or contact support if the problem persists.</span>
+                  </div>
+                ) : isDeleting ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Deleting project and all associated files...
+                  </div>
+                ) : (
+                  <>
+                    This will permanently delete the project
+                    {deleteTarget ? ` "${deleteTarget.name}"` : ""} and its
+                    tasks/attachments metadata. This action cannot be undone.
+                  </>
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel 
+                disabled={isDeleting}
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteTarget(null);
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
                 onClick={async () => {
                   if (!deleteTarget) return;
+                  
+                  setIsDeleting(true);
+                  setDeleteError(null);
+                  
                   try {
-                    await deleteProjectApi(deleteTarget.id);
+                    const result = await deleteProjectApi(deleteTarget.id);
+                    deleteProjectLocal(deleteTarget.id);
+                    setDeleteTarget(null);
+                    setDeleteOpen(false);
+                    toast({ 
+                      title: "Project deleted successfully", 
+                      description: result.message || `Project "${deleteTarget.name}" and all its attachments/comments have been deleted`
+                    });
                   } catch (err) {
-                    // ignore API failure; proceed with local removal to keep UI responsive
+                    console.error('Delete project error:', err);
+                    const errorMessage = err instanceof Error ? err.message : "An error occurred while deleting the project";
+                    setDeleteError(errorMessage);
+                    // Don't close modal on error, let user see the error
+                  } finally {
+                    setIsDeleting(false);
                   }
-                  deleteProjectLocal(deleteTarget.id);
-                  setDeleteTarget(null);
-                  setDeleteOpen(false);
-                  toast({ title: "Project deleted" });
                 }}
+                disabled={isDeleting}
               >
-                Delete
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : deleteError ? (
+                  "Retry"
+                ) : (
+                  "Delete"
+                )}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
