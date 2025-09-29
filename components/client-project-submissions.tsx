@@ -54,6 +54,9 @@ import { getCurrentUser, type User } from "@/lib/auth";
 
 interface Submission {
   submission_id: string;
+  // Some rows may still have legacy fields; mark them optional for rendering fallbacks
+  contact_email?: string | null;
+  company_details?: string | null;
   client_id: string;
   project_type: string;
   description?: string;
@@ -61,7 +64,7 @@ interface Submission {
   budget: number;
   start_date?: string;
   end_date?: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "processing" | "in_review";
   priority: "low" | "medium" | "high";
   step2_data?: Record<string, any>;
   business_number?: string;
@@ -95,8 +98,9 @@ export function ClientProjectSubmissions() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewingId, setViewingId] = useState<string | null>(null);
-  const [viewData, setViewData] = useState<Submission | null>(null);
+  const [viewData, setViewData] = useState<any | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [showRawFields, setShowRawFields] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -135,6 +139,7 @@ export function ClientProjectSubmissions() {
   const [domainSuggestions, setDomainSuggestions] = useState("");
   const [websiteReferences, setWebsiteReferences] = useState("");
   const [featuresRequirements, setFeaturesRequirements] = useState("");
+  const [budgetTimeline, setBudgetTimeline] = useState("");
   const [logoIdeas, setLogoIdeas] = useState("");
   const [brandTheme, setBrandTheme] = useState("");
   const [designAssetsNeeded, setDesignAssetsNeeded] = useState("");
@@ -159,16 +164,109 @@ export function ClientProjectSubmissions() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("submissions")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // Load from both sources to support multiple deployments
+      const [submissionsRes, detailsRes] = await Promise.all([
+        supabase.from("submissions").select("*").order("created_at", { ascending: false }),
+        supabase
+          .from("client_project_details")
+          .select("*")
+          .order("created_at", { ascending: false }),
+      ]);
 
-      if (error) {
-        throw error;
+      if (submissionsRes.error && detailsRes.error) {
+        throw submissionsRes.error || detailsRes.error;
       }
 
-      setSubmissions(data || []);
+      const mapDetails = (row: any): Submission => ({
+        submission_id: row.id,
+        client_id: row.client_id || "",
+        project_type: ((): string => {
+          const svc = (row.selected_service || row.service || "").toString();
+          if (svc.includes("web")) return "web";
+          if (svc.includes("brand")) return "branding";
+          if (svc.includes("market")) return "marketing";
+          if (svc.includes("ai")) return "ai";
+          return "custom";
+        })(),
+        description: row.services_details || row.description || undefined,
+        client_name: row.client_name || undefined,
+        budget: Number(row.budget || 0),
+        start_date: row.start_date || undefined,
+        end_date: row.end_date || undefined,
+        status: (row.status || "pending").toLowerCase(),
+        priority: (row.priority || "medium").toLowerCase(),
+        step2_data: row.service_specific || undefined,
+        business_number: row.business_number || undefined,
+        company_email: row.company_email || undefined,
+        company_address: row.company_address || undefined,
+        about_company: row.company_details || undefined,
+        social_media_links: Array.isArray(row.social_links)
+          ? row.social_links.join(", ")
+          : row.social_links || undefined,
+        public_business_number: row.business_phone || undefined,
+        public_company_email: row.contact_email || undefined,
+        public_address: row.contact_address || undefined,
+        media_links: Array.isArray(row.media_links)
+          ? row.media_links.join(", ")
+          : row.media_links || undefined,
+        uploaded_media: row.uploaded_files || undefined,
+        bank_details:
+          typeof row.bank_details === "object"
+            ? JSON.stringify(row.bank_details)
+            : row.bank_details || undefined,
+        confirmation_checked: Boolean(row.confirmed) || false,
+        created_at: row.created_at,
+        approved_at: row.approved_at || undefined,
+        approved_by: row.approved_by || undefined,
+        // for table cells fallbacks
+        contact_email: row.contact_email || null,
+        company_details: row.company_details || null,
+      } as Submission);
+
+      const mapSubmission = (row: any): Submission => ({
+        submission_id: row.submission_id,
+        client_id: row.client_id || "",
+        project_type: row.project_type,
+        description: row.description || undefined,
+        client_name: row.client_name || undefined,
+        budget: Number(row.budget || 0),
+        start_date: row.start_date || undefined,
+        end_date: row.end_date || undefined,
+        status: (row.status || "pending").toLowerCase(),
+        priority: (row.priority || "medium").toLowerCase(),
+        step2_data: row.step2_data || undefined,
+        business_number: row.business_number || undefined,
+        company_email: row.company_email || undefined,
+        company_address: row.company_address || undefined,
+        about_company: row.about_company || undefined,
+        social_media_links: row.social_media_links || undefined,
+        public_business_number: row.public_business_number || undefined,
+        public_company_email: row.public_company_email || undefined,
+        public_address: row.public_address || undefined,
+        media_links: row.media_links || undefined,
+        uploaded_media: row.uploaded_media || undefined,
+        bank_details: row.bank_details || undefined,
+        confirmation_checked: Boolean(row.confirmation_checked) || false,
+        created_at: row.created_at,
+        approved_at: row.approved_at || undefined,
+        approved_by: row.approved_by || undefined,
+        contact_email: row.public_company_email || row.company_email || null,
+        company_details: row.about_company || row.company_address || null,
+      } as Submission);
+
+      const listFromDetails: Submission[] = Array.isArray(detailsRes.data)
+        ? detailsRes.data.map(mapDetails)
+        : [];
+      const listFromSubmissions: Submission[] = Array.isArray(submissionsRes.data)
+        ? submissionsRes.data.map(mapSubmission)
+        : [];
+
+      // Merge without duplicates (prefer details when both exist)
+      const byId = new Map<string, Submission>();
+      for (const item of listFromSubmissions) byId.set(item.submission_id, item);
+      for (const item of listFromDetails) byId.set(item.submission_id, item);
+
+      setSubmissions(Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
     } catch (e: any) {
       toast({
         title: "Failed to load submissions",
@@ -423,15 +521,78 @@ export function ClientProjectSubmissions() {
     setViewingId(s.submission_id);
     setViewLoading(true);
     setViewData(null);
+    setShowRawFields(false);
     try {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("client_project_details")
         .select("*")
-        .eq("id", s.id)
+        .eq("id", s.submission_id)
         .single();
-      if (error) throw error;
-      setViewData(data);
+      if (error || !data) {
+        // Fallback: normalize directly from the submissions row
+        const svcMap: Record<string, string> = {
+          web: "web-development",
+          branding: "branding-design",
+          marketing: "digital-marketing",
+          ai: "ai-solutions",
+          custom: "other",
+        };
+        let step2: any = s.step2_data || {};
+        if (typeof step2 === "string") {
+          const t = step2.trim();
+          if (t.startsWith("{") || t.startsWith("[")) {
+            try { step2 = JSON.parse(t); } catch {}
+          }
+        }
+        const normalized: any = {
+          id: s.submission_id,
+          status: s.status,
+          selected_service: svcMap[s.project_type] || s.project_type,
+          company_details: s.about_company || null,
+          business_phone: s.public_business_number || null,
+          company_email: s.company_email || null,
+          company_address: s.company_address || null,
+          contact_email: s.public_company_email || s.company_email || null,
+          contact_phone: s.public_business_number || null,
+          contact_address: s.public_address || null,
+          social_links: s.social_media_links || null,
+          media_links: s.media_links || null,
+          bank_details: s.bank_details || null,
+          created_at: s.created_at,
+          approved_project_id: null,
+          // Service-specific normalized view
+          service_specific: {
+            domainSuggestions: step2.domain_suggestions || null,
+            websiteReferences: step2.references || null,
+            featuresRequirements: Array.isArray(step2.features)
+              ? step2.features
+              : (step2.features_requirements as any) || null,
+            budgetTimeline: step2.budget_timeline || null,
+            logoIdeas: step2.logo_ideas || null,
+            brandTheme: step2.color_preferences || null,
+            designAssetsNeeded: Array.isArray(step2.design_assets)
+              ? step2.design_assets
+              : null,
+            marketingGoals: step2.marketing_goals || null,
+            channelsOfInterest: Array.isArray(step2.channels)
+              ? step2.channels
+              : null,
+            budgetRangeMonthly: step2.monthly_budget || null,
+            aiSolutionType: Array.isArray(step2.ai_solution_type)
+              ? step2.ai_solution_type
+              : null,
+            businessChallengeUseCase: step2.business_challenge || null,
+            dataAvailability: step2.data_availability || null,
+            budgetRange: step2.budget_range || null,
+            serviceDescription: step2.service_description || null,
+            expectedOutcome: step2.expected_outcome || null,
+          },
+        };
+        setViewData(normalized);
+      } else {
+        setViewData(data);
+      }
     } catch {
       setViewData(null);
     } finally {
@@ -446,7 +607,7 @@ export function ClientProjectSubmissions() {
       const { data } = await supabase
         .from("client_project_details")
         .select("*")
-        .eq("id", s.id)
+        .eq("id", s.submission_id)
         .single();
       if (data) {
         setCompanyEmail(data.company_email || "");
@@ -481,7 +642,12 @@ export function ClientProjectSubmissions() {
         domain_suggestions: domainSuggestions || null,
         website_references: websiteReferences || null,
       };
-      await updateClientSubmission(activeSubmissionId, updates);
+      // Persist updates via API to avoid importing client DB helpers in the UI component
+      await fetch(`/api/submissions/${activeSubmissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
       toast({ title: "Submission updated" });
       setEditOpen(false);
       setActiveSubmissionId(null);
@@ -559,12 +725,12 @@ export function ClientProjectSubmissions() {
                 </TableRow>
               ) : (
                 submissions.map((s) => (
-                  <TableRow key={s.id}>
+                  <TableRow key={s.submission_id}>
                     <TableCell className="font-medium whitespace-normal break-all max-w-[240px]">
-                      {s.contact_email || "—"}
+                      {s.contact_email || s.company_email || s.public_company_email || "—"}
                     </TableCell>
                     <TableCell className="whitespace-normal break-words max-w-[320px]">
-                      {s.company_details || "—"}
+                      {s.company_details || s.about_company || s.company_address || "—"}
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -572,6 +738,8 @@ export function ClientProjectSubmissions() {
                           s.status === "pending"
                             ? "destructive"
                             : s.status === "processing"
+                            ? "secondary"
+                            : s.status === "in_review"
                             ? "secondary"
                             : "default"
                         }
@@ -1192,6 +1360,14 @@ export function ClientProjectSubmissions() {
                       } catch {}
                     }
                   }
+                  // Pretty helpers
+                  const prettyValue = (v: any) => {
+                    if (v === null || v === undefined) return null;
+                    if (Array.isArray(v)) return v.filter(Boolean);
+                    if (typeof v === "object") return v;
+                    const s = String(v).trim();
+                    return s || null;
+                  };
                   const pick = (...keys: string[]) => {
                     for (const k of keys) {
                       const v = embedded?.[k] ?? viewData?.[k];
@@ -1225,14 +1401,29 @@ export function ClientProjectSubmissions() {
                     label: string;
                     value: any;
                   }) =>
-                    value ? (
+                    prettyValue(value) ? (
                       <div>
                         <div className="text-foreground/90">{label}</div>
-                        <div className="text-muted-foreground whitespace-pre-wrap">
-                          {Array.isArray(value)
-                            ? value.join(", ")
-                            : String(value)}
-                        </div>
+                        {Array.isArray(prettyValue(value)) ? (
+                          <div className="flex flex-wrap gap-2">
+                            {(prettyValue(value) as any[]).map((item, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-1 rounded bg-muted text-foreground text-xs"
+                              >
+                                {String(item)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : typeof prettyValue(value) === "object" ? (
+                          <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/40 rounded p-2">
+                            {JSON.stringify(prettyValue(value), null, 2)}
+                          </pre>
+                        ) : (
+                          <div className="text-muted-foreground whitespace-pre-wrap">
+                            {String(prettyValue(value))}
+                          </div>
+                        )}
                       </div>
                     ) : null;
 
@@ -1405,113 +1596,84 @@ export function ClientProjectSubmissions() {
                         />
                       </Section>
 
-                      {/* Comprehensive field render to ensure no fields are missed */}
-                      {(() => {
-                        const fields: Array<{ key: string; label: string }> = [
-                          { key: "id", label: "Submission ID" },
-                          { key: "status", label: "Status" },
-                          {
-                            key: "selected_service",
-                            label: "Selected service",
-                          },
-                          {
-                            key: "services_details",
-                            label: "Services details (raw)",
-                          },
-                          {
-                            key: "service_specific",
-                            label: "Service specific (JSON)",
-                          },
-                          { key: "company_details", label: "Company details" },
-                          { key: "business_phone", label: "Business phone" },
-                          { key: "company_email", label: "Company email" },
-                          { key: "company_address", label: "Company address" },
-                          { key: "social_links", label: "Social links" },
-                          { key: "contact_phone", label: "Contact phone" },
-                          { key: "contact_email", label: "Contact email" },
-                          { key: "contact_address", label: "Contact address" },
-                          { key: "media_links", label: "Media links" },
-                          { key: "bank_details", label: "Bank details (raw)" },
-                          { key: "logo_files", label: "Logo files" },
-                          { key: "media_files", label: "Media files" },
-                          {
-                            key: "domain_suggestions",
-                            label: "Domain suggestions",
-                          },
-                          {
-                            key: "website_references",
-                            label: "Website references",
-                          },
-                          {
-                            key: "logo_concepts",
-                            label: "Logo ideas / concepts",
-                          },
-                          { key: "brand_theme", label: "Color / brand theme" },
-                          { key: "has_uploads", label: "Has uploads" },
-                          {
-                            key: "approved_project_id",
-                            label: "Approved project ID",
-                          },
-                          { key: "approved_by", label: "Approved by" },
-                          { key: "approved_at", label: "Approved at" },
-                          {
-                            key: "rejection_reason",
-                            label: "Rejection reason",
-                          },
-                          { key: "created_at", label: "Created at" },
-                          { key: "updated_at", label: "Updated at" },
-                        ];
-
-                        const fmt = (v: any) => {
-                          if (v === null || v === undefined) return null;
-                          if (Array.isArray(v))
-                            return v.length ? v.join(", ") : null;
-                          if (typeof v === "object")
-                            return JSON.stringify(v, null, 2);
-                          const s = String(v);
-                          if (!s.trim()) return null;
-                          // Basic datetime prettify
-                          if (
-                            fields.some(
-                              (f) =>
-                                f.key === "created_at" ||
-                                f.key === "updated_at" ||
-                                f.key === "approved_at"
-                            )
-                          ) {
-                            // noop per-field; keep raw here, dedicated rows above already pretty-print
+                      {/* Optional raw field explorer to reduce duplicate content */}
+                      <div className="pt-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => setShowRawFields((x) => !x)}
+                          className="h-8"
+                        >
+                          {showRawFields ? "Hide Raw Fields" : "Show Raw Fields"}
+                        </Button>
+                      </div>
+                      {showRawFields && (() => {
+                        const isEmptyString = (s: any) =>
+                          typeof s === "string" && s.trim().length === 0;
+                        const isNullish = (v: any) => v === null || v === undefined;
+                        const cleanValue = (v: any): any => {
+                          if (isNullish(v)) return undefined;
+                          if (typeof v === "string") return isEmptyString(v) ? undefined : v;
+                          if (Array.isArray(v)) {
+                            const arr = v
+                              .map((x) => cleanValue(x))
+                              .filter((x) => !isNullish(x) && !(typeof x === "string" && isEmptyString(x)));
+                            return arr.length ? arr : undefined;
                           }
-                          return s;
+                          if (typeof v === "object") {
+                            const obj: any = {};
+                            for (const [key, val] of Object.entries(v)) {
+                              const cleaned = cleanValue(val);
+                              if (cleaned !== undefined) obj[key] = cleaned;
+                            }
+                            return Object.keys(obj).length ? obj : undefined;
+                          }
+                          return v;
                         };
 
-                        const knownKeys = new Set(fields.map((f) => f.key));
-                        const otherKeys = Object.keys(viewData || {}).filter(
-                          (k) => !knownKeys.has(k)
-                        );
+                        // Build a cleaned copy without empty/null values
+                        const cleaned: any = {};
+                        for (const [k, v] of Object.entries(viewData || {})) {
+                          let value: any = v;
+                          if (k === "social_links" || k === "media_links" || k === "business_phone" || k === "contact_phone") {
+                            if (typeof value === "string") {
+                              value = value
+                                .split(/\n|,\s*/g)
+                                .map((x: string) => x.trim())
+                                .filter(Boolean);
+                            }
+                          }
+                          if (k === "service_specific" && typeof value === "object") {
+                            value = cleanValue(value);
+                          }
+                          const cleanedVal = cleanValue(value);
+                          if (cleanedVal !== undefined) cleaned[k] = cleanedVal;
+                        }
 
+                        const entries = Object.entries(cleaned);
+                        if (!entries.length) return null;
                         return (
-                          <>
-                            <Section title="All Fields">
-                              {fields.map(({ key, label }) => (
-                                <Row
-                                  key={key}
-                                  label={label}
-                                  value={fmt((viewData as any)[key])}
-                                />
-                              ))}
-                            </Section>
-                            {otherKeys.length > 0 && (
-                              <Section title="Other Fields">
-                                {otherKeys.map((k) => (
-                                  <Row
-                                    key={k}
-                                    label={k}
-                                    value={fmt((viewData as any)[k])}
-                                  />
-                                ))}
-                              </Section>
-                            )}
-                          </>
+                          <Section title="Raw Fields">
+                            {entries.map(([k, v]) => (
+                              <div key={k}>
+                                <div className="text-foreground/90">{k}</div>
+                                {Array.isArray(v) ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {v.map((item, idx) => (
+                                      <span key={idx} className="px-2 py-1 rounded bg-muted text-foreground text-xs">
+                                        {String(item)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : typeof v === "object" ? (
+                                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/40 rounded p-2">
+                                    {JSON.stringify(v, null, 2)}
+                                  </pre>
+                                ) : (
+                                  <div className="text-muted-foreground">{String(v)}</div>
+                                )}
+                              </div>
+                            ))}
+                          </Section>
                         );
                       })()}
                     </>
