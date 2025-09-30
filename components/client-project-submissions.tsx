@@ -491,75 +491,49 @@ export function ClientProjectSubmissions() {
     setShowRawFields(false);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("client_project_details")
+      // Prefer reading from submissions (always exists), no legacy call to avoid 404 noise
+      const { data: fullSub } = await supabase
+        .from("submissions")
         .select("*")
-        .eq("id", s.submission_id)
+        .eq("submission_id", s.submission_id)
         .single();
-      if (error || !data) {
-        // Fallback: normalize directly from the submissions row
-        const svcMap: Record<string, string> = {
-          web: "web-development",
-          branding: "branding-design",
-          marketing: "digital-marketing",
-          ai: "ai-solutions",
-          custom: "other",
-        };
-        let step2: any = s.step2_data || {};
-        if (typeof step2 === "string") {
-          const t = step2.trim();
-          if (t.startsWith("{") || t.startsWith("[")) {
-            try { step2 = JSON.parse(t); } catch {}
-          }
+
+      const subRow = fullSub || ({} as any);
+      const svcMap: Record<string, string> = {
+        web: "web-development",
+        branding: "branding-design",
+        marketing: "digital-marketing",
+        ai: "ai-solutions",
+        custom: "other",
+      };
+      let step2: any = subRow.step2_data || s.step2_data || {};
+      if (typeof step2 === "string") {
+        const t = step2.trim();
+        if (t.startsWith("{") || t.startsWith("[")) {
+          try { step2 = JSON.parse(t); } catch {}
         }
-        const normalized: any = {
-          id: s.submission_id,
-          status: s.status,
-          selected_service: svcMap[s.project_type] || s.project_type,
-          company_details: s.about_company || null,
-          business_phone: s.public_business_number || null,
-          company_email: s.company_email || null,
-          company_address: s.company_address || null,
-          contact_email: s.public_company_email || s.company_email || null,
-          contact_phone: s.public_business_number || null,
-          contact_address: s.public_address || null,
-          social_links: s.social_media_links || null,
-          media_links: s.media_links || null,
-          bank_details: s.bank_details || null,
-          created_at: s.created_at,
-          approved_project_id: null,
-          // Service-specific normalized view
-          service_specific: {
-            domainSuggestions: step2.domain_suggestions || null,
-            websiteReferences: step2.references || null,
-            featuresRequirements: Array.isArray(step2.features)
-              ? step2.features
-              : (step2.features_requirements as any) || null,
-            budgetTimeline: step2.budget_timeline || null,
-            logoIdeas: step2.logo_ideas || null,
-            brandTheme: step2.color_preferences || null,
-            designAssetsNeeded: Array.isArray(step2.design_assets)
-              ? step2.design_assets
-              : null,
-            marketingGoals: step2.marketing_goals || null,
-            channelsOfInterest: Array.isArray(step2.channels)
-              ? step2.channels
-              : null,
-            budgetRangeMonthly: step2.monthly_budget || null,
-            aiSolutionType: Array.isArray(step2.ai_solution_type)
-              ? step2.ai_solution_type
-              : null,
-            businessChallengeUseCase: step2.business_challenge || null,
-            dataAvailability: step2.data_availability || null,
-            budgetRange: step2.budget_range || null,
-            serviceDescription: step2.service_description || null,
-            expectedOutcome: step2.expected_outcome || null,
-          },
-        };
-        setViewData(normalized);
-      } else {
-      setViewData(data);
       }
+      const normalized: any = {
+        id: s.submission_id,
+        status: subRow.status || s.status,
+        selected_service: step2.selected_service || step2.selectedService || svcMap[subRow.project_type || s.project_type] || s.project_type,
+        project_type: subRow.project_type || s.project_type,
+        company_details: subRow.about_company || s.about_company || null,
+        business_phone: subRow.public_business_number || s.public_business_number || null,
+        company_email: subRow.company_email || s.company_email || null,
+        company_address: subRow.company_address || s.company_address || null,
+        contact_email: subRow.public_company_email || subRow.company_email || s.public_company_email || s.company_email || null,
+        contact_phone: subRow.public_business_number || s.public_business_number || null,
+        contact_address: subRow.public_address || s.public_address || null,
+        social_links: subRow.social_media_links || s.social_media_links || null,
+        media_links: subRow.media_links || s.media_links || null,
+        bank_details: subRow.bank_details || s.bank_details || null,
+        created_at: subRow.created_at || s.created_at,
+        approved_project_id: null,
+        step2_data: step2,
+      };
+      try { console.debug('[Submission View] step2_data (from submissions preferred):', step2); } catch {}
+      setViewData(normalized);
     } catch {
       setViewData(null);
     } finally {
@@ -655,15 +629,29 @@ export function ClientProjectSubmissions() {
   const confirmEdit = async () => {
     if (!activeSubmissionId) return;
     try {
-      const step2Payload = {
-        selected_service: selectedService || null,
-        domain_suggestions: domainSuggestions || null,
-        website_references: websiteReferences || null,
-        features_requirements: featuresRequirements || null,
-        budget_timeline: budgetTimeline || null,
-        logo_ideas: logoIdeas || null,
-        brand_theme: brandTheme || null,
+      // Build step2_data with only non-empty values using the agreed schema keys
+      const step2Payload: Record<string, any> = {};
+      const setIf = (k: string, v: any) => {
+        const isEmpty = v === undefined || v === null || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0);
+        if (!isEmpty) step2Payload[k] = v;
       };
+      setIf('selected_service', selectedService);
+      setIf('domainSuggestions', domainSuggestions);
+      setIf('websiteReferences', websiteReferences);
+      setIf('featuresRequirements', featuresRequirements);
+      setIf('logoIdeasConcepts', logoIdeas);
+      setIf('colorBrandTheme', brandTheme);
+      setIf('designAssetsNeeded', designAssetsNeeded as any);
+      setIf('targetAudienceIndustry', targetAudienceIndustry as any);
+      setIf('marketingGoals', (marketingGoals as any) || undefined);
+      setIf('channelsOfInterest', channelsOfInterest as any);
+      setIf('budgetRangeMonthly', budgetRangeMonthly as any);
+      setIf('aiSolutionType', aiSolutionType as any);
+      setIf('businessChallengeUseCase', businessChallengeUseCase as any);
+      setIf('dataAvailability', dataAvailability as any);
+      setIf('budgetRange', budgetRange as any);
+      setIf('serviceDescription', serviceDescription as any);
+      setIf('expectedOutcome', expectedOutcome as any);
 
       const updates: Record<string, any> = {
         // Step 3
@@ -847,6 +835,7 @@ export function ClientProjectSubmissions() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Submission (Steps 2–6)</DialogTitle>
+            <DialogDescription className="sr-only">Edit client submission fields from steps 2 to 6.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1117,6 +1106,7 @@ export function ClientProjectSubmissions() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Submission details</DialogTitle>
+            <DialogDescription className="sr-only">View full client submission details.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-sm">
             {viewLoading && (
@@ -1142,7 +1132,22 @@ export function ClientProjectSubmissions() {
             {!viewLoading && viewData && (
               <>
                 {(() => {
-                  const svc = (viewData.selected_service || "").toString();
+                  // Prefer service set inside step2_data, then top-level, then project_type
+                  const step2Svc = (viewData.step2_data?.selected_service || viewData.step2_data?.selectedService || (typeof viewData.service_specific === 'object' ? (viewData.service_specific as any)?.selected_service : undefined)) as any;
+                  const rawSvc = (step2Svc || viewData.selected_service || viewData.project_type || "").toString();
+                  const svcMap: Record<string, string> = {
+                    web: "web-development",
+                    "web-development": "web-development",
+                    branding: "branding-design",
+                    "branding-design": "branding-design",
+                    marketing: "digital-marketing",
+                    "digital-marketing": "digital-marketing",
+                    ai: "ai-solutions",
+                    "ai-solutions": "ai-solutions",
+                    custom: "other",
+                    other: "other",
+                  };
+                  const svc = svcMap[rawSvc] || rawSvc;
                   let embedded: any = null;
                   if (
                     viewData.service_specific &&
@@ -1278,199 +1283,79 @@ export function ClientProjectSubmissions() {
                         />
                       </Section>
 
-                      <Section title="Service">
-                        <Row
-                          label="Services details"
-                          value={viewData.services_details}
-                        />
-                        {svc === "web-development" && (
-                          <>
-                            <Row
-                              label="Domain suggestions"
-                              value={pick(
-                                "domainSuggestions",
-                                "domain_suggestions"
-                              )}
-                            />
-                            <Row
-                              label="Website references"
-                              value={pick(
-                                "websiteReferences",
-                                "website_references"
-                              )}
-                            />
-                            <Row
-                              label="Features / requirements"
-                              value={pick(
-                                "featuresRequirements",
-                                "features_requirements_svc"
-                              )}
-                            />
-                            <Row
-                              label="Budget / timeline"
-                              value={pick(
-                                "budgetTimeline",
-                                "budget_timeline_svc"
-                              )}
-                            />
-                          </>
-                        )}
-                        {svc === "branding-design" && (
-                          <>
-                            <Row
-                              label="Logo ideas / concepts"
-                              value={pick("logoIdeas", "logo_concepts")}
-                            />
-                            <Row
-                              label="Color / brand theme"
-                              value={pick("brandTheme", "brand_theme")}
-                            />
-                            <Row
-                              label="Design assets needed"
-                              value={pick("designAssetsNeeded")}
-                            />
-                          </>
-                        )}
-                        {svc === "digital-marketing" && (
-                          <>
-                            <Row
-                              label="Marketing goals"
-                              value={pick("marketingGoals")}
-                            />
-                            <Row
-                              label="Channels of interest"
-                              value={pick("channelsOfInterest")}
-                            />
-                            <Row
-                              label="Monthly budget range"
-                              value={pick("budgetRangeMonthly")}
-                            />
-                          </>
-                        )}
-                        {svc === "ai-solutions" && (
-                          <>
-                            <Row
-                              label="AI solution type"
-                              value={pick("aiSolutionType")}
-                            />
-                            <Row
-                              label="Business challenge / use case"
-                              value={pick("businessChallengeUseCase")}
-                            />
-                            <Row
-                              label="Data availability"
-                              value={pick("dataAvailability")}
-                            />
-                            <Row
-                              label="Overall budget range"
-                              value={pick("budgetRange")}
-                            />
-                          </>
-                        )}
-                        {svc === "other" && (
-                          <>
-                            <Row
-                              label="Service description"
-                              value={pick("serviceDescription")}
-                            />
-                            <Row
-                              label="Expected outcome"
-                              value={pick("expectedOutcome")}
-                            />
-                          </>
-                        )}
-                      </Section>
-
-                      <Section title="Files">
-                        <Row label="Logo files" value={viewData.logo_files} />
-                        <Row label="Media files" value={viewData.media_files} />
-                      </Section>
-
-                      <Section title="Billing">
-                        <Row
-                          label="Bank details"
-                          value={pick("bankDetails", "bank_details")}
-                        />
-                      </Section>
-
-                      {/* Optional raw field explorer to reduce duplicate content */}
-                      <div className="pt-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => setShowRawFields((x) => !x)}
-                          className="h-8"
-                        >
-                          {showRawFields ? "Hide Raw Fields" : "Show Raw Fields"}
-                        </Button>
-                      </div>
-                      {showRawFields && (() => {
-                        const isEmptyString = (s: any) =>
-                          typeof s === "string" && s.trim().length === 0;
-                        const isNullish = (v: any) => v === null || v === undefined;
-                        const cleanValue = (v: any): any => {
-                          if (isNullish(v)) return undefined;
-                          if (typeof v === "string") return isEmptyString(v) ? undefined : v;
-                          if (Array.isArray(v)) {
-                            const arr = v
-                              .map((x) => cleanValue(x))
-                              .filter((x) => !isNullish(x) && !(typeof x === "string" && isEmptyString(x)));
-                            return arr.length ? arr : undefined;
+                      {(() => {
+                        const step2 = embedded ?? viewData.step2_data ?? {};
+                        const s = String(svc);
+                        const pickStep2 = (...keys: string[]) => {
+                          for (const k of keys) {
+                            const snake = k
+                              .replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)
+                              .replace(/^_/, "");
+                            const val = (step2 as any)[k] ?? (step2 as any)[snake];
+                            if (val !== undefined && val !== null && String(val).trim?.() !== "") return val;
                           }
-                          if (typeof v === "object") {
-                            const obj: any = {};
-                            for (const [key, val] of Object.entries(v)) {
-                              const cleaned = cleanValue(val);
-                              if (cleaned !== undefined) obj[key] = cleaned;
-                            }
-                            return Object.keys(obj).length ? obj : undefined;
-                          }
-                          return v;
+                          return null;
                         };
+                        const aliasPick = (aliases: string[]) => pickStep2(...aliases);
 
-                        // Build a cleaned copy without empty/null values
-                        const cleaned: any = {};
-                        for (const [k, v] of Object.entries(viewData || {})) {
-                          let value: any = v;
-                          if (k === "social_links" || k === "media_links" || k === "business_phone" || k === "contact_phone") {
-                            if (typeof value === "string") {
-                              value = value
-                                .split(/\n|,\s*/g)
-                                .map((x: string) => x.trim())
-                                .filter(Boolean);
-                            }
-                          }
-                          if (k === "service_specific" && typeof value === "object") {
-                            value = cleanValue(value);
-                          }
-                          const cleanedVal = cleanValue(value);
-                          if (cleanedVal !== undefined) cleaned[k] = cleanedVal;
-                        }
-
-                        const entries = Object.entries(cleaned);
-                        if (!entries.length) return null;
                         return (
-                          <Section title="Raw Fields">
-                            {entries.map(([k, v]) => (
-                              <div key={k}>
-                                <div className="text-foreground/90">{k}</div>
-                                {Array.isArray(v) ? (
-                                  <div className="flex flex-wrap gap-2">
-                                    {v.map((item, idx) => (
-                                      <span key={idx} className="px-2 py-1 rounded bg-muted text-foreground text-xs">
-                                        {String(item)}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : typeof v === "object" ? (
-                                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/40 rounded p-2">
-                                    {JSON.stringify(v, null, 2)}
-                                  </pre>
-                                ) : (
-                                  <div className="text-muted-foreground">{String(v)}</div>
-                                )}
-                              </div>
-                                ))}
-                              </Section>
+                          <>
+                            <Section title="Service">
+                              <Row label="Selected service" value={svc} />
+                              {s === "web-development" && (
+                                <>
+                                  <Row label="Domain suggestions" value={aliasPick(["domainSuggestions","domain_suggestions","domain_suggestions_svc"])} />
+                                  <Row label="Website references" value={aliasPick(["websiteReferences","website_references","references"])} />
+                                  <Row label="Features / Requirements" value={aliasPick(["featuresRequirements","features","features_requirements","features_requirements_svc"])} />
+                                </>
+                              )}
+
+                              {s === "branding-design" && (
+                                <>
+                                  <Row label="Logo ideas / concepts" value={aliasPick(["logoIdeasConcepts","logoIdeas","logo_concepts"]) } />
+                                  <Row label="Color / brand theme" value={aliasPick(["colorBrandTheme","brandTheme","color_preferences","brand_theme"]) } />
+                                  <Row label="Design assets needed" value={aliasPick(["designAssetsNeeded","design_assets"]) } />
+                                </>
+                              )}
+
+                              {s === "digital-marketing" && (
+                                <>
+                                  <Row label="Target audience / industry" value={aliasPick(["targetAudienceIndustry"]) } />
+                                  <Row label="Marketing goals" value={aliasPick(["marketingGoals","marketing_goals"]) } />
+                                  <Row label="Channels of interest" value={aliasPick(["channelsOfInterest","channels"]) } />
+                                  <Row label="Monthly budget range" value={aliasPick(["budgetRangeMonthly","monthly_budget"]) } />
+                                </>
+                              )}
+
+                              {s === "ai-solutions" && (
+                                <>
+                                  <Row label="AI solution type" value={aliasPick(["aiSolutionType","ai_solution_type"]) } />
+                                  <Row label="Business challenge / use case" value={aliasPick(["businessChallengeUseCase","business_challenge"]) } />
+                                  <Row label="Data availability" value={aliasPick(["dataAvailability","data_availability"]) } />
+                                  <Row label="Overall budget range" value={aliasPick(["budgetRange","budget_range"]) } />
+                                </>
+                              )}
+
+                              {s === "other" && (
+                                <>
+                                  <Row label="Service description" value={aliasPick(["serviceDescription","service_description"]) } />
+                                  <Row label="Expected outcome" value={aliasPick(["expectedOutcome","expected_outcome"]) } />
+                                </>
+                              )}
+                            </Section>
+
+                            <Section title="Files">
+                              <Row label="Logo files" value={viewData.logo_files} />
+                              <Row label="Media files" value={viewData.media_files} />
+                            </Section>
+
+                            <Section title="Billing">
+                              <Row
+                                label="Bank details"
+                                value={pick("bankDetails", "bank_details")}
+                              />
+                            </Section>
+                          </>
                         );
                       })()}
                     </>

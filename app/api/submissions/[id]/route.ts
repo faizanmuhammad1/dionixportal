@@ -14,7 +14,27 @@ export async function PATCH(
 
     // Map incoming fields to submissions columns for steps 2–6
     const submissionsUpdate: Record<string, any> = {};
-    if (body.step2_data !== undefined) submissionsUpdate.step2_data = body.step2_data;
+    if (body.step2_data !== undefined) {
+      // Merge with existing step2_data to avoid overwriting with nulls
+      let existing: any = {};
+      try {
+        const { data: existingRow } = await supabase
+          .from('submissions')
+          .select('step2_data')
+          .eq('submission_id', params.id)
+          .single();
+        existing = (existingRow as any)?.step2_data || {};
+      } catch {}
+      const merged = { ...(typeof existing === 'object' && existing ? existing : {}), ...(body.step2_data || {}) };
+      // Remove null/undefined keys to prevent wiping values unintentionally
+      for (const k of Object.keys(merged)) {
+        const v = (merged as any)[k];
+        if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) {
+          delete (merged as any)[k];
+        }
+      }
+      submissionsUpdate.step2_data = merged;
+    }
     if (body.business_number !== undefined) submissionsUpdate.business_number = body.business_number;
     if (body.company_email !== undefined) submissionsUpdate.company_email = body.company_email;
     if (body.company_address !== undefined) submissionsUpdate.company_address = body.company_address;
