@@ -104,6 +104,7 @@ export function ClientProjectSubmissions() {
   const [viewLoading, setViewLoading] = useState(false);
   const [showRawFields, setShowRawFields] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editStep, setEditStep] = useState<2 | 3 | 4 | 5 | 6>(2);
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -568,25 +569,84 @@ export function ClientProjectSubmissions() {
 
   const openEdit = async (s: Submission) => {
     setActiveSubmissionId(s.submission_id);
+    // Pre-fill selected service from current row while fetching more details
+    setSelectedService(s.project_type || "");
+    setEditStep(2);
     try {
       const supabase = createClient();
-      const { data } = await supabase
-        .from("client_project_details")
-        .select("*")
-        .eq("id", s.submission_id)
-        .single();
-      if (data) {
-        setCompanyEmail(data.company_email || "");
-        setCompanyAddress(data.company_address || "");
-        setAboutCompany(data.company_details || "");
-        setPublicPhone(data.business_phone || data.contact_phone || "");
-        setPublicCompanyEmail(data.contact_email || "");
-        setPublicCompanyAddress(data.contact_address || "");
-        setSocialLinks((data.social_links || "").toString());
-        setMediaLinks((data.media_links || "").toString());
-        setSelectedService(data.selected_service || "");
-        setDomainSuggestions(data.domain_suggestions || "");
-        setWebsiteReferences(data.website_references || "");
+      // Load from legacy details (if exists)
+      const [{ data: legacy }, { data: sub }] = await Promise.all([
+        supabase
+          .from("client_project_details")
+          .select("*")
+          .eq("id", s.submission_id)
+          .single(),
+        supabase
+          .from("submissions")
+          .select(
+            "project_type, step2_data, business_number, company_email, company_address, about_company, social_media_links, public_business_number, public_company_email, public_address, media_links, uploaded_media, bank_details"
+          )
+          .eq("submission_id", s.submission_id)
+          .single(),
+      ]);
+
+      // Prefer latest submissions table, fall back to legacy where missing
+      if (sub) {
+        setCompanyNumber(sub.business_number || legacy?.business_number || "");
+        setCompanyEmail(sub.company_email || legacy?.company_email || "");
+        setCompanyAddress(sub.company_address || legacy?.company_address || "");
+        setAboutCompany(sub.about_company || legacy?.company_details || "");
+        setPublicPhone(
+          sub.public_business_number || legacy?.business_phone || legacy?.contact_phone || ""
+        );
+        setPublicCompanyEmail(sub.public_company_email || legacy?.contact_email || "");
+        setPublicCompanyAddress(sub.public_address || legacy?.contact_address || "");
+        setSocialLinks(
+          (sub.social_media_links || legacy?.social_links || "").toString()
+        );
+        setMediaLinks((sub.media_links || legacy?.media_links || "").toString());
+
+        // Step 2 data mapping (supports snake_case and camelCase from backend)
+        const step2: any = sub.step2_data || {};
+        setSelectedService(
+          step2.selected_service || step2.selectedService || legacy?.selected_service || sub.project_type || s.project_type || ""
+        );
+        setDomainSuggestions(
+          step2.domain_suggestions || step2.domainSuggestions || legacy?.domain_suggestions || ""
+        );
+        setWebsiteReferences(
+          step2.website_references || step2.websiteReferences || legacy?.website_references || ""
+        );
+        const featuresReq = step2.features_requirements || step2.featuresRequirements;
+        if (featuresReq !== undefined) setFeaturesRequirements(featuresReq);
+        const budgetTl = step2.budget_timeline || step2.budgetTimeline;
+        if (budgetTl !== undefined) setBudgetTimeline(budgetTl);
+        const logoId = step2.logo_ideas || step2.logoIdeas;
+        if (logoId !== undefined) setLogoIdeas(logoId);
+        const brandTh = step2.brand_theme || step2.brandTheme;
+        if (brandTh !== undefined) setBrandTheme(brandTh);
+
+        // Bank details mapping (submission bank_details may be JSON string)
+        let bank: any = sub.bank_details;
+        try { if (typeof bank === "string") bank = JSON.parse(bank); } catch {}
+        setBankAccountName(bank?.account_name || "");
+        setBankAccountNumber(bank?.account_number || "");
+        setBankIban(bank?.iban || "");
+        setBankSwift(bank?.swift || "");
+      } else if (legacy) {
+        setCompanyNumber(legacy.business_number || "");
+        // Legacy only
+        setCompanyEmail(legacy.company_email || "");
+        setCompanyAddress(legacy.company_address || "");
+        setAboutCompany(legacy.company_details || "");
+        setPublicPhone(legacy.business_phone || legacy.contact_phone || "");
+        setPublicCompanyEmail(legacy.contact_email || "");
+        setPublicCompanyAddress(legacy.contact_address || "");
+        setSocialLinks((legacy.social_links || "").toString());
+        setMediaLinks((legacy.media_links || "").toString());
+        setSelectedService(legacy.selected_service || "");
+        setDomainSuggestions(legacy.domain_suggestions || "");
+        setWebsiteReferences(legacy.website_references || "");
       }
     } catch {}
     setEditOpen(true);
@@ -595,18 +655,31 @@ export function ClientProjectSubmissions() {
   const confirmEdit = async () => {
     if (!activeSubmissionId) return;
     try {
+      const step2Payload = {
+        selected_service: selectedService || null,
+        domain_suggestions: domainSuggestions || null,
+        website_references: websiteReferences || null,
+        features_requirements: featuresRequirements || null,
+        budget_timeline: budgetTimeline || null,
+        logo_ideas: logoIdeas || null,
+        brand_theme: brandTheme || null,
+      };
+
       const updates: Record<string, any> = {
+        // Step 3
+        business_number: companyNumber || null,
         company_email: companyEmail || null,
         company_address: companyAddress || null,
         company_details: aboutCompany || null,
+        // Step 4 (legacy names kept for backward compatibility)
         contact_phone: publicPhone || null,
         contact_email: publicCompanyEmail || null,
         contact_address: publicCompanyAddress || null,
         social_links: socialLinks || null,
+        // Step 5
         media_links: mediaLinks || null,
-        selected_service: selectedService || null,
-        domain_suggestions: domainSuggestions || null,
-        website_references: websiteReferences || null,
+        // Step 2 (structured for new submissions table + used to populate legacy)
+        step2_data: step2Payload,
       };
       // Persist updates via API to avoid importing client DB helpers in the UI component
       await fetch(`/api/submissions/${activeSubmissionId}`, {
@@ -770,97 +843,152 @@ export function ClientProjectSubmissions() {
       </Card>
 
       {/* Edit Submission dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+      <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (!o) setEditStep(2); }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Edit Submission</DialogTitle>
+            <DialogTitle>Edit Submission (Steps 2–6)</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Company email</label>
-                <Input
-                  value={companyEmail}
-                  onChange={(e) => setCompanyEmail(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Company address</label>
-                <Input
-                  value={companyAddress}
-                  onChange={(e) => setCompanyAddress(e.target.value)}
-                />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">Step {editStep} of 6</div>
+              <div className="flex gap-1">
+                {[2,3,4,5,6].map((s) => (
+                  <div key={s} className={`h-1.5 w-8 rounded ${editStep >= (s as any) ? 'bg-primary' : 'bg-muted'}`} />
+                ))}
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm">About company</label>
-              <Textarea
-                value={aboutCompany}
-                onChange={(e) => setAboutCompany(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Contact phone</label>
-                <Input
-                  value={publicPhone}
-                  onChange={(e) => setPublicPhone(e.target.value)}
-                />
+
+            {editStep === 2 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm">Selected service</label>
+                    <Input value={selectedService} disabled readOnly />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm">Domain suggestions</label>
+                    <Textarea value={domainSuggestions} onChange={(e) => setDomainSuggestions(e.target.value)} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">Website references</label>
+                  <Textarea value={websiteReferences} onChange={(e) => setWebsiteReferences(e.target.value)} />
+                </div>
+
+                {/* Conditional fields by selected service */}
+                {(selectedService?.toLowerCase?.().includes("web") || selectedService?.toLowerCase?.().includes("development")) && (
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm">Features / Requirements</label>
+                      <Textarea value={featuresRequirements} onChange={(e) => setFeaturesRequirements(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+
+                {(selectedService?.toLowerCase?.().includes("branding") || selectedService?.toLowerCase?.().includes("design")) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm">Logo ideas</label>
+                      <Textarea value={logoIdeas} onChange={(e) => setLogoIdeas(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm">Brand theme</label>
+                      <Textarea value={brandTheme} onChange={(e) => setBrandTheme(e.target.value)} />
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">Contact email</label>
-                <Input
-                  value={publicCompanyEmail}
-                  onChange={(e) => setPublicCompanyEmail(e.target.value)}
-                />
+            )}
+
+            {editStep === 3 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm">Business number</label>
+                  <Input value={companyNumber} onChange={(e) => setCompanyNumber(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">Company email</label>
+                  <Input value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm">Company address</label>
+                  <Input value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm">About company</label>
+                  <Textarea value={aboutCompany} onChange={(e) => setAboutCompany(e.target.value)} />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">Contact address</label>
-                <Input
-                  value={publicCompanyAddress}
-                  onChange={(e) => setPublicCompanyAddress(e.target.value)}
-                />
+            )}
+
+            {editStep === 4 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm">Public phone</label>
+                  <Input value={publicPhone} onChange={(e) => setPublicPhone(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">Public email</label>
+                  <Input value={publicCompanyEmail} onChange={(e) => setPublicCompanyEmail(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">Public address</label>
+                  <Input value={publicCompanyAddress} onChange={(e) => setPublicCompanyAddress(e.target.value)} />
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <label className="text-sm">Social links (CSV)</label>
+                  <Input value={socialLinks} onChange={(e) => setSocialLinks(e.target.value)} />
+                </div>
               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Selected service</label>
-                <Input
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                />
+            )}
+
+            {editStep === 5 && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm">Media links (CSV)</label>
+                  <Input value={mediaLinks} onChange={(e) => setMediaLinks(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm">Bank account name</label>
+                    <Input value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm">Bank account number</label>
+                    <Input value={bankAccountNumber} onChange={(e) => setBankAccountNumber(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm">IBAN</label>
+                    <Input value={bankIban} onChange={(e) => setBankIban(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm">SWIFT</label>
+                    <Input value={bankSwift} onChange={(e) => setBankSwift(e.target.value)} />
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm">Social links (CSV)</label>
-                <Input
-                  value={socialLinks}
-                  onChange={(e) => setSocialLinks(e.target.value)}
-                />
+            )}
+
+            {editStep === 6 && (
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <div>Review your changes for steps 2–5 and click Save to update the submission.</div>
               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm">Domain suggestions</label>
-                <Textarea
-                  value={domainSuggestions}
-                  onChange={(e) => setDomainSuggestions(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm">Website references</label>
-                <Textarea
-                  value={websiteReferences}
-                  onChange={(e) => setWebsiteReferences(e.target.value)}
-                />
+            )}
+
+            <div className="flex items-center justify-between pt-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={editStep === 2} onClick={() => setEditStep((prev) => (prev > 2 ? (prev - 1) as any : prev))}>Back</Button>
+                {editStep < 6 ? (
+                  <Button onClick={() => setEditStep((prev) => (prev < 6 ? (prev + 1) as any : prev))}>Next</Button>
+                ) : (
+                  <Button onClick={confirmEdit}>Save Changes</Button>
+                )}
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={confirmEdit}>Save Changes</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

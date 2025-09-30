@@ -1,6 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createAdminSupabaseClient } from '@/lib/supabase-server';
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await request.json();
+
+    // Map incoming fields to submissions columns for steps 2–6
+    const submissionsUpdate: Record<string, any> = {};
+    if (body.step2_data !== undefined) submissionsUpdate.step2_data = body.step2_data;
+    if (body.business_number !== undefined) submissionsUpdate.business_number = body.business_number;
+    if (body.company_email !== undefined) submissionsUpdate.company_email = body.company_email;
+    if (body.company_address !== undefined) submissionsUpdate.company_address = body.company_address;
+    if (body.about_company !== undefined) submissionsUpdate.about_company = body.about_company;
+    if (body.social_media_links !== undefined) submissionsUpdate.social_media_links = body.social_media_links;
+    if (body.public_business_number !== undefined) submissionsUpdate.public_business_number = body.public_business_number;
+    if (body.public_company_email !== undefined) submissionsUpdate.public_company_email = body.public_company_email;
+    if (body.public_address !== undefined) submissionsUpdate.public_address = body.public_address;
+    if (body.media_links !== undefined) submissionsUpdate.media_links = body.media_links;
+    if (body.uploaded_media !== undefined) submissionsUpdate.uploaded_media = body.uploaded_media;
+    if (body.bank_details !== undefined) submissionsUpdate.bank_details = body.bank_details;
+    if (body.confirmation_checked !== undefined) submissionsUpdate.confirmation_checked = body.confirmation_checked;
+
+    if (Object.keys(submissionsUpdate).length > 0) {
+      const { error } = await supabase
+        .from('submissions')
+        .update(submissionsUpdate)
+        .eq('submission_id', params.id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Best-effort legacy table sync if present
+    try {
+      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        const admin = createAdminSupabaseClient();
+        const legacyUpdate: Record<string, any> = {};
+        if (body.company_email !== undefined) legacyUpdate.company_email = body.company_email;
+        if (body.company_address !== undefined) legacyUpdate.company_address = body.company_address;
+        if (body.about_company !== undefined) legacyUpdate.company_details = body.about_company;
+        if (body.public_business_number !== undefined) legacyUpdate.business_phone = body.public_business_number;
+        if (body.public_company_email !== undefined) legacyUpdate.contact_email = body.public_company_email;
+        if (body.public_address !== undefined) legacyUpdate.contact_address = body.public_address;
+        if (body.social_media_links !== undefined) legacyUpdate.social_links = body.social_media_links;
+        if (body.media_links !== undefined) legacyUpdate.media_links = body.media_links;
+        if (body.step2_data?.selected_service !== undefined) legacyUpdate.selected_service = body.step2_data.selected_service;
+        if (body.step2_data?.domain_suggestions !== undefined) legacyUpdate.domain_suggestions = body.step2_data.domain_suggestions;
+        if (body.step2_data?.website_references !== undefined) legacyUpdate.website_references = body.step2_data.website_references;
+        if (Object.keys(legacyUpdate).length > 0) {
+          await admin.from('client_project_details').update(legacyUpdate).eq('id', params.id);
+        }
+      }
+    } catch {}
+
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: 'Failed to update submission' }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
