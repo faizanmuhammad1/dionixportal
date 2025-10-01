@@ -12,6 +12,140 @@ export class ProjectService {
     }
   }
 
+  // Normalize legacy step2_data keys (snake_case) to new camelCase keys
+  private normalizeServiceSpecific(raw: any): Record<string, any> {
+    const input = raw || {};
+    if (typeof input !== 'object' || Array.isArray(input)) return {};
+
+    const mapPairs: Array<[string, string]> = [
+      // Web Development
+      ['domain_suggestions', 'domainSuggestions'],
+      ['website_references', 'websiteReferences'],
+      ['features_requirements', 'featuresRequirements'],
+      ['budget_timeline', 'budgetTimeline'],
+      ['additional_requirements', 'additional_requirements'], // keep as-is for legacy display
+      // Branding & Design
+      ['logo_ideas_concepts', 'logoIdeasConcepts'],
+      ['color_brand_theme', 'colorBrandTheme'],
+      ['design_assets_needed', 'designAssetsNeeded'],
+      ['target_audience_industry', 'targetAudienceIndustry'],
+      // AI Solutions
+      ['ai_solution_type', 'aiSolutionType'],
+      ['business_challenge_use_case', 'businessChallengeUseCase'],
+      ['data_availability', 'dataAvailability'],
+      ['expected_outcome', 'expectedOutcome'],
+      ['budget_range', 'budgetRange'],
+      // Digital Marketing
+      ['marketing_goals', 'marketingGoals'],
+      ['channels_of_interest', 'channelsOfInterest'],
+      ['monthly_budget_range', 'budgetRangeMonthly'],
+      // Custom / Other
+      ['service_description', 'serviceDescription'],
+    ];
+
+    const result: Record<string, any> = { ...input };
+    for (const [snake, camel] of mapPairs) {
+      if (result[camel] === undefined && result[snake] !== undefined) {
+        result[camel] = result[snake];
+      }
+    }
+    return result;
+  }
+
+  // For writes: include both camelCase and snake_case keys to be backward compatible
+  private duplicateKeysForDb(serviceSpecific: Record<string, any> | undefined): Record<string, any> {
+    const src = serviceSpecific || {};
+    const pairs: Array<[string, string]> = [
+      // Web Development
+      ['domainSuggestions', 'domain_suggestions'],
+      ['websiteReferences', 'website_references'],
+      ['featuresRequirements', 'features_requirements'],
+      ['budgetTimeline', 'budget_timeline'],
+      ['additional_requirements', 'additional_requirements'],
+      // Branding & Design
+      ['logoIdeasConcepts', 'logo_ideas_concepts'],
+      ['colorBrandTheme', 'color_brand_theme'],
+      ['designAssetsNeeded', 'design_assets_needed'],
+      ['targetAudienceIndustry', 'target_audience_industry'],
+      // AI Solutions
+      ['aiSolutionType', 'ai_solution_type'],
+      ['businessChallengeUseCase', 'business_challenge_use_case'],
+      ['dataAvailability', 'data_availability'],
+      ['expectedOutcome', 'expected_outcome'],
+      ['budgetRange', 'budget_range'],
+      // Digital Marketing
+      ['marketingGoals', 'marketing_goals'],
+      ['channelsOfInterest', 'channels_of_interest'],
+      ['budgetRangeMonthly', 'monthly_budget_range'],
+      // Custom / Other
+      ['serviceDescription', 'service_description'],
+    ];
+
+    const out: Record<string, any> = { ...src };
+    for (const [camel, snake] of pairs) {
+      if (src[camel] !== undefined && out[snake] === undefined) {
+        out[snake] = src[camel];
+      }
+    }
+    return out;
+  }
+
+  private mapProjectRow(row: any): Project {
+    // Normalize DB row (projects table) to API shape used by UI types
+    const publicContacts: Record<string, any> | null =
+      row.public_business_number || row.public_company_email || row.public_address
+        ? {
+            phone: row.public_business_number || undefined,
+            email: row.public_company_email || undefined,
+            address: row.public_address || undefined,
+          }
+        : null;
+
+    const socialLinks = typeof row.social_media_links === 'string'
+      ? row.social_media_links.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : Array.isArray(row.social_media_links)
+        ? row.social_media_links
+        : [];
+
+    const mediaLinks = typeof row.media_links === 'string'
+      ? row.media_links.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : Array.isArray(row.media_links)
+        ? row.media_links
+        : [];
+
+    let bankDetails: any = row.bank_details;
+    if (bankDetails && typeof bankDetails === 'string') {
+      try { bankDetails = JSON.parse(bankDetails); } catch { /* leave as string */ }
+    }
+
+    return {
+      id: row.project_id ?? row.id,
+      name: row.project_name ?? row.name,
+      type: row.project_type ?? row.type,
+      description: row.description ?? undefined,
+      client_name: row.client_name ?? undefined,
+      budget: row.budget ?? 0,
+      start_date: row.start_date ?? undefined,
+      end_date: row.end_date ?? undefined,
+      status: row.status,
+      priority: row.priority,
+      service_specific: this.normalizeServiceSpecific(row.step2_data ?? row.service_specific ?? {}),
+      company_number: row.business_number ?? row.company_number ?? undefined,
+      company_email: row.company_email ?? undefined,
+      company_address: row.company_address ?? undefined,
+      about_company: row.about_company ?? undefined,
+      social_links: socialLinks,
+      public_contacts: publicContacts ?? undefined,
+      media_links: mediaLinks,
+      bank_details: bankDetails ?? undefined,
+      created_by: row.created_by ?? row.created_by_admin ?? undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at ?? row.updated_at,
+      confirmed: row.confirmed ?? false,
+      confirmed_at: row.confirmed_at ?? undefined,
+    } as unknown as Project;
+  }
+
   /**
    * Create a new project
    */
@@ -23,25 +157,12 @@ export class ProjectService {
         throw new Error('User not authenticated');
       }
 
-      // Handle file uploads if any
-      let uploadedFilePaths: string[] = [];
-      if (projectData.uploaded_files && projectData.uploaded_files.length > 0) {
-        const uploadResults = await Promise.all(
-          projectData.uploaded_files.map(file => 
-            uploadProjectFile({
-              projectId: 'temp-project-id',
-              file,
-              path: 'uploads'
-            })
-          )
-        );
-        uploadedFilePaths = uploadResults.map(result => result.path);
-      }
+      // Note: file upload handling is not supported in this path currently
 
-      // Prepare project data for database
-      const dbProjectData = {
-        name: projectData.name,
-        type: projectData.type,
+      // Prepare project data for database (match projects table columns)
+      const dbProjectData: any = {
+        project_name: projectData.name,
+        project_type: projectData.type,
         description: projectData.description,
         client_name: projectData.client_name,
         budget: projectData.budget,
@@ -49,16 +170,26 @@ export class ProjectService {
         end_date: projectData.end_date,
         status: projectData.status,
         priority: projectData.priority,
-        service_specific: projectData.service_specific,
-        company_number: projectData.company_number,
+        step2_data: this.duplicateKeysForDb(projectData.service_specific as any),
+        business_number: projectData.company_number,
         company_email: projectData.company_email,
         company_address: projectData.company_address,
         about_company: projectData.about_company,
-        social_links: projectData.social_links,
-        public_contacts: projectData.public_contacts,
-        media_links: projectData.media_links,
-        bank_details: projectData.bank_details,
-        created_by: user.id
+        social_media_links: Array.isArray(projectData.social_links)
+          ? projectData.social_links.join(',')
+          : projectData.social_links,
+        public_business_number: projectData.public_contacts?.phone,
+        public_company_email: projectData.public_contacts?.email,
+        public_address: projectData.public_contacts?.address,
+        media_links: Array.isArray(projectData.media_links)
+          ? projectData.media_links.join(',')
+          : projectData.media_links,
+        bank_details: typeof projectData.bank_details === 'string'
+          ? projectData.bank_details
+          : projectData.bank_details
+            ? JSON.stringify(projectData.bank_details)
+            : null,
+        created_by_admin: user.id,
       };
 
       // Insert project into database
@@ -72,19 +203,9 @@ export class ProjectService {
         throw new Error(`Project creation failed: ${error.message}`);
       }
 
-      // If we have uploaded files, update the project with correct paths
-      if (uploadedFilePaths.length > 0) {
-        const updatedPaths = uploadedFilePaths.map(path => 
-          path.replace('temp-project-id', data.project_id)
-        );
-        
-        await this.supabase
-          .from('projects')
-          .update({ uploaded_files: updatedPaths })
-          .eq('project_id', data.project_id);
-      }
+      // No post-insert file updates needed
 
-      return data;
+      return this.mapProjectRow(data);
     } catch (error) {
       console.error('Create project error:', error);
       throw error;
@@ -163,7 +284,7 @@ export class ProjectService {
           *,
           created_by_user:auth.users!created_by(email)
         `)
-        .eq('id', projectId)
+        .eq('project_id', projectId)
         .single();
 
       if (error) {
@@ -173,7 +294,7 @@ export class ProjectService {
         throw new Error(`Get project failed: ${error.message}`);
       }
 
-      return data;
+      return this.mapProjectRow(data);
     } catch (error) {
       console.error('Get project error:', error);
       throw error;
@@ -220,7 +341,7 @@ export class ProjectService {
         throw new Error(`Get user projects failed: ${error.message}`);
       }
 
-      return data || [];
+      return (data || []).map((row: any) => this.mapProjectRow(row));
     } catch (error) {
       console.error('Get user projects error:', error);
       throw error;
@@ -238,20 +359,7 @@ export class ProjectService {
         throw new Error('User not authenticated');
       }
 
-      // Handle file uploads if any
-      let uploadedFilePaths: string[] = [];
-      if (updates.uploaded_files && updates.uploaded_files.length > 0) {
-        const uploadResults = await Promise.all(
-          updates.uploaded_files.map(file => 
-            uploadProjectFile({
-              projectId,
-              file,
-              path: 'uploads'
-            })
-          )
-        );
-        uploadedFilePaths = uploadResults.map(result => result.path);
-      }
+      // Note: file upload handling is not supported in this path currently
 
       // Prepare update data
       const updateData: any = {};
@@ -265,7 +373,7 @@ export class ProjectService {
       if (updates.end_date !== undefined) updateData.end_date = updates.end_date;
       if (updates.status) updateData.status = updates.status;
       if (updates.priority) updateData.priority = updates.priority;
-      if (updates.service_specific) updateData.step2_data = updates.service_specific;
+      if (updates.service_specific) updateData.step2_data = this.duplicateKeysForDb(updates.service_specific as any);
       if (updates.company_number !== undefined) updateData.business_number = updates.company_number;
       if (updates.company_email !== undefined) updateData.company_email = updates.company_email;
       if (updates.company_address !== undefined) updateData.company_address = updates.company_address;
@@ -365,7 +473,7 @@ export class ProjectService {
           confirmed: true, 
           confirmed_at: new Date().toISOString() 
         })
-        .eq('id', projectId)
+        .eq('project_id', projectId)
         .select()
         .single();
 
@@ -373,7 +481,7 @@ export class ProjectService {
         throw new Error(`Confirm project failed: ${error.message}`);
       }
 
-      return data;
+      return this.mapProjectRow(data);
     } catch (error) {
       console.error('Confirm project error:', error);
       throw error;
@@ -387,10 +495,7 @@ export class ProjectService {
     try {
       const { data, error } = await this.supabase
         .from('project_activities')
-        .select(`
-          *,
-          created_by_user:auth.users!created_by(email)
-        `)
+        .select(`*`)
         .eq('project_id', projectId)
         .order('created_at', { ascending: false });
 
@@ -398,7 +503,7 @@ export class ProjectService {
         throw new Error(`Get project activities failed: ${error.message}`);
       }
 
-      return data || [];
+      return (data as unknown as ProjectActivity[]) || [];
     } catch (error) {
       console.error('Get project activities error:', error);
       throw error;

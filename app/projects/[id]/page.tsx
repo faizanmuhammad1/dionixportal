@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Paperclip, Upload } from "lucide-react"
 import { addTaskToProject, getProjectById, getProjects, saveProjects, type Project, type ProjectAttachment, type Task } from "@/lib/project-store"
 import { projectService } from "@/lib/project-service"
+import { ServiceSpecificDetails } from "@/components/service-specific-details"
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>()
@@ -126,6 +127,12 @@ export default function ProjectDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Service-Specific Details */}
+          <ServiceSpecificDetails 
+            serviceType={project.service_type || ""} 
+            serviceSpecific={project.service_specific || {}} 
+          />
         </TabsContent>
 
         <TabsContent value="tasks" className="space-y-4">

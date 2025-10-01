@@ -20,6 +20,7 @@ export interface Project {
   public_contacts: Record<string, any>;
   media_links: string[];
   bank_details: Record<string, any>;
+  payment_integration_needs?: string[];
   confirmed: boolean;
   confirmed_at?: string;
   created_by?: string;

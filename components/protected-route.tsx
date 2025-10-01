@@ -2,7 +2,13 @@
 
 import { ReactNode } from "react";
 import { useAccessControl } from "@/hooks/use-session";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Shield, Lock, AlertTriangle } from "lucide-react";
@@ -22,12 +28,12 @@ export function ProtectedRoute({
   permissions = [],
   requireAll = true,
   fallback,
-  showAccessDenied = true
+  showAccessDenied = true,
 }: ProtectedRouteProps) {
   const { hasAccess, loading, user } = useAccessControl({
     roles,
     permissions,
-    requireAll
+    requireAll,
   });
 
   // Show loading state
@@ -74,7 +80,8 @@ export function ProtectedRoute({
                   )}
                   {permissions.length > 0 && (
                     <div className="mt-2">
-                      <strong>Required permissions:</strong> {permissions.join(", ")}
+                      <strong>Required permissions:</strong>{" "}
+                      {permissions.join(", ")}
                     </div>
                   )}
                 </>
@@ -83,12 +90,14 @@ export function ProtectedRoute({
               )}
             </AlertDescription>
           </Alert>
-          
+
           {user && (
             <div className="text-sm text-gray-600">
-              <p><strong>Your permissions:</strong></p>
+              <p>
+                <strong>Your permissions:</strong>
+              </p>
               <ul className="list-disc list-inside mt-1">
-                {user.permissions.slice(0, 5).map(permission => (
+                {user.permissions.slice(0, 5).map((permission) => (
                   <li key={permission}>{permission}</li>
                 ))}
                 {user.permissions.length > 5 && (
@@ -107,7 +116,13 @@ export function ProtectedRoute({
 }
 
 // Convenience components for common access patterns
-export function AdminOnly({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
+export function AdminOnly({
+  children,
+  fallback,
+}: {
+  children: ReactNode;
+  fallback?: ReactNode;
+}) {
   return (
     <ProtectedRoute roles={["admin"]} fallback={fallback}>
       {children}
@@ -115,7 +130,13 @@ export function AdminOnly({ children, fallback }: { children: ReactNode; fallbac
   );
 }
 
-export function ManagerOnly({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
+export function ManagerOnly({
+  children,
+  fallback,
+}: {
+  children: ReactNode;
+  fallback?: ReactNode;
+}) {
   return (
     <ProtectedRoute roles={["admin", "manager"]} fallback={fallback}>
       {children}
@@ -123,29 +144,38 @@ export function ManagerOnly({ children, fallback }: { children: ReactNode; fallb
   );
 }
 
-export function EmployeeOnly({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
+export function EmployeeOnly({
+  children,
+  fallback,
+}: {
+  children: ReactNode;
+  fallback?: ReactNode;
+}) {
   return (
-    <ProtectedRoute roles={["admin", "manager", "employee"]} fallback={fallback}>
+    <ProtectedRoute
+      roles={["admin", "manager", "employee"]}
+      fallback={fallback}
+    >
       {children}
     </ProtectedRoute>
   );
 }
 
-export function RequirePermission({ 
-  permissions, 
-  requireAll = true, 
-  children, 
-  fallback 
-}: { 
-  permissions: string[]; 
-  requireAll?: boolean; 
-  children: ReactNode; 
+export function RequirePermission({
+  permissions,
+  requireAll = true,
+  children,
+  fallback,
+}: {
+  permissions: string[];
+  requireAll?: boolean;
+  children: ReactNode;
   fallback?: ReactNode;
 }) {
   return (
-    <ProtectedRoute 
-      permissions={permissions} 
-      requireAll={requireAll} 
+    <ProtectedRoute
+      permissions={permissions}
+      requireAll={requireAll}
       fallback={fallback}
     >
       {children}

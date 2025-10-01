@@ -20,12 +20,13 @@ import { CalendarIcon, Upload, X, Plus, CheckCircle, AlertCircle } from 'lucide-
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { projectService } from '@/lib/project-service';
-import { ProjectFormData, ProjectType, ProjectPriority } from '@/lib/types/project';
+import { ProjectFormData, ProjectType } from '@/lib/types/project';
 import { useToast } from '@/hooks/use-toast';
+import { uploadProjectFile } from '@/lib/storage';
 
-// Form validation schema
+// Form validation schema - Step 1 stays the same, other steps match JSON structure
 const projectFormSchema = z.object({
-  // Step 1: Core Project Details
+  // Step 1: Core Project Details (keep same as current)
   project_name: z.string().min(3, 'Project name must be at least 3 characters'),
   project_type: z.enum(['Web Development', 'Branding Design', 'AI Solutions', 'Digital Marketing', 'Custom Project']),
   description: z.string().optional(),
@@ -35,25 +36,54 @@ const projectFormSchema = z.object({
   end_date: z.string().optional(),
   priority: z.enum(['Low', 'Medium', 'High', 'Critical']),
 
-  // Step 2: Conditional Requirements (Dynamic per type)
-  project_details: z.record(z.any()).default({}),
+  // Step 2: Service-Specific Information (matches client step 1)
+  // Web Development fields
+  domainSuggestions: z.string().optional(),
+  websiteReferences: z.string().optional(),
+  featuresRequirements: z.string().optional(),
+  budgetTimeline: z.string().optional(),
+  
+  // Branding Design fields
+  logoIdeasConcepts: z.string().optional(),
+  colorBrandTheme: z.string().optional(),
+  designAssetsNeeded: z.array(z.string()).default([]),
+  
+  // Digital Marketing fields
+  targetAudienceIndustry: z.string().optional(),
+  marketingGoals: z.string().optional(),
+  channelsOfInterest: z.array(z.string()).default([]),
+  budgetRangeMonthly: z.string().optional(),
+  
+  // AI Solutions fields
+  aiSolutionType: z.array(z.string()).default([]),
+  businessChallengeUseCase: z.string().optional(),
+  dataAvailability: z.string().optional(),
+  budgetRange: z.string().optional(),
+  
+  // Other/Custom fields
+  serviceDescription: z.string().optional(),
+  expectedOutcome: z.string().optional(),
 
-  // Step 3: Company Info
-  business_number: z.string().optional(),
-  company_email: z.string().email().optional().or(z.literal('')),
-  company_address: z.string().optional(),
-  about_company: z.string().optional(),
+  // Step 3: Company & Contact Information (matches client step 2)
+  contactBusinessNumber: z.string().min(1, 'Business phone number is required'),
+  contactCompanyEmail: z.string().email('Valid email is required'),
+  contactCompanyAddress: z.string().min(1, 'Company address is required'),
+  aboutCompanyDetails: z.string().min(1, 'About company is required'),
 
-  // Step 4: Public Contact
-  social_media_links: z.array(z.string()).default([]),
-  public_business_number: z.string().optional(),
-  public_company_email: z.string().email().optional().or(z.literal('')),
-  public_company_address: z.string().optional(),
+  // Step 4: Social Media & Public Contact Info (matches client step 3)
+  socialLinks: z.string().optional(),
+  publicBusinessNumber: z.string().optional(),
+  publicCompanyEmail: z.string().email().optional().or(z.literal('')),
+  publicCompanyAddress: z.string().optional(),
 
-  // Step 5: Media & Payment
-  media_links: z.array(z.string()).default([]),
-  uploaded_files: z.array(z.any()).default([]),
-  bank_details: z.string().optional(),
+  // Step 5: Media & Banking Information (matches client step 4)
+  mediaLinks: z.string().optional(),
+  mediaFiles: z.array(z.any()).default([]),
+  paymentIntegrationNeeds: z.array(z.string()).default([]),
+  account_name: z.string().optional(),
+  account_number: z.string().optional(),
+  iban: z.string().optional(),
+  swift: z.string().optional(),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -74,6 +104,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
     defaultValues: {
+      // Step 1: Keep same as current
       project_name: '',
       project_type: 'Web Development',
       description: '',
@@ -82,18 +113,46 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       start_date: '',
       end_date: '',
       priority: 'Medium',
-      project_details: {},
-      business_number: '',
-      company_email: '',
-      company_address: '',
-      about_company: '',
-      social_media_links: [],
-      public_business_number: '',
-      public_company_email: '',
-      public_company_address: '',
-      media_links: [],
-      uploaded_files: [],
-      bank_details: '',
+      
+      // Step 2: Service-specific fields
+      domainSuggestions: '',
+      websiteReferences: '',
+      featuresRequirements: '',
+      budgetTimeline: '',
+      logoIdeasConcepts: '',
+      colorBrandTheme: '',
+      designAssetsNeeded: [],
+      targetAudienceIndustry: '',
+      marketingGoals: '',
+      channelsOfInterest: [],
+      budgetRangeMonthly: '',
+      aiSolutionType: [],
+      businessChallengeUseCase: '',
+      dataAvailability: '',
+      budgetRange: '',
+      serviceDescription: '',
+      expectedOutcome: '',
+      
+      // Step 3: Company & Contact Information
+      contactBusinessNumber: '',
+      contactCompanyEmail: '',
+      contactCompanyAddress: '',
+      aboutCompanyDetails: '',
+      
+      // Step 4: Social Media & Public Contact
+      socialLinks: '',
+      publicBusinessNumber: '',
+      publicCompanyEmail: '',
+      publicCompanyAddress: '',
+      
+      // Step 5: Media & Banking
+      mediaLinks: '',
+      mediaFiles: [],
+      paymentIntegrationNeeds: [],
+      account_name: '',
+      account_number: '',
+      iban: '',
+      swift: '',
     },
   });
 
@@ -103,13 +162,13 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     setUploadedFiles(prev => [...prev, ...files]);
-    form.setValue('uploaded_files', [...uploadedFiles, ...files]);
+    // Files are handled separately, not stored in form
   }, [uploadedFiles, form]);
 
   const removeFile = useCallback((index: number) => {
     const newFiles = uploadedFiles.filter((_, i) => i !== index);
     setUploadedFiles(newFiles);
-    form.setValue('uploaded_files', newFiles);
+    // Files are handled separately, not stored in form
   }, [uploadedFiles, form]);
 
   const addSocialLink = useCallback(() => {
@@ -122,7 +181,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       newLinks[index] = value;
       return newLinks;
     });
-    form.setValue('social_media_links', socialLinks.filter(link => link.trim() !== ''));
+    // Social links are handled separately
   }, [form, socialLinks]);
 
   const removeSocialLink = useCallback((index: number) => {
@@ -139,7 +198,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       newLinks[index] = value;
       return newLinks;
     });
-    form.setValue('media_links', mediaLinks.filter(link => link.trim() !== ''));
+    // Media links are handled separately
   }, [form, mediaLinks]);
 
   const removeMediaLink = useCallback((index: number) => {
@@ -161,21 +220,97 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
   const onSubmit = async (data: ProjectFormValues) => {
     setIsSubmitting(true);
     try {
+      // Build service_specific object based on project_type
+      const serviceSpecific: Record<string, any> = {};
+      
+      if (data.project_type === 'Web Development') {
+        if (data.domainSuggestions) serviceSpecific.domainSuggestions = data.domainSuggestions;
+        if (data.websiteReferences) serviceSpecific.websiteReferences = data.websiteReferences;
+        if (data.featuresRequirements) serviceSpecific.featuresRequirements = data.featuresRequirements;
+        if (data.budgetTimeline) serviceSpecific.budgetTimeline = data.budgetTimeline;
+      } else if (data.project_type === 'Branding Design') {
+        if (data.logoIdeasConcepts) serviceSpecific.logoIdeasConcepts = data.logoIdeasConcepts;
+        if (data.colorBrandTheme) serviceSpecific.colorBrandTheme = data.colorBrandTheme;
+        if (data.designAssetsNeeded.length > 0) serviceSpecific.designAssetsNeeded = data.designAssetsNeeded;
+      } else if (data.project_type === 'Digital Marketing') {
+        if (data.targetAudienceIndustry) serviceSpecific.targetAudienceIndustry = data.targetAudienceIndustry;
+        if (data.marketingGoals) serviceSpecific.marketingGoals = data.marketingGoals;
+        if (data.channelsOfInterest.length > 0) serviceSpecific.channelsOfInterest = data.channelsOfInterest;
+        if (data.budgetRangeMonthly) serviceSpecific.budgetRangeMonthly = data.budgetRangeMonthly;
+      } else if (data.project_type === 'AI Solutions') {
+        if (data.aiSolutionType.length > 0) serviceSpecific.aiSolutionType = data.aiSolutionType;
+        if (data.businessChallengeUseCase) serviceSpecific.businessChallengeUseCase = data.businessChallengeUseCase;
+        if (data.dataAvailability) serviceSpecific.dataAvailability = data.dataAvailability;
+        if (data.budgetRange) serviceSpecific.budgetRange = data.budgetRange;
+      } else if (data.project_type === 'Custom Project') {
+        if (data.serviceDescription) serviceSpecific.serviceDescription = data.serviceDescription;
+        if (data.expectedOutcome) serviceSpecific.expectedOutcome = data.expectedOutcome;
+      }
+
+      // Build bank details object
+      const bankDetails: Record<string, any> = {};
+      if (data.account_name) bankDetails.account_name = data.account_name;
+      if (data.account_number) bankDetails.account_number = data.account_number;
+      if (data.iban) bankDetails.iban = data.iban;
+      if (data.swift) bankDetails.swift = data.swift;
+
       const projectData: ProjectFormData = {
-        ...data,
-        uploaded_files: uploadedFiles,
-        social_media_links: socialLinks.filter(link => link.trim() !== ''),
-        media_links: mediaLinks.filter(link => link.trim() !== ''),
+        name: data.project_name,
+        type: data.project_type.toLowerCase().replace(' ', '-') as any,
+        description: data.description,
+        client_name: data.client_name,
+        budget: data.budget,
+        start_date: data.start_date,
+        end_date: data.end_date,
+        status: 'planning' as any,
+        priority: data.priority.toLowerCase() as any,
+        service_specific: serviceSpecific,
+        company_number: data.contactBusinessNumber,
+        company_email: data.contactCompanyEmail,
+        company_address: data.contactCompanyAddress,
+        about_company: data.aboutCompanyDetails,
+        social_links: data.socialLinks ? [data.socialLinks] : [],
+        public_contacts: {
+          phone: data.publicBusinessNumber,
+          email: data.publicCompanyEmail,
+          address: data.publicCompanyAddress,
+        },
+        media_links: data.mediaLinks ? [data.mediaLinks] : [],
+        bank_details: bankDetails,
       };
 
       const project = await projectService.createProject(projectData);
+      
+      // Handle uploaded files - upload them to attachments
+      if (uploadedFiles.length > 0) {
+        try {
+          for (const file of uploadedFiles) {
+            // Upload file to storage first
+            const uploaded = await uploadProjectFile({
+              projectId: project.id,
+              file: file,
+            });
+            
+            // Then add to attachments
+            await projectService.addAttachment(project.id, {
+              storage_path: uploaded.path,
+              file_name: file.name,
+              file_size: file.size,
+              content_type: file.type,
+            });
+          }
+        } catch (error) {
+          console.error('Error uploading files:', error);
+          // Don't fail the entire project creation if file upload fails
+        }
+      }
       
       toast({
         title: 'Project Created',
         description: 'Your project has been successfully created.',
       });
 
-      onSuccess?.(project.project_id);
+      onSuccess?.(project.id);
     } catch (error) {
       console.error('Project creation error:', error);
       toast({
@@ -192,10 +327,9 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
     <Card className="border-0 shadow-lg">
       <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
         <CardTitle className="text-xl text-gray-900">Project Details</CardTitle>
-        <CardDescription className="text-gray-600">Let's start with the basics about your project</CardDescription>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="project_name">Project Name *</Label>
             <Input
@@ -210,7 +344,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
 
           <div className="space-y-2">
             <Label htmlFor="project_type">Project Type *</Label>
-            <Select onValueChange={(value) => form.setValue('project_type', value as ProjectType)}>
+            <Select onValueChange={(value) => form.setValue('project_type', value as any)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select project type" />
               </SelectTrigger>
@@ -230,18 +364,18 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
           <Textarea
             id="description"
             {...form.register('description')}
-            placeholder="Describe your project..."
+            placeholder="Brief project description"
             rows={3}
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="client_name">Client Name</Label>
             <Input
               id="client_name"
               {...form.register('client_name')}
-              placeholder="Enter client name"
+              placeholder="Client or company name"
             />
           </div>
 
@@ -257,7 +391,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-2">
             <Label htmlFor="start_date">Start Date</Label>
             <Input
@@ -275,21 +409,21 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
               {...form.register('end_date')}
             />
           </div>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="priority">Priority</Label>
-          <Select onValueChange={(value) => form.setValue('priority', value as ProjectPriority)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Low">Low</SelectItem>
-              <SelectItem value="Medium">Medium</SelectItem>
-              <SelectItem value="High">High</SelectItem>
-              <SelectItem value="Critical">Critical</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="space-y-2">
+            <Label htmlFor="priority">Priority</Label>
+            <Select onValueChange={(value) => form.setValue('priority', value as any)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Low">Low</SelectItem>
+                <SelectItem value="Medium">Medium</SelectItem>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Critical">Critical</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -301,7 +435,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
     return (
       <Card className="border-0 shadow-lg">
         <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b">
-          <CardTitle className="text-xl text-gray-900">Project Requirements</CardTitle>
+          <CardTitle className="text-xl text-gray-900">Service-Specific Information</CardTitle>
           <CardDescription className="text-gray-600">
             Tell us more about your {projectType} project needs
           </CardDescription>
@@ -309,201 +443,230 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
         <CardContent className="p-6">
           {projectType === 'Web Development' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="website_type">Website Type</Label>
-                  <Select onValueChange={(value) => form.setValue('project_details.website_type', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select website type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="landing-page">Landing Page</SelectItem>
-                      <SelectItem value="ecommerce">E-commerce</SelectItem>
-                      <SelectItem value="blog">Blog/Content Site</SelectItem>
-                      <SelectItem value="portfolio">Portfolio</SelectItem>
-                      <SelectItem value="saas">SaaS Application</SelectItem>
-                      <SelectItem value="corporate">Corporate Website</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="platform">Platform</Label>
-                  <Select onValueChange={(value) => form.setValue('project_details.platform', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select platform" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="wordpress">WordPress</SelectItem>
-                      <SelectItem value="nextjs">Next.js</SelectItem>
-                      <SelectItem value="react">React</SelectItem>
-                      <SelectItem value="vue">Vue.js</SelectItem>
-                      <SelectItem value="angular">Angular</SelectItem>
-                      <SelectItem value="custom">Custom Development</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
               <div className="space-y-2">
-                <Label htmlFor="features">Required Features</Label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {['Responsive Design', 'SEO Optimization', 'Contact Forms', 'User Authentication', 'Payment Integration', 'Admin Dashboard'].map((feature) => (
-                    <div key={feature} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`feature-${feature}`}
-                        onChange={(e) => {
-                          const currentFeatures = form.getValues('project_details.features') || [];
-                          if (e.target.checked) {
-                            form.setValue('project_details.features', [...currentFeatures, feature]);
-                          } else {
-                            form.setValue('project_details.features', currentFeatures.filter(f => f !== feature));
-                          }
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={`feature-${feature}`} className="text-sm">{feature}</Label>
-                    </div>
-                  ))}
-                </div>
+                <Label htmlFor="domainSuggestions">Domain Suggestions</Label>
+                <Textarea
+                  {...form.register('domainSuggestions')}
+                  placeholder="e.g., mycompany.com, mybusiness.net"
+                  rows={3}
+                />
+                <p className="text-sm text-gray-500">Do you have any domain preferences or suggestions?</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="websiteReferences">Website References</Label>
+                <Textarea
+                  {...form.register('websiteReferences')}
+                  placeholder="Share links to websites you like..."
+                  rows={3}
+                />
+                <p className="text-sm text-gray-500">Share links to websites you like for inspiration</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="featuresRequirements">Features & Requirements</Label>
+                <Textarea
+                  {...form.register('featuresRequirements')}
+                  placeholder="Describe the features and functionality you need..."
+                  rows={4}
+                />
+                <p className="text-sm text-gray-500">Be as specific as possible about what you want your website to do</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="budgetTimeline">Budget & Timeline</Label>
+                <Textarea
+                  {...form.register('budgetTimeline')}
+                  placeholder="What's your budget range and when do you need it completed?"
+                  rows={3}
+                />
+                <p className="text-sm text-gray-500">This helps us provide accurate quotes and timelines</p>
               </div>
             </div>
           )}
           
           {projectType === 'Branding Design' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="brand_scope">Brand Scope</Label>
-                  <Select onValueChange={(value) => form.setValue('project_details.brand_scope', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select brand scope" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="logo-only">Logo Only</SelectItem>
-                      <SelectItem value="logo-guidelines">Logo + Brand Guidelines</SelectItem>
-                      <SelectItem value="full-branding">Full Brand Identity</SelectItem>
-                      <SelectItem value="rebrand">Complete Rebrand</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
-                  <Input
-                    id="industry"
-                    {...form.register('project_details.industry')}
-                    placeholder="e.g., Technology, Healthcare, Finance"
-                  />
-                </div>
-              </div>
               <div className="space-y-2">
-                <Label htmlFor="brand_values">Brand Values & Personality</Label>
+                <Label htmlFor="logoIdeasConcepts">Logo Ideas & Concepts</Label>
                 <Textarea
-                  id="brand_values"
-                  {...form.register('project_details.brand_values')}
-                  placeholder="Describe your brand values, personality, and what makes you unique..."
+                  {...form.register('logoIdeasConcepts')}
+                  placeholder="Describe your vision for the logo..."
                   rows={3}
                 />
+                <p className="text-sm text-gray-500">Share any ideas, concepts, or inspiration for your logo</p>
               </div>
-            </div>
-          )}
-          
-          {projectType === 'AI Solutions' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="ai_type">AI Solution Type</Label>
-                  <Select onValueChange={(value) => form.setValue('project_details.ai_type', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select AI solution type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="chatbot">AI Chatbot</SelectItem>
-                      <SelectItem value="automation">Process Automation</SelectItem>
-                      <SelectItem value="analytics">AI Analytics</SelectItem>
-                      <SelectItem value="recommendation">Recommendation Engine</SelectItem>
-                      <SelectItem value="nlp">Natural Language Processing</SelectItem>
-                      <SelectItem value="computer-vision">Computer Vision</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="data_requirements">Data Requirements</Label>
-                  <Select onValueChange={(value) => form.setValue('project_details.data_requirements', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select data requirements" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="minimal">Minimal Data</SelectItem>
-                      <SelectItem value="moderate">Moderate Data</SelectItem>
-                      <SelectItem value="large">Large Dataset</SelectItem>
-                      <SelectItem value="big-data">Big Data</SelectItem>
-                      <SelectItem value="real-time">Real-time Data</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              
               <div className="space-y-2">
-                <Label htmlFor="ai_goals">AI Goals & Objectives</Label>
+                <Label htmlFor="colorBrandTheme">Color & Brand Theme</Label>
                 <Textarea
-                  id="ai_goals"
-                  {...form.register('project_details.ai_goals')}
-                  placeholder="Describe what you want the AI to accomplish, your specific use cases, and expected outcomes..."
+                  {...form.register('colorBrandTheme')}
+                  placeholder="What colors and themes represent your brand?"
                   rows={3}
                 />
+                <p className="text-sm text-gray-500">Describe your brand's personality and preferred colors</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="designAssetsNeeded">Design Assets Needed</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Logo Design', 'Business Cards', 'Letterhead', 'Social Media Graphics', 'Website Design', 'Print Materials', 'Brand Guidelines', 'Other'].map((option) => (
+                    <label key={option} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        value={option}
+                        onChange={(e) => {
+                          const current = form.getValues('designAssetsNeeded') || [];
+                          if (e.target.checked) {
+                            form.setValue('designAssetsNeeded', [...current, option]);
+                          } else {
+                            form.setValue('designAssetsNeeded', current.filter(item => item !== option));
+                          }
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-sm">{option}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-sm text-gray-500">Select all the design assets you need</p>
               </div>
             </div>
           )}
           
           {projectType === 'Digital Marketing' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="marketing_goals">Marketing Goals</Label>
-                  <Select onValueChange={(value) => form.setValue('project_details.marketing_goals', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select primary goal" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="brand-awareness">Brand Awareness</SelectItem>
-                      <SelectItem value="lead-generation">Lead Generation</SelectItem>
-                      <SelectItem value="sales-increase">Sales Increase</SelectItem>
-                      <SelectItem value="traffic-growth">Traffic Growth</SelectItem>
-                      <SelectItem value="engagement">Engagement</SelectItem>
-                      <SelectItem value="conversion">Conversion Optimization</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="target_audience">Target Audience</Label>
-                  <Input
-                    id="target_audience"
-                    {...form.register('project_details.target_audience')}
-                    placeholder="e.g., Small business owners, Tech professionals"
-                  />
-                </div>
-              </div>
               <div className="space-y-2">
-                <Label htmlFor="marketing_channels">Marketing Channels</Label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {['Social Media', 'Google Ads', 'Facebook Ads', 'Email Marketing', 'Content Marketing', 'SEO'].map((channel) => (
-                    <div key={channel} className="flex items-center space-x-2">
+                <Label htmlFor="targetAudienceIndustry">Target Audience & Industry</Label>
+                <Textarea
+                  {...form.register('targetAudienceIndustry')}
+                  placeholder="Who is your target audience and what industry are you in?"
+                  rows={3}
+                />
+                <p className="text-sm text-gray-500">Help us understand your market and customers</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="marketingGoals">Marketing Goals</Label>
+                <Textarea
+                  {...form.register('marketingGoals')}
+                  placeholder="What do you want to achieve with digital marketing?"
+                  rows={3}
+                />
+                <p className="text-sm text-gray-500">Be specific about your marketing objectives</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="channelsOfInterest">Channels of Interest</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Google Ads', 'Facebook/Instagram Ads', 'LinkedIn Marketing', 'SEO Optimization', 'Email Marketing', 'Content Marketing', 'Influencer Marketing', 'Other'].map((option) => (
+                    <label key={option} className="flex items-center space-x-2">
                       <input
                         type="checkbox"
-                        id={`channel-${channel}`}
+                        value={option}
                         onChange={(e) => {
-                          const currentChannels = form.getValues('project_details.channels') || [];
+                          const current = form.getValues('channelsOfInterest') || [];
                           if (e.target.checked) {
-                            form.setValue('project_details.channels', [...currentChannels, channel]);
+                            form.setValue('channelsOfInterest', [...current, option]);
                           } else {
-                            form.setValue('project_details.channels', currentChannels.filter(c => c !== channel));
+                            form.setValue('channelsOfInterest', current.filter(item => item !== option));
                           }
                         }}
-                        className="rounded border-gray-300"
+                        className="rounded"
                       />
-                      <Label htmlFor={`channel-${channel}`} className="text-sm">{channel}</Label>
-                    </div>
+                      <span className="text-sm">{option}</span>
+                    </label>
                   ))}
                 </div>
+                <p className="text-sm text-gray-500">Which marketing channels interest you most?</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="budgetRangeMonthly">Monthly Marketing Budget</Label>
+                <Select onValueChange={(value) => form.setValue('budgetRangeMonthly', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select budget range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Under $1,000">Under $1,000</SelectItem>
+                    <SelectItem value="$1,000 - $5,000">$1,000 - $5,000</SelectItem>
+                    <SelectItem value="$5,000 - $10,000">$5,000 - $10,000</SelectItem>
+                    <SelectItem value="$10,000 - $25,000">$10,000 - $25,000</SelectItem>
+                    <SelectItem value="$25,000+">$25,000+</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500">This helps us recommend the right strategies</p>
+              </div>
+            </div>
+          )}
+          
+          {projectType === 'AI Solutions' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="aiSolutionType">AI Solution Types</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Chatbots & Virtual Assistants', 'Predictive Analytics', 'Process Automation', 'Machine Learning Models', 'Natural Language Processing', 'Computer Vision', 'Recommendation Systems', 'Other'].map((option) => (
+                    <label key={option} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        value={option}
+                        onChange={(e) => {
+                          const current = form.getValues('aiSolutionType') || [];
+                          if (e.target.checked) {
+                            form.setValue('aiSolutionType', [...current, option]);
+                          } else {
+                            form.setValue('aiSolutionType', current.filter(item => item !== option));
+                          }
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-sm">{option}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-sm text-gray-500">What type of AI solutions are you interested in?</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="businessChallengeUseCase">Business Challenge & Use Case</Label>
+                <Textarea
+                  {...form.register('businessChallengeUseCase')}
+                  placeholder="Describe the business problem you want to solve..."
+                  rows={3}
+                />
+                <p className="text-sm text-gray-500">Help us understand how AI can solve your specific challenges</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="dataAvailability">Data Availability</Label>
+                <Select onValueChange={(value) => form.setValue('dataAvailability', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select data availability" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="We have extensive data">We have extensive data</SelectItem>
+                    <SelectItem value="We have some data">We have some data</SelectItem>
+                    <SelectItem value="We have limited data">We have limited data</SelectItem>
+                    <SelectItem value="We need help collecting data">We need help collecting data</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500">AI solutions require data - what's your current data situation?</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="budgetRange">Budget Range</Label>
+                <Select onValueChange={(value) => form.setValue('budgetRange', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select budget range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Under $10,000">Under $10,000</SelectItem>
+                    <SelectItem value="$10,000 - $50,000">$10,000 - $50,000</SelectItem>
+                    <SelectItem value="$50,000 - $100,000">$50,000 - $100,000</SelectItem>
+                    <SelectItem value="$100,000+">$100,000+</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500">AI solutions vary in complexity and cost</p>
               </div>
             </div>
           )}
@@ -511,22 +674,23 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
           {projectType === 'Custom Project' && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="project_scope">Project Scope</Label>
+                <Label htmlFor="serviceDescription">Service Description</Label>
                 <Textarea
-                  id="project_scope"
-                  {...form.register('project_details.project_scope')}
-                  placeholder="Describe your project in detail. What do you need? What are your goals? What's the scope of work?"
+                  {...form.register('serviceDescription')}
+                  placeholder="Describe the service you need..."
                   rows={4}
                 />
+                <p className="text-sm text-gray-500">Tell us about your specific requirements</p>
               </div>
+              
               <div className="space-y-2">
-                <Label htmlFor="technical_requirements">Technical Requirements</Label>
+                <Label htmlFor="expectedOutcome">Expected Outcome</Label>
                 <Textarea
-                  id="technical_requirements"
-                  {...form.register('project_details.technical_requirements')}
-                  placeholder="Any specific technical requirements, integrations, or constraints?"
+                  {...form.register('expectedOutcome')}
+                  placeholder="What results are you hoping to achieve?"
                   rows={3}
                 />
+                <p className="text-sm text-gray-500">Help us understand your goals and expectations</p>
               </div>
             </div>
           )}
@@ -536,211 +700,267 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
   };
 
   const renderStep3 = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle>Company Information</CardTitle>
-        <CardDescription>Your company details</CardDescription>
+    <Card className="border-0 shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
+        <CardTitle className="text-xl text-gray-900">Company & Contact Information</CardTitle>
+        <CardDescription className="text-gray-600">Tell us about your company</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="business_number">Business Number</Label>
-            <Input
-              id="business_number"
-              {...form.register('business_number')}
-              placeholder="Enter business number"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="company_email">Company Email</Label>
-            <Input
-              id="company_email"
-              type="email"
-              {...form.register('company_email')}
-              placeholder="Enter company email"
-            />
-          </div>
-        </div>
-
+      <CardContent className="p-6 space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="company_address">Company Address</Label>
-          <Textarea
-            id="company_address"
-            {...form.register('company_address')}
-            placeholder="Enter company address"
-            rows={2}
+          <Label htmlFor="contactBusinessNumber">Business Phone Number *</Label>
+          <Input
+            id="contactBusinessNumber"
+            {...form.register('contactBusinessNumber')}
+            placeholder="e.g., +1 (555) 123-4567"
           />
+          <p className="text-sm text-gray-500">We'll use this to contact you about your project</p>
+          {form.formState.errors.contactBusinessNumber && (
+            <p className="text-sm text-red-500">{form.formState.errors.contactBusinessNumber.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="about_company">About Company</Label>
+          <Label htmlFor="contactCompanyEmail">Company Email *</Label>
+          <Input
+            id="contactCompanyEmail"
+            type="email"
+            {...form.register('contactCompanyEmail')}
+            placeholder="contact@yourcompany.com"
+          />
+          <p className="text-sm text-gray-500">Your business email address</p>
+          {form.formState.errors.contactCompanyEmail && (
+            <p className="text-sm text-red-500">{form.formState.errors.contactCompanyEmail.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="contactCompanyAddress">Company Address *</Label>
           <Textarea
-            id="about_company"
-            {...form.register('about_company')}
-            placeholder="Tell us about your company..."
+            id="contactCompanyAddress"
+            {...form.register('contactCompanyAddress')}
+            placeholder="Your business address..."
+            rows={3}
+          />
+          <p className="text-sm text-gray-500">Your business location</p>
+          {form.formState.errors.contactCompanyAddress && (
+            <p className="text-sm text-red-500">{form.formState.errors.contactCompanyAddress.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="aboutCompanyDetails">About Your Company *</Label>
+          <Textarea
+            id="aboutCompanyDetails"
+            {...form.register('aboutCompanyDetails')}
+            placeholder="Tell us about your company, what you do, and your mission..."
             rows={4}
           />
+          <p className="text-sm text-gray-500">Help us understand your business better</p>
+          {form.formState.errors.aboutCompanyDetails && (
+            <p className="text-sm text-red-500">{form.formState.errors.aboutCompanyDetails.message}</p>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 
   const renderStep4 = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle>Public Contact Information</CardTitle>
-        <CardDescription>Information that will be publicly visible</CardDescription>
+    <Card className="border-0 shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-orange-50 to-red-50 border-b">
+        <CardTitle className="text-xl text-gray-900">Social Media & Public Contact Info</CardTitle>
+        <CardDescription className="text-gray-600">Share your public business information</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-6 space-y-6">
         <div className="space-y-2">
-          <Label>Social Media Links</Label>
-          {socialLinks.map((link, index) => (
-            <div key={index} className="flex gap-2">
-              <Input
-                value={link}
-                onChange={(e) => updateSocialLink(index, e.target.value)}
-                placeholder="https://..."
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => removeSocialLink(index)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={addSocialLink}
-            className="w-full"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Social Media Link
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="public_business_number">Public Business Number</Label>
-            <Input
-              id="public_business_number"
-              {...form.register('public_business_number')}
-              placeholder="Enter public business number"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="public_company_email">Public Company Email</Label>
-            <Input
-              id="public_company_email"
-              type="email"
-              {...form.register('public_company_email')}
-              placeholder="Enter public company email"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="public_company_address">Public Company Address</Label>
+          <Label htmlFor="socialLinks">Social Media Links</Label>
           <Textarea
-            id="public_company_address"
-            {...form.register('public_company_address')}
-            placeholder="Enter public company address"
-            rows={2}
+            id="socialLinks"
+            {...form.register('socialLinks')}
+            placeholder="Share your social media profiles..."
+            rows={3}
           />
+          <p className="text-sm text-gray-500">Include links to your social media profiles</p>
+          <p className="text-xs text-gray-400">Example: https://facebook.com/yourcompany, https://instagram.com/yourcompany</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="publicBusinessNumber">Public Business Number</Label>
+          <Input
+            id="publicBusinessNumber"
+            {...form.register('publicBusinessNumber')}
+            placeholder="e.g., +1 (555) 123-4567"
+          />
+          <p className="text-sm text-gray-500">Phone number for customer inquiries</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="publicCompanyEmail">Public Company Email</Label>
+          <Input
+            id="publicCompanyEmail"
+            type="email"
+            {...form.register('publicCompanyEmail')}
+            placeholder="info@yourcompany.com"
+          />
+          <p className="text-sm text-gray-500">Email address for customer inquiries</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="publicCompanyAddress">Public Company Address</Label>
+          <Textarea
+            id="publicCompanyAddress"
+            {...form.register('publicCompanyAddress')}
+            placeholder="Your public business address..."
+            rows={3}
+          />
+          <p className="text-sm text-gray-500">Address for customer visits or correspondence</p>
         </div>
       </CardContent>
     </Card>
   );
 
   const renderStep5 = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle>Media & Payment</CardTitle>
-        <CardDescription>Upload files and payment information</CardDescription>
+    <Card className="border-0 shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-teal-50 to-cyan-50 border-b">
+        <CardTitle className="text-xl text-gray-900">Media & Banking Information</CardTitle>
+        <CardDescription className="text-gray-600">Share your media assets and payment preferences</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label>Upload Files</Label>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-            <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-            <p className="text-sm text-gray-600 mb-2">Drop files here or click to upload</p>
-            <Input
-              type="file"
-              multiple
-              onChange={handleFileUpload}
-              className="hidden"
-              id="file-upload"
-            />
-            <Label htmlFor="file-upload" className="cursor-pointer">
-              <Button type="button" variant="outline">
-                Choose Files
-              </Button>
-            </Label>
-          </div>
+      <CardContent className="p-6 space-y-8">
+        {/* Media Assets Section */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-900">Media Assets</h3>
           
-          {uploadedFiles.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Uploaded Files:</p>
-              {uploadedFiles.map((file, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                  <span className="text-sm">{file.name}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeFile(index)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
+          <div className="space-y-2">
+            <Label htmlFor="mediaLinks">Images / Video Links</Label>
+            <Textarea
+              id="mediaLinks"
+              {...form.register('mediaLinks')}
+              placeholder="Share links to your media content..."
+              rows={3}
+            />
+            <p className="text-sm text-gray-500">Include links to testimonials, portfolio images, videos, or any other media you'd like to showcase</p>
+            <p className="text-xs text-gray-400">Example: https://youtube.com/watch?v=example, https://drive.google.com/portfolio-images</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="mediaFiles">Upload Images / Videos</Label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+              <p className="text-sm text-gray-600 mb-2">Drop files here or click to upload</p>
+              <Input
+                type="file"
+                multiple
+                accept="image/*,video/*"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+              />
+              <Label htmlFor="file-upload" className="cursor-pointer">
+                <Button type="button" variant="outline">
+                  Choose Files
+                </Button>
+              </Label>
+            </div>
+            <p className="text-sm text-gray-500">Upload high-quality images and videos that represent your brand. Supported formats: JPG, PNG, GIF, MP4, MOV.</p>
+            
+            {uploadedFiles.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Uploaded Files:</p>
+                {uploadedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <span className="text-sm">{file.name}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFile(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Payment Integration Section */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-900">Payment Integration</h3>
+          
+          <div className="space-y-2">
+            <Label htmlFor="paymentIntegrationNeeds">Payment Integration Needs</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {['Stripe Integration', 'PayPal Integration', 'Bank Transfer Setup', 'Subscription Billing', 'Invoice Generation', 'Refund Processing', 'Multi-currency Support', 'Payment Analytics'].map((option) => (
+                <label key={option} className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    value={option}
+                    onChange={(e) => {
+                      const current = form.getValues('paymentIntegrationNeeds') || [];
+                      if (e.target.checked) {
+                        form.setValue('paymentIntegrationNeeds', [...current, option]);
+                      } else {
+                        form.setValue('paymentIntegrationNeeds', current.filter(item => item !== option));
+                      }
+                    }}
+                    className="rounded"
+                  />
+                  <span className="text-sm">{option}</span>
+                </label>
               ))}
             </div>
-          )}
+            <p className="text-sm text-gray-500">Select the payment features you need for your business. This helps us configure the right payment solutions.</p>
+            <p className="text-xs text-gray-400">Choose all that apply - we'll set up the payment infrastructure you need</p>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label>Media Links</Label>
-          {mediaLinks.map((link, index) => (
-            <div key={index} className="flex gap-2">
+        {/* Banking Information Section */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-900">Banking Information</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="account_name">Account Name</Label>
               <Input
-                value={link}
-                onChange={(e) => updateMediaLink(index, e.target.value)}
-                placeholder="https://..."
+                id="account_name"
+                {...form.register('account_name')}
+                placeholder="e.g. John Doe Business Account"
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => removeMediaLink(index)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              <p className="text-sm text-gray-500">The legal name on the bank account</p>
             </div>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={addMediaLink}
-            className="w-full"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Media Link
-          </Button>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="bank_details">Bank Details</Label>
-          <Textarea
-            id="bank_details"
-            {...form.register('bank_details')}
-            placeholder="Enter bank details..."
-            rows={3}
-          />
+            <div className="space-y-2">
+              <Label htmlFor="account_number">Account Number</Label>
+              <Input
+                id="account_number"
+                {...form.register('account_number')}
+                placeholder="e.g. 12345678"
+              />
+              <p className="text-sm text-gray-500">Your domestic bank account number</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="iban">IBAN</Label>
+              <Input
+                id="iban"
+                {...form.register('iban')}
+                placeholder="e.g. GB29 NWBK 6016 1331 9268 19"
+              />
+              <p className="text-sm text-gray-500">International Bank Account Number for international transfers</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="swift">SWIFT / BIC</Label>
+              <Input
+                id="swift"
+                {...form.register('swift')}
+                placeholder="e.g. ABCDGB2L"
+              />
+              <p className="text-sm text-gray-500">Bank SWIFT/BIC code for international transfers</p>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -777,8 +997,8 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
           <div>
             <h4 className="font-medium">Company Information</h4>
             <div className="text-sm space-y-1">
-              <div><span className="text-gray-500">Email:</span> {watchedValues.company_email}</div>
-              <div><span className="text-gray-500">Business Number:</span> {watchedValues.business_number}</div>
+              <div><span className="text-gray-500">Email:</span> {watchedValues.contactCompanyEmail}</div>
+              <div><span className="text-gray-500">Business Number:</span> {watchedValues.contactBusinessNumber}</div>
             </div>
           </div>
 
@@ -820,8 +1040,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">Create New Project</h2>
-            <p className="text-gray-600 mt-1">Tell us about your project and we'll help you get started</p>
+            <h2 className="text-3xl font-bold text-gray-900">New Project</h2>
           </div>
           <div className="flex items-center gap-3">
             <Badge variant="outline" className="px-3 py-1 text-sm">

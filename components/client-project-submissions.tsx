@@ -49,6 +49,8 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase";
@@ -105,6 +107,7 @@ export function ClientProjectSubmissions() {
   const [showRawFields, setShowRawFields] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editStep, setEditStep] = useState<2 | 3 | 4 | 5 | 6>(2);
+  const [isEditing, setIsEditing] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -168,64 +171,15 @@ export function ClientProjectSubmissions() {
   const refresh = async () => {
     setLoading(true);
     try {
-      // Load from both sources to support multiple deployments
-      const [submissionsRes, detailsRes] = await Promise.all([
-        supabase.from("submissions").select("*").order("created_at", { ascending: false }),
-        supabase
-          .from("client_project_details")
+      // Load from submissions table only
+      const { data: submissionsData, error } = await supabase
+        .from("submissions")
         .select("*")
-          .order("created_at", { ascending: false }),
-      ]);
+        .order("created_at", { ascending: false });
 
-      if (submissionsRes.error && detailsRes.error) {
-        throw submissionsRes.error || detailsRes.error;
+      if (error) {
+        throw error;
       }
-
-      const mapDetails = (row: any): Submission => ({
-        submission_id: row.id,
-        client_id: row.client_id || "",
-        project_type: ((): string => {
-          const svc = (row.selected_service || row.service || "").toString();
-          if (svc.includes("web")) return "web";
-          if (svc.includes("brand")) return "branding";
-          if (svc.includes("market")) return "marketing";
-          if (svc.includes("ai")) return "ai";
-          return "custom";
-        })(),
-        description: row.services_details || row.description || undefined,
-        client_name: row.client_name || undefined,
-        budget: Number(row.budget || 0),
-        start_date: row.start_date || undefined,
-        end_date: row.end_date || undefined,
-        status: (row.status || "pending").toLowerCase(),
-        priority: (row.priority || "medium").toLowerCase(),
-        step2_data: row.service_specific || undefined,
-        business_number: row.business_number || undefined,
-        company_email: row.company_email || undefined,
-        company_address: row.company_address || undefined,
-        about_company: row.company_details || undefined,
-        social_media_links: Array.isArray(row.social_links)
-          ? row.social_links.join(", ")
-          : row.social_links || undefined,
-        public_business_number: row.business_phone || undefined,
-        public_company_email: row.contact_email || undefined,
-        public_address: row.contact_address || undefined,
-        media_links: Array.isArray(row.media_links)
-          ? row.media_links.join(", ")
-          : row.media_links || undefined,
-        uploaded_media: row.uploaded_files || undefined,
-        bank_details:
-          typeof row.bank_details === "object"
-            ? JSON.stringify(row.bank_details)
-            : row.bank_details || undefined,
-        confirmation_checked: Boolean(row.confirmed) || false,
-        created_at: row.created_at,
-        approved_at: row.approved_at || undefined,
-        approved_by: row.approved_by || undefined,
-        // for table cells fallbacks
-        contact_email: row.contact_email || null,
-        company_details: row.company_details || null,
-      } as Submission);
 
       const mapSubmission = (row: any): Submission => ({
         submission_id: row.submission_id,
@@ -258,20 +212,13 @@ export function ClientProjectSubmissions() {
         company_details: row.about_company || row.company_address || null,
       } as Submission);
 
-      const listFromDetails: Submission[] = Array.isArray(detailsRes.data)
-        ? detailsRes.data.map(mapDetails)
-        : [];
-      const listFromSubmissions: Submission[] = Array.isArray(submissionsRes.data)
-        ? submissionsRes.data.map(mapSubmission)
+      const submissions: Submission[] = Array.isArray(submissionsData)
+        ? submissionsData.map(mapSubmission)
         : [];
 
-      // Merge without duplicates (prefer details when both exist)
-      const byId = new Map<string, Submission>();
-      for (const item of listFromSubmissions) byId.set(item.submission_id, item);
-      for (const item of listFromDetails) byId.set(item.submission_id, item);
-
-      setSubmissions(Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
+      setSubmissions(submissions.sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
     } catch (e: any) {
+      console.error("Error loading submissions:", e);
       toast({
         title: "Failed to load submissions",
         description: e?.message || String(e),
@@ -518,16 +465,28 @@ export function ClientProjectSubmissions() {
         status: subRow.status || s.status,
         selected_service: step2.selected_service || step2.selectedService || svcMap[subRow.project_type || s.project_type] || s.project_type,
         project_type: subRow.project_type || s.project_type,
-        company_details: subRow.about_company || s.about_company || null,
-        business_phone: subRow.public_business_number || s.public_business_number || null,
+        // Company & Contact Information
+        business_number: subRow.business_number || s.business_number || null,
         company_email: subRow.company_email || s.company_email || null,
         company_address: subRow.company_address || s.company_address || null,
+        about_company: subRow.about_company || s.about_company || null,
+        // Public Contact Information
+        public_business_number: subRow.public_business_number || s.public_business_number || null,
+        public_company_email: subRow.public_company_email || s.public_company_email || null,
+        public_address: subRow.public_address || s.public_address || null,
+        // Social Media & Links
+        social_media_links: subRow.social_media_links || s.social_media_links || null,
+        media_links: subRow.media_links || s.media_links || null,
+        // Banking
+        bank_details: subRow.bank_details || s.bank_details || null,
+        // Legacy fields for backward compatibility
+        company_details: subRow.about_company || s.about_company || null,
+        business_phone: subRow.public_business_number || s.public_business_number || null,
         contact_email: subRow.public_company_email || subRow.company_email || s.public_company_email || s.company_email || null,
         contact_phone: subRow.public_business_number || s.public_business_number || null,
         contact_address: subRow.public_address || s.public_address || null,
         social_links: subRow.social_media_links || s.social_media_links || null,
-        media_links: subRow.media_links || s.media_links || null,
-        bank_details: subRow.bank_details || s.bank_details || null,
+        // Metadata
         created_at: subRow.created_at || s.created_at,
         approved_project_id: null,
         step2_data: step2,
@@ -543,91 +502,77 @@ export function ClientProjectSubmissions() {
 
   const openEdit = async (s: Submission) => {
     setActiveSubmissionId(s.submission_id);
-    // Pre-fill selected service from current row while fetching more details
-    setSelectedService(s.project_type || "");
     setEditStep(2);
+    setEditOpen(true);
+    
     try {
       const supabase = createClient();
-      // Load from legacy details (if exists)
-      const [{ data: legacy }, { data: sub }] = await Promise.all([
-        supabase
-          .from("client_project_details")
-          .select("*")
-          .eq("id", s.submission_id)
-          .single(),
-        supabase
-          .from("submissions")
-          .select(
-            "project_type, step2_data, business_number, company_email, company_address, about_company, social_media_links, public_business_number, public_company_email, public_address, media_links, uploaded_media, bank_details"
-          )
-          .eq("submission_id", s.submission_id)
-          .single(),
-      ]);
+      // Load from submissions table only
+      const { data: sub } = await supabase
+        .from("submissions")
+        .select(
+          "project_type, step2_data, business_number, company_email, company_address, about_company, social_media_links, public_business_number, public_company_email, public_address, media_links, uploaded_media, bank_details"
+        )
+        .eq("submission_id", s.submission_id)
+        .single();
 
-      // Prefer latest submissions table, fall back to legacy where missing
       if (sub) {
-        setCompanyNumber(sub.business_number || legacy?.business_number || "");
-        setCompanyEmail(sub.company_email || legacy?.company_email || "");
-        setCompanyAddress(sub.company_address || legacy?.company_address || "");
-        setAboutCompany(sub.about_company || legacy?.company_details || "");
-        setPublicPhone(
-          sub.public_business_number || legacy?.business_phone || legacy?.contact_phone || ""
-        );
-        setPublicCompanyEmail(sub.public_company_email || legacy?.contact_email || "");
-        setPublicCompanyAddress(sub.public_address || legacy?.contact_address || "");
-        setSocialLinks(
-          (sub.social_media_links || legacy?.social_links || "").toString()
-        );
-        setMediaLinks((sub.media_links || legacy?.media_links || "").toString());
+        // Basic info
+        setCompanyNumber(sub.business_number || "");
+        setCompanyEmail(sub.company_email || "");
+        setCompanyAddress(sub.company_address || "");
+        setAboutCompany(sub.about_company || "");
+        setPublicPhone(sub.public_business_number || "");
+        setPublicCompanyEmail(sub.public_company_email || "");
+        setPublicCompanyAddress(sub.public_address || "");
+        setSocialLinks((sub.social_media_links || "").toString());
+        setMediaLinks((sub.media_links || "").toString());
 
-        // Step 2 data mapping (supports snake_case and camelCase from backend)
+        // Step 2 data mapping
         const step2: any = sub.step2_data || {};
-        setSelectedService(
-          step2.selected_service || step2.selectedService || legacy?.selected_service || sub.project_type || s.project_type || ""
-        );
-        setDomainSuggestions(
-          step2.domain_suggestions || step2.domainSuggestions || legacy?.domain_suggestions || ""
-        );
-        setWebsiteReferences(
-          step2.website_references || step2.websiteReferences || legacy?.website_references || ""
-        );
-        const featuresReq = step2.features_requirements || step2.featuresRequirements;
-        if (featuresReq !== undefined) setFeaturesRequirements(featuresReq);
-        const budgetTl = step2.budget_timeline || step2.budgetTimeline;
-        if (budgetTl !== undefined) setBudgetTimeline(budgetTl);
-        const logoId = step2.logo_ideas || step2.logoIdeas;
-        if (logoId !== undefined) setLogoIdeas(logoId);
-        const brandTh = step2.brand_theme || step2.brandTheme;
-        if (brandTh !== undefined) setBrandTheme(brandTh);
+        setSelectedService(step2.selected_service || step2.selectedService || sub.project_type || s.project_type || "");
+        setDomainSuggestions(step2.domainSuggestions || step2.domain_suggestions || "");
+        setWebsiteReferences(step2.websiteReferences || step2.website_references || "");
+        setFeaturesRequirements(step2.featuresRequirements || step2.features_requirements || "");
+        setBudgetTimeline(step2.budgetTimeline || step2.budget_timeline || "");
+        setLogoIdeas(step2.logoIdeasConcepts || step2.logo_ideas || "");
+        setBrandTheme(step2.colorBrandTheme || step2.brand_theme || "");
+        setDesignAssetsNeeded(step2.designAssetsNeeded || "");
+        setTargetAudienceIndustry(step2.targetAudienceIndustry || "");
+        setMarketingGoals(step2.marketingGoals || "");
+        setChannelsOfInterest(step2.channelsOfInterest || "");
+        setBudgetRangeMonthly(step2.budgetRangeMonthly || "");
+        setAiSolutionType(step2.aiSolutionType || "");
+        setBusinessChallengeUseCase(step2.businessChallengeUseCase || "");
+        setDataAvailability(step2.dataAvailability || "");
+        setBudgetRange(step2.budgetRange || "");
+        setServiceDescription(step2.serviceDescription || "");
+        setExpectedOutcome(step2.expectedOutcome || "");
 
-        // Bank details mapping (submission bank_details may be JSON string)
+        // Bank details mapping
         let bank: any = sub.bank_details;
-        try { if (typeof bank === "string") bank = JSON.parse(bank); } catch {}
+        try { 
+          if (typeof bank === "string") bank = JSON.parse(bank); 
+        } catch {}
         setBankAccountName(bank?.account_name || "");
         setBankAccountNumber(bank?.account_number || "");
         setBankIban(bank?.iban || "");
         setBankSwift(bank?.swift || "");
-      } else if (legacy) {
-        setCompanyNumber(legacy.business_number || "");
-        // Legacy only
-        setCompanyEmail(legacy.company_email || "");
-        setCompanyAddress(legacy.company_address || "");
-        setAboutCompany(legacy.company_details || "");
-        setPublicPhone(legacy.business_phone || legacy.contact_phone || "");
-        setPublicCompanyEmail(legacy.contact_email || "");
-        setPublicCompanyAddress(legacy.contact_address || "");
-        setSocialLinks((legacy.social_links || "").toString());
-        setMediaLinks((legacy.media_links || "").toString());
-        setSelectedService(legacy.selected_service || "");
-        setDomainSuggestions(legacy.domain_suggestions || "");
-        setWebsiteReferences(legacy.website_references || "");
       }
-    } catch {}
-    setEditOpen(true);
+    } catch (error) {
+      console.error("Error loading submission for edit:", error);
+      toast({
+        title: "Error loading submission",
+        description: "Could not load submission details for editing",
+        variant: "destructive"
+      });
+    }
   };
 
   const confirmEdit = async () => {
     if (!activeSubmissionId) return;
+    
+    setIsEditing(true);
     try {
       // Build step2_data with only non-empty values using the agreed schema keys
       const step2Payload: Record<string, any> = {};
@@ -658,33 +603,52 @@ export function ClientProjectSubmissions() {
         business_number: companyNumber || null,
         company_email: companyEmail || null,
         company_address: companyAddress || null,
-        company_details: aboutCompany || null,
-        // Step 4 (legacy names kept for backward compatibility)
-        contact_phone: publicPhone || null,
-        contact_email: publicCompanyEmail || null,
-        contact_address: publicCompanyAddress || null,
-        social_links: socialLinks || null,
+        about_company: aboutCompany || null,
+        // Step 4
+        public_business_number: publicPhone || null,
+        public_company_email: publicCompanyEmail || null,
+        public_address: publicCompanyAddress || null,
+        social_media_links: socialLinks || null,
         // Step 5
         media_links: mediaLinks || null,
-        // Step 2 (structured for new submissions table + used to populate legacy)
+        // Step 6 - Banking
+        bank_details: JSON.stringify({
+          account_name: bankAccountName || null,
+          account_number: bankAccountNumber || null,
+          iban: bankIban || null,
+          swift: bankSwift || null,
+        }),
+        // Step 2 (structured for new submissions table)
         step2_data: step2Payload,
       };
-      // Persist updates via API to avoid importing client DB helpers in the UI component
-      await fetch(`/api/submissions/${activeSubmissionId}`, {
+      
+      // Persist updates via API
+      const response = await fetch(`/api/submissions/${activeSubmissionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
-      toast({ title: "Submission updated" });
+
+      if (!response.ok) {
+        throw new Error('Failed to update submission');
+      }
+
+      toast({ 
+        title: "Submission updated successfully",
+        description: "All changes have been saved"
+      });
       setEditOpen(false);
       setActiveSubmissionId(null);
       await refresh();
     } catch (e: any) {
+      console.error("Error updating submission:", e);
       toast({
         title: "Update failed",
         description: e?.message || String(e),
         variant: "destructive",
       });
+    } finally {
+      setIsEditing(false);
     }
   };
 
@@ -967,13 +931,43 @@ export function ClientProjectSubmissions() {
             )}
 
             <div className="flex items-center justify-between pt-2">
-              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setEditOpen(false)}
+                disabled={isEditing}
+              >
+                Cancel
+              </Button>
               <div className="flex gap-2">
-                <Button variant="secondary" disabled={editStep === 2} onClick={() => setEditStep((prev) => (prev > 2 ? (prev - 1) as any : prev))}>Back</Button>
+                <Button 
+                  variant="secondary" 
+                  disabled={editStep === 2 || isEditing} 
+                  onClick={() => setEditStep((prev) => (prev > 2 ? (prev - 1) as any : prev))}
+                >
+                  Back
+                </Button>
                 {editStep < 6 ? (
-                  <Button onClick={() => setEditStep((prev) => (prev < 6 ? (prev + 1) as any : prev))}>Next</Button>
+                  <Button 
+                    onClick={() => setEditStep((prev) => (prev < 6 ? (prev + 1) as any : prev))}
+                    disabled={isEditing}
+                  >
+                    Next
+                  </Button>
                 ) : (
-                  <Button onClick={confirmEdit}>Save Changes</Button>
+                  <Button 
+                    onClick={confirmEdit}
+                    disabled={isEditing}
+                    className="min-w-[120px]"
+                  >
+                    {isEditing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
                 )}
               </div>
             </div>
@@ -1103,268 +1097,384 @@ export function ClientProjectSubmissions() {
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Submission details</DialogTitle>
-            <DialogDescription className="sr-only">View full client submission details.</DialogDescription>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Submission Details</DialogTitle>
+            <DialogDescription>Review all submission information</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-sm">
+          <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
             {viewLoading && (
               <div className="space-y-4">
                 <Skeleton className="h-6 w-48" />
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-4 w-1/2" />
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-28" />
-                  <Skeleton className="h-4 w-full" />
-                </div>
               </div>
             )}
             {!viewLoading && !viewData && (
               <div className="text-muted-foreground">No data</div>
             )}
             {!viewLoading && viewData && (
-              <>
-                {(() => {
-                  // Prefer service set inside step2_data, then top-level, then project_type
-                  const step2Svc = (viewData.step2_data?.selected_service || viewData.step2_data?.selectedService || (typeof viewData.service_specific === 'object' ? (viewData.service_specific as any)?.selected_service : undefined)) as any;
-                  const rawSvc = (step2Svc || viewData.selected_service || viewData.project_type || "").toString();
-                  const svcMap: Record<string, string> = {
-                    web: "web-development",
-                    "web-development": "web-development",
-                    branding: "branding-design",
-                    "branding-design": "branding-design",
-                    marketing: "digital-marketing",
-                    "digital-marketing": "digital-marketing",
-                    ai: "ai-solutions",
-                    "ai-solutions": "ai-solutions",
-                    custom: "other",
-                    other: "other",
-                  };
-                  const svc = svcMap[rawSvc] || rawSvc;
-                  let embedded: any = null;
-                  if (
-                    viewData.service_specific &&
-                    typeof viewData.service_specific === "object"
-                  )
-                    embedded = viewData.service_specific;
-                  else if (typeof viewData.services_details === "string") {
-                    const t = viewData.services_details.trim();
-                    if (t.startsWith("{") || t.startsWith("[")) {
-                      try {
-                        embedded = JSON.parse(t);
-                      } catch {}
-                    }
-                  }
-                  // Pretty helpers
-                  const prettyValue = (v: any) => {
-                    if (v === null || v === undefined) return null;
-                    if (Array.isArray(v)) return v.filter(Boolean);
-                    if (typeof v === "object") return v;
-                    const s = String(v).trim();
-                    return s || null;
-                  };
-                  const pick = (...keys: string[]) => {
-                    for (const k of keys) {
-                      const v = embedded?.[k] ?? viewData?.[k];
-                      if (
-                        v !== undefined &&
-                        v !== null &&
-                        String(v).trim() !== ""
-                      )
-                        return v;
-                    }
-                    return null;
-                  };
-                  const Section = ({
-                    title,
-                    children,
-                  }: {
-                    title: string;
-                    children: React.ReactNode;
-                  }) => (
-                    <div className="space-y-2">
-                      <div className="font-medium text-foreground">{title}</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {children}
-                      </div>
-                    </div>
-                  );
-                  const Row = ({
-                    label,
-                    value,
-                  }: {
-                    label: string;
-                    value: any;
-                  }) =>
-                    prettyValue(value) ? (
-                      <div>
-                        <div className="text-foreground/90">{label}</div>
-                        {Array.isArray(prettyValue(value)) ? (
-                          <div className="flex flex-wrap gap-2">
-                            {(prettyValue(value) as any[]).map((item, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-1 rounded bg-muted text-foreground text-xs"
-                              >
-                                {String(item)}
-                              </span>
-                            ))}
-                          </div>
-                        ) : typeof prettyValue(value) === "object" ? (
-                          <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/40 rounded p-2">
-                            {JSON.stringify(prettyValue(value), null, 2)}
-                          </pre>
-                        ) : (
-                        <div className="text-muted-foreground whitespace-pre-wrap">
-                            {String(prettyValue(value))}
+              <Tabs defaultValue="service" className="w-full">
+                <TabsList className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                  <TabsTrigger className="w-full" value="service">Service Details</TabsTrigger>
+                  <TabsTrigger className="w-full" value="company">Company Info</TabsTrigger>
+                  <TabsTrigger className="w-full" value="media">Media & Banking</TabsTrigger>
+                  <TabsTrigger className="w-full" value="files">Files</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="service" className="space-y-4">
+                  {(() => {
+                    const step2 = viewData.step2_data || {};
+                    // Prefer explicit selected_service, then step2 selected, then project_type
+                    let serviceType: string =
+                      (viewData.selected_service || step2.selected_service || viewData.project_type || "").toString().toLowerCase();
+                    // Normalize common aliases
+                    if (serviceType.includes("web")) serviceType = "web-development";
+                    else if (serviceType.includes("brand")) serviceType = "branding-design";
+                    else if (serviceType.includes("market")) serviceType = "digital-marketing";
+                    else if (serviceType.includes("ai")) serviceType = "ai-solutions";
+                    else if (!serviceType) serviceType = "other";
+                    
+                    const renderField = (label: string, value: any, helpText?: string) => {
+                      if (!value) return null;
+                      return (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">{label}</Label>
+                          {Array.isArray(value) ? (
+                            <div className="flex flex-wrap gap-1">
+                              {value.map((item: string, index: number) => (
+                                <Badge key={index} variant="secondary" className="text-xs break-words">
+                                  {item}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words overflow-hidden">
+                              {String(value)}
+                            </div>
+                          )}
+                          {helpText && (
+                            <p className="text-xs text-muted-foreground break-words">{helpText}</p>
+                          )}
                         </div>
+                      );
+                    };
+
+                    return (
+                      <div className="space-y-6">
+                        <div>
+                          <h3 className="text-lg font-semibold">Service-Specific Information</h3>
+                          <p className="text-sm text-muted-foreground">Tell us more about your project</p>
+                        </div>
+                        
+                        {serviceType === "web-development" && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Web Development Details</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {renderField("Domain Suggestions", step2.domainSuggestions, "Do you have any domain preferences or suggestions?")}
+                              {renderField("Website References", step2.websiteReferences, "Share links to websites you like for inspiration")}
+                              {renderField("Features & Requirements", step2.featuresRequirements, "Be as specific as possible about what you want your website to do")}
+                              {renderField("Budget & Timeline", step2.budgetTimeline, "This helps us provide accurate quotes and timelines")}
+                            </CardContent>
+                          </Card>
+                        )}
+                        
+                        {serviceType === "branding-design" && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Branding Design Details</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {renderField("Logo Ideas & Concepts", step2.logoIdeasConcepts, "Share any ideas, concepts, or inspiration for your logo")}
+                              {renderField("Color & Brand Theme", step2.colorBrandTheme, "Describe your brand's personality and preferred colors")}
+                              {renderField("Design Assets Needed", step2.designAssetsNeeded, "Select all the design assets you need")}
+                            </CardContent>
+                          </Card>
+                        )}
+                        
+                        {serviceType === "digital-marketing" && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Digital Marketing Details</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {renderField("Target Audience & Industry", step2.targetAudienceIndustry, "Help us understand your market and customers")}
+                              {renderField("Marketing Goals", step2.marketingGoals, "Be specific about your marketing objectives")}
+                              {renderField("Channels of Interest", step2.channelsOfInterest, "Which marketing channels interest you most?")}
+                              {renderField("Monthly Marketing Budget", step2.budgetRangeMonthly, "This helps us recommend the right strategies")}
+                            </CardContent>
+                          </Card>
+                        )}
+                        
+                        {serviceType === "ai-solutions" && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>AI Solutions Details</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {renderField("AI Solution Types", step2.aiSolutionType, "What type of AI solutions are you interested in?")}
+                              {renderField("Business Challenge & Use Case", step2.businessChallengeUseCase, "Help us understand how AI can solve your specific challenges")}
+                              {renderField("Data Availability", step2.dataAvailability, "AI solutions require data - what's your current data situation?")}
+                              {renderField("Budget Range", step2.budgetRange, "AI solutions vary in complexity and cost")}
+                            </CardContent>
+                          </Card>
+                        )}
+                        
+                        {serviceType === "other" && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Custom Project Details</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {renderField("Service Description", step2.serviceDescription, "Tell us about your specific requirements")}
+                              {renderField("Expected Outcome", step2.expectedOutcome, "Help us understand your goals and expectations")}
+                            </CardContent>
+                          </Card>
                         )}
                       </div>
-                    ) : null;
+                    );
+                  })()}
+                </TabsContent>
+                
+                <TabsContent value="company" className="space-y-4">
+                  <div className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Company & Contact Information</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3 text-sm">
+                        <div className="break-words">
+                          <strong>Business Phone Number:</strong> {viewData.business_number || "Not provided"}
+                        </div>
+                        <div className="break-words">
+                          <strong>Company Email:</strong> {viewData.company_email || "Not provided"}
+                        </div>
+                        <div className="break-words">
+                          <strong>Company Address:</strong> {viewData.company_address || "Not provided"}
+                        </div>
+                        {viewData.about_company && (
+                          <div className="space-y-2">
+                            <strong>About Your Company:</strong>
+                            <div className="text-muted-foreground whitespace-pre-wrap break-words overflow-hidden">
+                              {viewData.about_company}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Social Media & Public Contact Info</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3 text-sm">
+                        <div className="break-words">
+                          <strong>Public Business Number:</strong> {viewData.public_business_number || "Not provided"}
+                        </div>
+                        <div className="break-words">
+                          <strong>Public Company Email:</strong> {viewData.public_company_email || "Not provided"}
+                        </div>
+                        <div className="break-words">
+                          <strong>Public Company Address:</strong> {viewData.public_address || "Not provided"}
+                        </div>
+                        {viewData.social_media_links && (
+                          <div className="space-y-2">
+                            <strong>Social Media Links:</strong>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {String(viewData.social_media_links)
+                                .split(/[\,\n\r]+/)
+                                .map((link: string) => link.trim())
+                                .filter((link: string) => link.length > 0)
+                                .map((link: string, index: number) => (
+                                  <li key={index} className="break-all">
+                                    <a 
+                                      href={link.startsWith('http') ? link : `https://${link}`} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:underline text-xs"
+                                    >
+                                      {link}
+                                    </a>
+                                  </li>
+                                ))}
+                            </ul>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="media" className="space-y-4">
+                  <div className="space-y-6">
+                    {/* Media Assets Section */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Media Assets</CardTitle>
+                        <p className="text-sm text-muted-foreground">Share your media assets and payment preferences</p>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {viewData.media_links ? (
+                          <div className="space-y-3">
+                            <Label className="text-sm font-medium">Images / Video Links</Label>
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                              {viewData.media_links
+                                .split(/[,\n\r]+/)
+                                .map((link: string) => link.trim())
+                                .filter((link: string) => link.length > 0)
+                                .map((link: string, index: number) => (
+                                <div key={index} className="p-2 bg-gray-50 rounded-md">
+                                  <a 
+                                    href={link.startsWith('http') ? link : `https://${link}`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-blue-600 hover:underline break-all text-xs block"
+                                  >
+                                    {link}
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground break-words">
+                              Include links to testimonials, portfolio images, videos, or any other media you'd like to showcase
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-sm">No media links provided</p>
+                        )}
+                        
+                        {viewData.media_files && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Uploaded Media Files</Label>
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                              {Array.isArray(viewData.media_files) 
+                                ? viewData.media_files.map((file: any, index: number) => (
+                                    <div key={index} className="p-2 bg-gray-50 rounded-md">
+                                      <p className="text-xs break-words">{file.name || file}</p>
+                                    </div>
+                                  ))
+                                : <div className="p-2 bg-gray-50 rounded-md">
+                                    <p className="text-xs break-words">{viewData.media_files}</p>
+                                  </div>
+                              }
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Uploaded high-quality images and videos that represent your brand
+                            </p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
 
-                  return (
-                    <>
-                      <Section title="Overview">
-                        <Row label="Status" value={viewData.status} />
-                        <Row label="Selected service" value={svc} />
-                        <Row label="Created at" value={viewData.created_at} />
-                        <Row label="Updated at" value={viewData.updated_at} />
-                      </Section>
-
-                      <Section title="Contact">
-                        <Row
-                          label="Contact email"
-                          value={pick("contactEmail", "contact_email")}
-                        />
-                        <Row
-                          label="Contact phone"
-                          value={pick(
-                            "contactBusinessNumber",
-                            "contact_phone",
-                            "business_phone"
-                          )}
-                        />
-                        <Row
-                          label="Contact address"
-                          value={pick(
-                            "contactCompanyAddress",
-                            "contact_address"
-                          )}
-                        />
-                        <Row
-                          label="Company email"
-                          value={pick("companyEmail", "company_email")}
-                        />
-                        <Row
-                          label="Company address"
-                          value={pick("companyAddress", "company_address")}
-                        />
-                      </Section>
-
-                      <Section title="Company">
-                        <Row
-                          label="Company details"
-                          value={pick("aboutCompanyDetails", "company_details")}
-                        />
-                        <Row
-                          label="Social links"
-                          value={pick("socialLinks", "social_links")}
-                        />
-                        <Row
-                          label="Media links"
-                          value={pick("mediaLinks", "media_links")}
-                        />
-                      </Section>
-
-                      {(() => {
-                        const step2 = embedded ?? viewData.step2_data ?? {};
-                        const s = String(svc);
-                        const pickStep2 = (...keys: string[]) => {
-                          for (const k of keys) {
-                            const snake = k
-                              .replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)
-                              .replace(/^_/, "");
-                            const val = (step2 as any)[k] ?? (step2 as any)[snake];
-                            if (val !== undefined && val !== null && String(val).trim?.() !== "") return val;
-                          }
-                          return null;
-                        };
-                        const aliasPick = (aliases: string[]) => pickStep2(...aliases);
-
-                        return (
-                          <>
-                            <Section title="Service">
-                              <Row label="Selected service" value={svc} />
-                              {s === "web-development" && (
-                                <>
-                                  <Row label="Domain suggestions" value={aliasPick(["domainSuggestions","domain_suggestions","domain_suggestions_svc"])} />
-                                  <Row label="Website references" value={aliasPick(["websiteReferences","website_references","references"])} />
-                                  <Row label="Features / Requirements" value={aliasPick(["featuresRequirements","features","features_requirements","features_requirements_svc"])} />
-                                </>
-                              )}
-
-                              {s === "branding-design" && (
-                                <>
-                                  <Row label="Logo ideas / concepts" value={aliasPick(["logoIdeasConcepts","logoIdeas","logo_concepts"]) } />
-                                  <Row label="Color / brand theme" value={aliasPick(["colorBrandTheme","brandTheme","color_preferences","brand_theme"]) } />
-                                  <Row label="Design assets needed" value={aliasPick(["designAssetsNeeded","design_assets"]) } />
-                                </>
-                              )}
-
-                              {s === "digital-marketing" && (
-                                <>
-                                  <Row label="Target audience / industry" value={aliasPick(["targetAudienceIndustry"]) } />
-                                  <Row label="Marketing goals" value={aliasPick(["marketingGoals","marketing_goals"]) } />
-                                  <Row label="Channels of interest" value={aliasPick(["channelsOfInterest","channels"]) } />
-                                  <Row label="Monthly budget range" value={aliasPick(["budgetRangeMonthly","monthly_budget"]) } />
-                                </>
-                              )}
-
-                              {s === "ai-solutions" && (
-                                <>
-                                  <Row label="AI solution type" value={aliasPick(["aiSolutionType","ai_solution_type"]) } />
-                                  <Row label="Business challenge / use case" value={aliasPick(["businessChallengeUseCase","business_challenge"]) } />
-                                  <Row label="Data availability" value={aliasPick(["dataAvailability","data_availability"]) } />
-                                  <Row label="Overall budget range" value={aliasPick(["budgetRange","budget_range"]) } />
-                                </>
-                              )}
-
-                              {s === "other" && (
-                                <>
-                                  <Row label="Service description" value={aliasPick(["serviceDescription","service_description"]) } />
-                                  <Row label="Expected outcome" value={aliasPick(["expectedOutcome","expected_outcome"]) } />
-                                </>
-                              )}
-                            </Section>
-
-                            <Section title="Files">
-                              <Row label="Logo files" value={viewData.logo_files} />
-                              <Row label="Media files" value={viewData.media_files} />
-                            </Section>
-
-                            <Section title="Billing">
-                              <Row
-                                label="Bank details"
-                                value={pick("bankDetails", "bank_details")}
-                              />
-                            </Section>
-                          </>
-                        );
-                      })()}
-                    </>
-                  );
-                })()}
-              </>
+                    {/* Payment Integration Section */}
+                    {viewData.step2_data?.paymentIntegrationNeeds && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Payment Integration</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <Label className="text-sm font-medium">Payment Integration Needs</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {Array.isArray(viewData.step2_data.paymentIntegrationNeeds) 
+                              ? viewData.step2_data.paymentIntegrationNeeds.map((need: string, index: number) => (
+                                  <Badge key={index} variant="secondary" className="text-xs break-words">
+                                    {need}
+                                  </Badge>
+                                ))
+                              : <Badge variant="secondary" className="text-xs break-words">
+                                  {viewData.step2_data.paymentIntegrationNeeds}
+                                </Badge>
+                            }
+                          </div>
+                          <p className="text-xs text-muted-foreground break-words">
+                            Select the payment features you need for your business. This helps us configure the right payment solutions.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+                    
+                    {/* Banking Information Section */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Banking Information</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {viewData.bank_details ? (
+                          <div className="space-y-3">
+                            {Object.entries(JSON.parse(viewData.bank_details)).map(([key, value]) => (
+                              <div key={key} className="space-y-1">
+                                <Label className="text-sm font-medium">
+                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                </Label>
+                                <div className="p-2 bg-gray-50 rounded-md">
+                                  <p className="text-sm break-words">{value as string}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-sm">No bank details provided</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="files" className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Uploaded Files</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {viewData.logo_files && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Logo Files</Label>
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {Array.isArray(viewData.logo_files) 
+                              ? viewData.logo_files.map((file: any, index: number) => (
+                                  <div key={index} className="p-2 bg-gray-50 rounded-md">
+                                    <p className="text-xs break-words">{file.name || file}</p>
+                                  </div>
+                                ))
+                              : <div className="p-2 bg-gray-50 rounded-md">
+                                  <p className="text-xs break-words">{viewData.logo_files}</p>
+                                </div>
+                            }
+                          </div>
+                        </div>
+                      )}
+                      
+                      {viewData.media_files && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Media Files</Label>
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {Array.isArray(viewData.media_files) 
+                              ? viewData.media_files.map((file: any, index: number) => (
+                                  <div key={index} className="p-2 bg-gray-50 rounded-md">
+                                    <p className="text-xs break-words">{file.name || file}</p>
+                                  </div>
+                                ))
+                              : <div className="p-2 bg-gray-50 rounded-md">
+                                  <p className="text-xs break-words">{viewData.media_files}</p>
+                                </div>
+                            }
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!viewData.logo_files && !viewData.media_files && (
+                        <p className="text-muted-foreground text-sm">No files uploaded</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             {viewData?.approved_project_id ? (
               <Button
                 onClick={() => {

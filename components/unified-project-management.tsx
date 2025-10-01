@@ -18,6 +18,9 @@ import {
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { projectService } from "@/lib/project-service";
+import { ServiceSpecificDetails } from "@/components/service-specific-details";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -246,11 +249,152 @@ export function UnifiedProjectManagement() {
   const [bankIban, setBankIban] = useState("");
   const [bankSwift, setBankSwift] = useState("");
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [paymentIntegrationNeeds, setPaymentIntegrationNeeds] = useState<string[]>([]);
   const [tryAdvance, setTryAdvance] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{name: string, url: string, size: number}>>([]);
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStep, setProcessingStep] = useState<string>("");
   const supabase = createClient();
   const { toast } = useToast();
+
+  // Enhanced file upload handler with progress tracking
+  const handleFileUpload = async (files: File[], projectId?: string) => {
+    if (!files.length) return;
+    
+    setIsUploading(true);
+    setUploadErrors([]);
+    setUploadProgress(0);
+    
+    const uploadPromises = files.map(async (file, index) => {
+      try {
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          throw new Error(`File ${file.name} is too large. Maximum size is 10MB.`);
+        }
+        
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/mov', 'application/pdf'];
+        if (!allowedTypes.includes(file.type)) {
+          throw new Error(`File ${file.name} has an unsupported format.`);
+        }
+        
+        if (projectId) {
+          const result = await uploadProjectFile({
+            projectId,
+            file,
+            path: 'media'
+          });
+          
+          return {
+            name: file.name,
+            url: result.path,
+            size: file.size,
+            success: true
+          };
+        } else {
+          // For preview before project creation
+          return {
+            name: file.name,
+            url: URL.createObjectURL(file),
+            size: file.size,
+            success: true
+          };
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : `Failed to upload ${file.name}`;
+        setUploadErrors(prev => [...prev, errorMessage]);
+        return {
+          name: file.name,
+          url: '',
+          size: file.size,
+          success: false,
+          error: errorMessage
+        };
+      }
+    });
+    
+    try {
+      const results = await Promise.all(uploadPromises);
+      const successful = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success);
+      
+      setUploadedFiles(prev => [...prev, ...successful]);
+      
+      if (successful.length > 0) {
+        toast({
+          title: "Files uploaded successfully",
+          description: `${successful.length} file(s) uploaded`,
+        });
+      }
+      
+      if (failed.length > 0) {
+        toast({
+          title: "Some files failed to upload",
+          description: `${failed.length} file(s) failed`,
+          variant: "destructive",
+        });
+      }
+      
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload files",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(null);
+    }
+  };
+
+  // Enhanced form validation
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+    
+    // Step 1 validation
+    if (!formData.name.trim()) {
+      errors.name = "Project name is required";
+    }
+    if (!serviceType) {
+      errors.serviceType = "Project type is required";
+    }
+    
+    // Step 3 validation
+    if (!companyNumber.trim()) {
+      errors.companyNumber = "Business phone number is required";
+    }
+    if (!companyEmail.trim()) {
+      errors.companyEmail = "Company email is required";
+    } else if (!/\S+@\S+\.\S+/.test(companyEmail)) {
+      errors.companyEmail = "Please enter a valid email address";
+    }
+    if (!companyAddress.trim()) {
+      errors.companyAddress = "Company address is required";
+    }
+    if (!aboutCompany.trim()) {
+      errors.aboutCompany = "About company is required";
+    }
+    
+    // Step 4 validation
+    if (!publicContactPhone.trim()) {
+      errors.publicContactPhone = "Public business number is required";
+    }
+    if (!publicContactEmail.trim()) {
+      errors.publicContactEmail = "Public company email is required";
+    } else if (!/\S+@\S+\.\S+/.test(publicContactEmail)) {
+      errors.publicContactEmail = "Please enter a valid email address";
+    }
+    if (!publicContactAddress.trim()) {
+      errors.publicContactAddress = "Public company address is required";
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   async function refetchAllProjects() {
     const { data, error } = await supabase
@@ -608,49 +752,22 @@ export function UnifiedProjectManagement() {
   };
 
   const handleSubmit = async () => {
-    if (isSubmitting) return; // Prevent multiple submissions
+    if (isSubmitting || isProcessing) return; // Prevent multiple submissions
+    
     setIsSubmitting(true);
+    setIsProcessing(true);
+    setProcessingStep("Validating form data...");
+    
     try {
-      // Validate required fields
-      if (!formData.name) {
+      // Enhanced validation
+      if (!validateForm()) {
         toast({ 
           title: "Validation Error", 
-          description: "Project name is required",
+          description: "Please fix the errors in the form",
           variant: "destructive"
         });
         setIsSubmitting(false);
-        return;
-      }
-
-      if (!serviceType) {
-        toast({ 
-          title: "Validation Error", 
-          description: "Please select a project type",
-          variant: "destructive"
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Validate Step 3 required fields
-      if (!companyNumber || !companyEmail || !companyAddress || !aboutCompany) {
-        toast({ 
-          title: "Validation Error", 
-          description: "Please fill in all required company information",
-          variant: "destructive"
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Validate Step 4 required fields
-      if (!socialLinks.length || !publicContactPhone || !publicContactEmail || !publicContactAddress) {
-        toast({ 
-          title: "Validation Error", 
-          description: "Please fill in all required public contact information",
-          variant: "destructive"
-        });
-        setIsSubmitting(false);
+        setIsProcessing(false);
         return;
       }
 
@@ -745,19 +862,70 @@ export function UnifiedProjectManagement() {
         const result = await response.json();
         toast({ title: "Project updated successfully" });
       } else {
-        // Create new project using RPC function
-        const { data, error } = await supabase.rpc("create_project", {
-          client_id_param: currentUser?.id,
-          step1_data: step1Data,
-          step2_data: step2Data,
-          step3_data: step3Data,
-          step4_data: step4Data,
-          step5_data: step5Data,
-          admin_id: currentUser?.id,
-        });
+        // Create new project using project service
+        setProcessingStep("Creating project...");
+        
+        const projectData = {
+          name: formData.name,
+          type: serviceType as any,
+          description: formData.description,
+          client: formData.client,
+          budget: formData.budget,
+          start_date: formData.start_date,
+          end_date: formData.end_date,
+          priority: formData.priority,
+          status: formData.status,
+          company_number: companyNumber,
+          company_email: companyEmail,
+          company_address: companyAddress,
+          about_company: aboutCompany,
+          social_links: socialLinks,
+          public_contacts: {
+            phone: publicContactPhone,
+            email: publicContactEmail,
+            address: publicContactAddress,
+          },
+          media_links: mediaLinks,
+          bank_details: {
+            account_name: bankAccountName,
+            account_number: bankAccountNumber,
+            iban: bankIban,
+            swift: bankSwift,
+          },
+          service_specific: serviceSpecific,
+          payment_integration_needs: paymentIntegrationNeeds,
+        };
 
-        if (error) throw error;
-        toast({ title: "Project created successfully" });
+        const project = await projectService.createProject(projectData);
+        
+        if (!project) {
+          throw new Error("Failed to create project");
+        }
+
+        // Upload files if any
+        if (uploadFiles.length > 0) {
+          setProcessingStep("Uploading files...");
+          await handleFileUpload(uploadFiles, project.id);
+        }
+
+        // Add uploaded files as attachments
+        if (uploadedFiles.length > 0) {
+          setProcessingStep("Adding file attachments...");
+          for (const file of uploadedFiles) {
+            await projectService.addAttachment(project.id, {
+              file_name: file.name,
+              storage_path: file.url,
+              file_size: file.size,
+              content_type: 'application/octet-stream',
+              client_visible: true,
+            });
+          }
+        }
+
+        toast({ 
+          title: "Project created successfully",
+          description: "Your project has been created and files uploaded successfully"
+        });
       }
 
       await refetchAllProjects();
@@ -771,6 +939,8 @@ export function UnifiedProjectManagement() {
       });
     } finally {
       setIsSubmitting(false);
+      setIsProcessing(false);
+      setProcessingStep("");
     }
   };
 
@@ -778,6 +948,13 @@ export function UnifiedProjectManagement() {
     // Ensure any details dialog is closed before opening editor
     setDetailsOpen(false);
     setEditingProject(project);
+    
+    // Reset form errors
+    setFormErrors({});
+    setUploadErrors([]);
+    setUploadedFiles([]);
+    
+    // Populate form data with new field structure
     setFormData({
       name: project.name,
       description: project.description,
@@ -785,28 +962,41 @@ export function UnifiedProjectManagement() {
       priority: project.priority,
       start_date: project.start_date,
       end_date: project.end_date,
-      assigned_employees: project.assigned_employees,
-      progress: project.progress,
       budget: project.budget,
       client: project.client,
+      assigned_employees: project.assigned_employees || [],
+      progress: project.progress || 0,
     });
-    setIsCreating(true);
+    
+    // Set service type and map to new field names
     setServiceType((project.service_type as any) || "");
+    
+    // Company & Contact Information (Step 3)
     setCompanyNumber(project.company_number || "");
     setCompanyEmail(project.company_email || "");
     setCompanyAddress(project.company_address || "");
     setAboutCompany(project.about_company || "");
+    
+    // Social Media & Public Contact Info (Step 4)
     setSocialLinks(project.social_links || []);
     setPublicContactPhone(project.public_contacts?.phone || "");
     setPublicContactEmail(project.public_contacts?.email || "");
     setPublicContactAddress(project.public_contacts?.address || "");
+    
+    // Media & Banking Information (Step 5)
     setMediaLinks(project.media_links || []);
     setBankAccountName(project.bank_details?.account_name || "");
     setBankAccountNumber(project.bank_details?.account_number || "");
     setBankIban(project.bank_details?.iban || "");
     setBankSwift(project.bank_details?.swift || "");
-    setServiceSpecific(project.service_specific || {});
-    setWizardStep(2);
+    setPaymentIntegrationNeeds(project.payment_integration_needs || []);
+    
+    // Service-specific data with new field names
+    const serviceSpecificData = project.service_specific || {};
+    setServiceSpecific(serviceSpecificData);
+    
+    setIsCreating(true);
+    setWizardStep(0); // Start from Step 1 for editing
   };
 
   const deleteProjectLocal = (id: string) => {
@@ -1294,140 +1484,82 @@ export function UnifiedProjectManagement() {
                                 </Card>
                                 
                                 {/* Service-Specific Details */}
-                                {project.service_specific && Object.keys(project.service_specific).length > 0 && (
-                                  <Card className="md:col-span-2">
-                                  <CardHeader>
-                                      <CardTitle>Service-Specific Details</CardTitle>
-                                  </CardHeader>
-                                    <CardContent className="space-y-2 text-sm">
-                                      {project.service_type === "web" && (
-                                        <>
-                                          {project.service_specific.domain_suggestions && (
-                                            <p><strong>Domain Suggestions:</strong> {project.service_specific.domain_suggestions}</p>
-                                          )}
-                                          {project.service_specific.references && (
-                                            <p><strong>Website References:</strong> {project.service_specific.references}</p>
-                                          )}
-                                          {project.service_specific.features && (
-                                            <p><strong>Features:</strong> {Array.isArray(project.service_specific.features) ? project.service_specific.features.join(", ") : project.service_specific.features}</p>
-                                          )}
-                                          {project.service_specific.additional_requirements && (
-                                            <p><strong>Additional Requirements:</strong> {project.service_specific.additional_requirements}</p>
-                                          )}
-                                        </>
-                                      )}
-                                      
-                                      {project.service_type === "branding" && (
-                                        <>
-                                          {project.service_specific.logo_ideas && (
-                                            <p><strong>Logo Ideas:</strong> {project.service_specific.logo_ideas}</p>
-                                          )}
-                                          {project.service_specific.color_preferences && (
-                                            <p><strong>Color Preferences:</strong> {project.service_specific.color_preferences}</p>
-                                          )}
-                                          {project.service_specific.design_assets && (
-                                            <p><strong>Design Assets:</strong> {Array.isArray(project.service_specific.design_assets) ? project.service_specific.design_assets.join(", ") : project.service_specific.design_assets}</p>
-                                          )}
-                                          {project.service_specific.target_audience && (
-                                            <p><strong>Target Audience:</strong> {project.service_specific.target_audience}</p>
-                                          )}
-                                        </>
-                                      )}
-                                      
-                                      {project.service_type === "ai" && (
-                                        <>
-                                          {project.service_specific.ai_solution_type && (
-                                            <p><strong>AI Solution Type:</strong> {project.service_specific.ai_solution_type}</p>
-                                          )}
-                                          {project.service_specific.business_challenge && (
-                                            <p><strong>Business Challenge:</strong> {project.service_specific.business_challenge}</p>
-                                          )}
-                                          {project.service_specific.data_availability && (
-                                            <p><strong>Data Availability:</strong> {project.service_specific.data_availability}</p>
-                                          )}
-                                          {project.service_specific.expected_outcome && (
-                                            <p><strong>Expected Outcome:</strong> {project.service_specific.expected_outcome}</p>
-                                          )}
-                                        </>
-                                      )}
-                                      
-                                      {project.service_type === "marketing" && (
-                                        <>
-                                          {project.service_specific.target_audience && (
-                                            <p><strong>Target Audience:</strong> {project.service_specific.target_audience}</p>
-                                          )}
-                                          {project.service_specific.marketing_goals && (
-                                            <p><strong>Marketing Goals:</strong> {project.service_specific.marketing_goals}</p>
-                                          )}
-                                          {project.service_specific.channels && (
-                                            <p><strong>Channels:</strong> {Array.isArray(project.service_specific.channels) ? project.service_specific.channels.join(", ") : project.service_specific.channels}</p>
-                                          )}
-                                          {project.service_specific.monthly_budget && (
-                                            <p><strong>Monthly Budget:</strong> {project.service_specific.monthly_budget}</p>
-                                          )}
-                                        </>
-                                      )}
-                                      
-                                      {project.service_type === "custom" && (
-                                        <>
-                                          {project.service_specific.service_description && (
-                                            <p><strong>Service Description:</strong> {project.service_specific.service_description}</p>
-                                          )}
-                                          {project.service_specific.expected_outcome && (
-                                            <p><strong>Expected Outcome:</strong> {project.service_specific.expected_outcome}</p>
-                                          )}
-                                          {project.service_specific.budget_range && (
-                                            <p><strong>Budget Range:</strong> {project.service_specific.budget_range}</p>
-                                          )}
-                                        </>
-                                      )}
-                                    </CardContent>
-                                  </Card>
-                                )}
+                                <ServiceSpecificDetails 
+                                  serviceType={project.service_type || ""} 
+                                  serviceSpecific={project.service_specific || {}} 
+                                  className="md:col-span-2"
+                                />
                                 
                                 {/* Media & Financial Details (Step 5) */}
                                 <Card className="md:col-span-2">
                                   <CardHeader>
                                     <CardTitle>Media & Financial Details</CardTitle>
                                   </CardHeader>
-                                  <CardContent className="space-y-2 text-sm">
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                      <div>
-                                        <h4 className="font-medium mb-2">Media Assets</h4>
+                                  <CardContent className="space-y-4 text-sm">
+                                    <div className="grid md:grid-cols-2 gap-6">
+                                      <div className="space-y-3">
+                                        <h4 className="font-medium mb-2">Media Links</h4>
                                         {project.media_links && project.media_links.length > 0 ? (
-                                          <div className="space-y-1">
+                                          <div className="space-y-2">
                                             {project.media_links.map((link, index) => (
-                                              <p key={index} className="text-xs break-all">
-                                                <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                              <div key={index} className="p-2 bg-gray-50 rounded-md">
+                                                <a 
+                                                  href={link} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer" 
+                                                  className="text-blue-600 hover:underline break-all text-xs"
+                                                >
                                                   {link}
                                                 </a>
-                                              </p>
+                                              </div>
                                             ))}
                                       </div>
                                         ) : (
-                                          <p className="text-muted-foreground">No media links provided</p>
+                                          <p className="text-muted-foreground text-sm">No media links provided</p>
                                         )}
                                       </div>
                                       
-                                      <div>
+                                      <div className="space-y-3">
                                         <h4 className="font-medium mb-2">Bank Details</h4>
                                         {project.bank_details && Object.keys(project.bank_details).length > 0 ? (
-                                          <div className="space-y-1">
+                                          <div className="space-y-2">
                                             {project.bank_details.account_name && (
-                                              <p><strong>Account Name:</strong> {project.bank_details.account_name}</p>
+                                              <div className="p-2 bg-gray-50 rounded-md">
+                                                <p className="text-xs"><strong>Account Name:</strong> {project.bank_details.account_name}</p>
+                                              </div>
                                             )}
                                             {project.bank_details.account_number && (
-                                              <p><strong>Account Number:</strong> {project.bank_details.account_number}</p>
+                                              <div className="p-2 bg-gray-50 rounded-md">
+                                                <p className="text-xs"><strong>Account Number:</strong> {project.bank_details.account_number}</p>
+                                              </div>
                                             )}
                                             {project.bank_details.iban && (
-                                              <p><strong>IBAN:</strong> {project.bank_details.iban}</p>
+                                              <div className="p-2 bg-gray-50 rounded-md">
+                                                <p className="text-xs"><strong>IBAN:</strong> {project.bank_details.iban}</p>
+                                              </div>
                                             )}
                                             {project.bank_details.swift && (
-                                              <p><strong>SWIFT:</strong> {project.bank_details.swift}</p>
+                                              <div className="p-2 bg-gray-50 rounded-md">
+                                                <p className="text-xs"><strong>SWIFT:</strong> {project.bank_details.swift}</p>
+                                              </div>
                                             )}
                                           </div>
                                         ) : (
-                                          <p className="text-muted-foreground">No bank details provided</p>
+                                          <p className="text-muted-foreground text-sm">No bank details provided</p>
+                                        )}
+                                        
+                                        {/* Payment Integration Needs */}
+                                        {project.payment_integration_needs && project.payment_integration_needs.length > 0 && (
+                                          <div className="mt-4">
+                                            <h4 className="font-medium mb-2">Payment Integration Needs</h4>
+                                            <div className="flex flex-wrap gap-1">
+                                              {project.payment_integration_needs.map((need: string, index: number) => (
+                                                <Badge key={index} variant="secondary" className="text-xs">
+                                                  {need}
+                                                </Badge>
+                                              ))}
+                                            </div>
+                                          </div>
                                         )}
                                       </div>
                                     </div>
@@ -1796,15 +1928,10 @@ export function UnifiedProjectManagement() {
                 ))}
               </div>
               {wizardStep === 0 && (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <Label className="text-lg font-semibold">Step 1: Service (Core Project Details)</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Collect high-level project setup data. Determines branching logic for Step 2.
-                    </p>
-                  </div>
+                <div className="space-y-6">
                   
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>Project Name *</Label>
                       <Input
@@ -1829,53 +1956,41 @@ export function UnifiedProjectManagement() {
                           <SelectItem value="custom">Custom Project</SelectItem>
                         </SelectContent>
                       </Select>
+                      </div>
                               </div>
                     
                     <div>
                       <Label>Description</Label>
                       <Textarea
-                        placeholder="Brief project description (optional)"
+                        placeholder="Brief project description"
                         value={formData.description}
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         rows={3}
                       />
                               </div>
                     
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>Client Name</Label>
                       <Input
-                        placeholder="Client or company name (optional)"
+                          placeholder="Client or company name"
                         value={formData.client}
                         onChange={(e) => setFormData({ ...formData, client: e.target.value })}
                       />
                             </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>Budget</Label>
+                        <Label>Budget ($)</Label>
                         <Input
                           type="number"
                           placeholder="0"
                           value={formData.budget}
                           onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
                         />
-                          </div>
-                      <div>
-                        <Label>Priority</Label>
-                        <Select value={formData.priority} onValueChange={(value) => setFormData({ ...formData, priority: value as any })}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="low">Low</SelectItem>
-                            <SelectItem value="medium">Medium</SelectItem>
-                            <SelectItem value="high">High</SelectItem>
-                          </SelectContent>
-                        </Select>
                   </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <Label>Start Date</Label>
                         <Input
@@ -1884,6 +1999,7 @@ export function UnifiedProjectManagement() {
                           onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                         />
                       </div>
+                      
                       <div>
                         <Label>End Date</Label>
                         <Input
@@ -1891,22 +2007,21 @@ export function UnifiedProjectManagement() {
                           value={formData.end_date}
                           onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
                         />
-                      </div>
                     </div>
                     
                     <div>
-                      <Label>Status</Label>
-                      <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value as any })}>
+                        <Label>Priority</Label>
+                        <Select value={formData.priority} onValueChange={(value) => setFormData({ ...formData, priority: value as any })}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="planning">Planning</SelectItem>
-                          <SelectItem value="active">In Progress</SelectItem>
-                          <SelectItem value="on-hold">On Hold</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
                         </SelectContent>
                       </Select>
+                      </div>
                     </div>
                   </div>
                   
@@ -1918,141 +2033,125 @@ export function UnifiedProjectManagement() {
                 </div>
               )}
               {wizardStep === 1 && (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="space-y-1">
-                    <Label className="text-lg font-semibold">Step 2: Details (Conditional Project Requirements)</Label>
+                    <Label className="text-lg font-semibold">Step 2: Service-Specific Information</Label>
                     <p className="text-sm text-muted-foreground">
-                      Capture project-specific requirements tailored to the selected service.
+                      Tell us more about your project
                     </p>
                   </div>
                   {serviceType === "web" && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div>
-                        <Label className="text-sm font-medium">Domain Name Suggestions</Label>
-                      <Input
-                          placeholder="e.g., example.com, mysite.dev"
+                        <Label className="text-sm font-medium">Domain Suggestions</Label>
+                        <Textarea
+                          placeholder="e.g., mycompany.com, mybusiness.net"
+                          value={serviceSpecific.domainSuggestions || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              domain_suggestions: e.target.value,
+                              domainSuggestions: e.target.value,
                             })
                           }
-                          defaultValue={serviceSpecific.domain_suggestions || ""}
+                          rows={3}
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Do you have any domain preferences or suggestions?
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Website References</Label>
                         <Textarea
-                          placeholder="Enter website URLs (one per line or comma-separated)"
+                          placeholder="Share links to websites you like..."
+                          value={serviceSpecific.websiteReferences || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                            references: e.target.value,
+                              websiteReferences: e.target.value,
                           })
                         }
-                        defaultValue={serviceSpecific.references || ""}
+                          rows={3}
                       />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Share links to websites you like for inspiration
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Features & Requirements</Label>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                          {["Blog", "User Login", "Contact Form", "Gallery", "E-commerce", "Search", "Newsletter", "Social Media Integration"].map((feature) => (
-                            <label key={feature} className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={serviceSpecific.features?.includes(feature) || false}
-                                onChange={(e) => {
-                                  const currentFeatures = serviceSpecific.features || [];
-                                  const newFeatures = e.target.checked
-                                    ? [...currentFeatures, feature]
-                                    : currentFeatures.filter((f: string) => f !== feature);
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                                    features: newFeatures,
-                                  });
-                                }}
-                              />
-                              <span className="text-sm">{feature}</span>
-                            </label>
-                          ))}
-                        </div>
                         <Textarea
-                          placeholder="Additional requirements..."
-                          className="mt-2"
+                          placeholder="Describe the features and functionality you need..."
+                          value={serviceSpecific.featuresRequirements || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              additional_requirements: e.target.value,
+                              featuresRequirements: e.target.value,
                           })
                         }
-                          defaultValue={serviceSpecific.additional_requirements || ""}
+                          rows={4}
                       />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Be as specific as possible about what you want your website to do
+                        </p>
                       </div>
+                      
                     </div>
                   )}
                   {serviceType === "branding" && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div>
                         <Label className="text-sm font-medium">Logo Ideas & Concepts</Label>
                       <Textarea
-                          placeholder="Describe your logo ideas, style preferences, and concepts"
+                          placeholder="Describe your vision for the logo..."
+                          value={serviceSpecific.logoIdeasConcepts || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                            logo_ideas: e.target.value,
+                              logoIdeasConcepts: e.target.value,
                           })
                         }
-                        defaultValue={serviceSpecific.logo_ideas || ""}
+                          rows={3}
                       />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Share any ideas, concepts, or inspiration for your logo
+                        </p>
                       </div>
+                      
                       <div>
-                        <Label className="text-sm font-medium">Upload Brand References (Optional)</Label>
-                      <Input
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          onChange={(e) => {
-                            const files = Array.from(e.target.files || []);
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                              uploaded_references: files.map(f => ({
-                                name: f.name,
-                                size: f.size,
-                                type: f.type,
-                              })),
-                            });
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium">Colour & Theme Preferences</Label>
-                      <Input
-                          placeholder="e.g., Blue, White, Modern, Minimalist"
+                        <Label className="text-sm font-medium">Color & Brand Theme</Label>
+                        <Textarea
+                          placeholder="What colors and themes represent your brand?"
+                          value={serviceSpecific.colorBrandTheme || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              color_preferences: e.target.value,
+                              colorBrandTheme: e.target.value,
                             })
                           }
-                          defaultValue={serviceSpecific.color_preferences || ""}
+                          rows={3}
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Describe your brand's personality and preferred colors
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Design Assets Needed</Label>
                         <div className="grid grid-cols-2 gap-2 mt-2">
-                          {["Business Cards", "Flyers", "Social Media Templates", "Letterhead", "Brochures", "Banners"].map((asset) => (
+                          {["Logo Design", "Business Cards", "Letterhead", "Social Media Graphics", "Website Design", "Print Materials", "Brand Guidelines", "Other"].map((asset) => (
                             <label key={asset} className="flex items-center space-x-2">
                               <input
                                 type="checkbox"
-                                checked={serviceSpecific.design_assets?.includes(asset) || false}
+                                checked={serviceSpecific.designAssetsNeeded?.includes(asset) || false}
                                 onChange={(e) => {
-                                  const currentAssets = serviceSpecific.design_assets || [];
+                                  const currentAssets = serviceSpecific.designAssetsNeeded || [];
                                   const newAssets = e.target.checked
                                     ? [...currentAssets, asset]
                                     : currentAssets.filter((a: string) => a !== asset);
                                   setServiceSpecific({
                                     ...serviceSpecific,
-                                    design_assets: newAssets,
+                                    designAssetsNeeded: newAssets,
                                   });
                                 }}
                               />
@@ -2060,78 +2159,68 @@ export function UnifiedProjectManagement() {
                             </label>
                           ))}
                         </div>
-                        <Input
-                          placeholder="Other assets needed..."
-                          className="mt-2"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                              other_assets: e.target.value,
-                          })
-                        }
-                          defaultValue={serviceSpecific.other_assets || ""}
-                      />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Select all the design assets you need
+                        </p>
                       </div>
                     </div>
                   )}
                   {serviceType === "ai" && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div>
-                        <Label className="text-sm font-medium">AI Solution Type</Label>
+                        <Label className="text-sm font-medium">AI Solution Types</Label>
                         <div className="grid grid-cols-2 gap-2 mt-2">
-                          {["Chatbot", "Automation", "Predictive Analytics", "Computer Vision", "Natural Language Processing", "Other"].map((type) => (
+                          {["Chatbots & Virtual Assistants", "Predictive Analytics", "Process Automation", "Machine Learning Models", "Natural Language Processing", "Computer Vision", "Recommendation Systems", "Other"].map((type) => (
                             <label key={type} className="flex items-center space-x-2">
                               <input
-                                type="radio"
-                                name="ai_solution_type"
-                                value={type}
-                                checked={serviceSpecific.ai_solution_type === type}
-                        onChange={(e) =>
+                                type="checkbox"
+                                checked={serviceSpecific.aiSolutionType?.includes(type) || false}
+                                onChange={(e) => {
+                                  const currentTypes = serviceSpecific.aiSolutionType || [];
+                                  const newTypes = e.target.checked
+                                    ? [...currentTypes, type]
+                                    : currentTypes.filter((t: string) => t !== type);
                           setServiceSpecific({
                             ...serviceSpecific,
-                                    ai_solution_type: e.target.value,
-                          })
-                        }
+                                    aiSolutionType: newTypes,
+                                  });
+                                }}
                       />
                               <span className="text-sm">{type}</span>
                             </label>
                           ))}
                         </div>
-                        {serviceSpecific.ai_solution_type === "Other" && (
-                      <Input
-                            placeholder="Specify other AI solution type..."
-                            className="mt-2"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                                other_ai_type: e.target.value,
-                              })
-                            }
-                            defaultValue={serviceSpecific.other_ai_type || ""}
-                          />
-                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          What type of AI solutions are you interested in?
+                        </p>
                       </div>
+                      
                       <div>
-                        <Label className="text-sm font-medium">Business Challenge / Use Case</Label>
+                        <Label className="text-sm font-medium">Business Challenge & Use Case</Label>
                         <Textarea
-                          placeholder="Describe the business challenge and how AI can help"
+                          placeholder="Describe the business problem you want to solve..."
+                          value={serviceSpecific.businessChallengeUseCase || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              business_challenge: e.target.value,
+                              businessChallengeUseCase: e.target.value,
                             })
                           }
-                          defaultValue={serviceSpecific.business_challenge || ""}
+                          rows={4}
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Help us understand how AI can solve your specific challenges
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Data Availability</Label>
                         <Select
-                          value={serviceSpecific.data_availability || ""}
+                          value={serviceSpecific.dataAvailability || ""}
                           onValueChange={(value) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              data_availability: value,
+                              dataAvailability: value,
                             })
                           }
                         >
@@ -2139,83 +2228,73 @@ export function UnifiedProjectManagement() {
                             <SelectValue placeholder="Select data availability" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            <SelectItem value="limited">Limited</SelectItem>
-                            <SelectItem value="structured">Structured</SelectItem>
-                            <SelectItem value="unstructured">Unstructured</SelectItem>
-                            <SelectItem value="mixed">Mixed (Structured & Unstructured)</SelectItem>
+                            <SelectItem value="We have extensive data">We have extensive data</SelectItem>
+                            <SelectItem value="We have some data">We have some data</SelectItem>
+                            <SelectItem value="We have limited data">We have limited data</SelectItem>
+                            <SelectItem value="We need help collecting data">We need help collecting data</SelectItem>
                           </SelectContent>
                         </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          AI solutions require data - what's your current data situation?
+                        </p>
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium">Budget Range</Label>
-                        <Select
-                          value={serviceSpecific.budget_range || ""}
-                          onValueChange={(value) =>
-                            setServiceSpecific({
-                              ...serviceSpecific,
-                              budget_range: value,
-                            })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select budget range" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="under-10k">Under $10K</SelectItem>
-                            <SelectItem value="10k-25k">$10K - $25K</SelectItem>
-                            <SelectItem value="25k-50k">$25K - $50K</SelectItem>
-                            <SelectItem value="50k-100k">$50K - $100K</SelectItem>
-                            <SelectItem value="over-100k">Over $100K</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      
                     </div>
                   )}
                   {serviceType === "marketing" && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div>
                         <Label className="text-sm font-medium">Target Audience & Industry</Label>
                         <Textarea
-                          placeholder="Describe your target audience and industry"
+                          placeholder="Who is your target audience and what industry are you in?"
+                          value={serviceSpecific.targetAudienceIndustry || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              target_audience: e.target.value,
+                              targetAudienceIndustry: e.target.value,
                             })
                           }
-                          defaultValue={serviceSpecific.target_audience || ""}
+                          rows={3}
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Help us understand your market and customers
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Marketing Goals</Label>
                         <Textarea
-                          placeholder="What are your marketing objectives?"
+                          placeholder="What do you want to achieve with digital marketing?"
+                          value={serviceSpecific.marketingGoals || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              marketing_goals: e.target.value,
+                              marketingGoals: e.target.value,
                             })
                           }
-                          defaultValue={serviceSpecific.marketing_goals || ""}
+                          rows={3}
                         />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Be specific about your marketing objectives
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Channels of Interest</Label>
                         <div className="grid grid-cols-2 gap-2 mt-2">
-                          {["SEO", "Social Media", "Google Ads", "Facebook Ads", "Email Marketing", "Content Marketing", "Influencer Marketing", "Other"].map((channel) => (
+                          {["Google Ads", "Facebook/Instagram Ads", "LinkedIn Marketing", "SEO Optimization", "Email Marketing", "Content Marketing", "Influencer Marketing", "Other"].map((channel) => (
                             <label key={channel} className="flex items-center space-x-2">
                               <input
                                 type="checkbox"
-                                checked={serviceSpecific.channels?.includes(channel) || false}
+                                checked={serviceSpecific.channelsOfInterest?.includes(channel) || false}
                                 onChange={(e) => {
-                                  const currentChannels = serviceSpecific.channels || [];
+                                  const currentChannels = serviceSpecific.channelsOfInterest || [];
                                   const newChannels = e.target.checked
                                     ? [...currentChannels, channel]
                                     : currentChannels.filter((c: string) => c !== channel);
                                   setServiceSpecific({
                                     ...serviceSpecific,
-                                    channels: newChannels,
+                                    channelsOfInterest: newChannels,
                                   });
                                 }}
                               />
@@ -2223,72 +2302,49 @@ export function UnifiedProjectManagement() {
                             </label>
                           ))}
                         </div>
-                        {serviceSpecific.channels?.includes("Other") && (
-                      <Input
-                            placeholder="Specify other channels..."
-                            className="mt-2"
-                        onChange={(e) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                                other_channels: e.target.value,
-                              })
-                            }
-                            defaultValue={serviceSpecific.other_channels || ""}
-                          />
-                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Which marketing channels interest you most?
+                        </p>
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium">Monthly Budget Range</Label>
-                        <Select
-                          value={serviceSpecific.monthly_budget || ""}
-                          onValueChange={(value) =>
-                          setServiceSpecific({
-                            ...serviceSpecific,
-                              monthly_budget: value,
-                            })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select monthly budget" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="under-1k">Under $1K</SelectItem>
-                            <SelectItem value="1k-5k">$1K - $5K</SelectItem>
-                            <SelectItem value="5k-10k">$5K - $10K</SelectItem>
-                            <SelectItem value="10k-25k">$10K - $25K</SelectItem>
-                            <SelectItem value="over-25k">Over $25K</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      
                     </div>
                   )}
                   {serviceType === "custom" && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       <div>
                         <Label className="text-sm font-medium">Service Description</Label>
                       <Textarea
-                          placeholder="Describe the custom service you need"
+                          placeholder="Describe the service you need..."
+                          value={serviceSpecific.serviceDescription || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              service_description: e.target.value,
+                              serviceDescription: e.target.value,
                           })
                         }
-                          defaultValue={serviceSpecific.service_description || ""}
+                          rows={4}
                       />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Tell us about your specific requirements
+                        </p>
                       </div>
+                      
                       <div>
                         <Label className="text-sm font-medium">Expected Outcome</Label>
                       <Textarea
-                          placeholder="What do you expect to achieve with this project?"
+                          placeholder="What results are you hoping to achieve?"
+                          value={serviceSpecific.expectedOutcome || ""}
                         onChange={(e) =>
                           setServiceSpecific({
                             ...serviceSpecific,
-                              expected_outcome: e.target.value,
+                              expectedOutcome: e.target.value,
                           })
                         }
-                          defaultValue={serviceSpecific.expected_outcome || ""}
+                          rows={4}
                       />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Help us understand your goals and expectations
+                        </p>
                       </div>
                     </div>
                   )}
@@ -2300,56 +2356,76 @@ export function UnifiedProjectManagement() {
                 </div>
               )}
               {wizardStep === 2 && (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="space-y-1">
-                    <Label className="text-lg font-semibold">Step 3: Company (Business Information)</Label>
+                    <Label className="text-lg font-semibold">Step 3: Company & Contact Information</Label>
                     <p className="text-sm text-muted-foreground">
-                      Collect internal, official company identifiers.
+                      Tell us about your company
                     </p>
                   </div>
                   
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div>
-                      <Label>Business Number *</Label>
+                      <Label>Business Phone Number *</Label>
                     <Input
-                        placeholder="Enter business registration number"
+                        placeholder="e.g., +1 (555) 123-4567"
                       value={companyNumber}
                       onChange={(e) => setCompanyNumber(e.target.value)}
                         required
-                    />
+                        className={formErrors.companyNumber ? "border-red-500" : ""}
+                      />
+                      {formErrors.companyNumber && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors.companyNumber}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        We'll use this to contact you about your project
+                      </p>
                     </div>
                     
                     <div>
                       <Label>Company Email *</Label>
                     <Input
                         type="email"
-                        placeholder="company@example.com"
+                        placeholder="contact@yourcompany.com"
                       value={companyEmail}
                       onChange={(e) => setCompanyEmail(e.target.value)}
                         required
+                        className={formErrors.companyEmail ? "border-red-500" : ""}
                       />
+                      {formErrors.companyEmail && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors.companyEmail}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Your business email address
+                      </p>
                     </div>
                     
                     <div>
                       <Label>Company Address *</Label>
                       <Textarea
-                        placeholder="Full company address"
+                        placeholder="Your business address..."
                       value={companyAddress}
                       onChange={(e) => setCompanyAddress(e.target.value)}
                         rows={3}
                         required
                     />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Your business location
+                      </p>
                     </div>
                     
                     <div>
-                      <Label>About Company / Team *</Label>
+                      <Label>About Your Company *</Label>
                     <Textarea
-                        placeholder="Describe your company, team, and what you do"
+                        placeholder="Tell us about your company, what you do, and your mission..."
                       value={aboutCompany}
                       onChange={(e) => setAboutCompany(e.target.value)}
                         rows={4}
                         required
                     />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Help us understand your business better
+                      </p>
                   </div>
                   </div>
                   
@@ -2361,89 +2437,70 @@ export function UnifiedProjectManagement() {
                 </div>
               )}
               {wizardStep === 3 && (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="space-y-1">
-                    <Label className="text-lg font-semibold">Step 4: Contact (Public Contact Information)</Label>
+                    <Label className="text-lg font-semibold">Step 4: Social Media & Public Contact Info</Label>
                     <p className="text-sm text-muted-foreground">
-                      Collect public-facing details for website/collateral.
+                      Share your public business information
                     </p>
                   </div>
                   
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div>
-                      <Label>Social Media Links *</Label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <Input
-                            placeholder="Add social media link (e.g., https://facebook.com/company)"
-                        value={newSocial}
-                        onChange={(e) => setNewSocial(e.target.value)}
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (!newSocial.trim()) return;
-                          setSocialLinks([...socialLinks, newSocial.trim()]);
-                          setNewSocial("");
+                      <Label>Social Media Links</Label>
+                      <Textarea
+                        placeholder="Share your social media profiles..."
+                        value={socialLinks.join('\n')}
+                        onChange={(e) => {
+                          const links = e.target.value.split('\n').filter(link => link.trim());
+                          setSocialLinks(links);
                         }}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    <div className="text-sm space-y-1">
-                      {socialLinks.map((s, idx) => (
-                        <div
-                          key={`${s}-${idx}`}
-                          className="flex justify-between border rounded-md p-2"
-                        >
-                              <span className="truncate">{s}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setSocialLinks(
-                                socialLinks.filter((_, i) => i !== idx)
-                              )
-                            }
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Include links to your social media profiles
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Example: https://facebook.com/yourcompany, https://instagram.com/yourcompany
+                      </p>
                     </div>
                     
                     <div>
-                      <Label>Public Business Number *</Label>
+                      <Label>Public Business Number</Label>
                     <Input
-                        placeholder="Phone number for public display"
+                        placeholder="e.g., +1 (555) 123-4567"
                       value={publicContactPhone}
                       onChange={(e) => setPublicContactPhone(e.target.value)}
-                        required
                     />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Phone number for customer inquiries
+                      </p>
                     </div>
                     
                     <div>
-                      <Label>Public Company Email *</Label>
+                      <Label>Public Company Email</Label>
                     <Input
                         type="email"
-                        placeholder="Email for public display"
+                        placeholder="info@yourcompany.com"
                       value={publicContactEmail}
                       onChange={(e) => setPublicContactEmail(e.target.value)}
-                        required
                       />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Email address for customer inquiries
+                      </p>
                     </div>
                     
                     <div>
-                      <Label>Public Address *</Label>
+                      <Label>Public Company Address</Label>
                       <Textarea
-                        placeholder="Address for public display"
+                        placeholder="Your public business address..."
                       value={publicContactAddress}
                       onChange={(e) => setPublicContactAddress(e.target.value)}
                         rows={3}
-                        required
                     />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Address for customer visits or correspondence
+                      </p>
                   </div>
                   </div>
                   
@@ -2455,154 +2512,276 @@ export function UnifiedProjectManagement() {
                 </div>
               )}
               {wizardStep === 4 && (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="space-y-1">
-                    <Label className="text-lg font-semibold">Step 5: Media (Assets & Payment Info)</Label>
+                    <Label className="text-lg font-semibold">Step 5: Media & Banking Information</Label>
                     <p className="text-sm text-muted-foreground">
-                      Collect creative/media assets and optional banking/payment details.
+                      Share your media assets and payment preferences
                     </p>
                   </div>
                   
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div>
-                      <Label>Media Links</Label>
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <Input
-                            placeholder="Add media link (images, videos, etc.)"
-                        value={newMedia}
-                        onChange={(e) => setNewMedia(e.target.value)}
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (!newMedia.trim()) return;
-                          setMediaLinks([...mediaLinks, newMedia.trim()]);
-                          setNewMedia("");
+                      <Label>Images / Video Links</Label>
+                      <Textarea
+                        placeholder="Share links to your media content..."
+                        value={mediaLinks.join('\n')}
+                        onChange={(e) => {
+                          const links = e.target.value.split('\n').filter(link => link.trim());
+                          setMediaLinks(links);
                         }}
-                      >
-                        Add
-                      </Button>
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Include links to testimonials, portfolio images, videos, or any other media you'd like to showcase
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Example: https://youtube.com/watch?v=example, https://drive.google.com/portfolio-images
+                      </p>
                     </div>
-                    <div className="text-sm space-y-1">
-                      {mediaLinks.map((m, idx) => (
-                        <div
-                          key={`${m}-${idx}`}
-                          className="flex justify-between border rounded-md p-2"
-                        >
-                              <span className="truncate">{m}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setMediaLinks(
-                                mediaLinks.filter((_, i) => i !== idx)
-                              )
-                            }
-                          >
-                            Remove
-                          </Button>
+                    
+                    <div>
+                      <Label>Upload Images / Videos</Label>
+                      <div className="space-y-4">
+                        <Input
+                          type="file"
+                          multiple
+                          accept="image/*,video/*"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            setUploadFiles(prev => [...prev, ...files]);
+                            handleFileUpload(files);
+                          }}
+                          disabled={isUploading}
+                        />
+                        
+                        {/* Upload Progress */}
+                        {isUploading && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span className="text-sm text-muted-foreground">Uploading files...</span>
+                    </div>
+                            <Progress value={uploadProgress || 0} className="h-2" />
+                          </div>
+                        )}
+                        
+                        {/* Uploaded Files Preview */}
+                        {uploadedFiles.length > 0 && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Uploaded Files</Label>
+                            <div className="space-y-1">
+                              {uploadedFiles.map((file, index) => (
+                                <div key={index} className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md">
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                  <span className="text-sm text-green-800">{file.name}</span>
+                                  <span className="text-xs text-green-600">({Math.round(file.size / 1024)} KB)</span>
                         </div>
                       ))}
                     </div>
                   </div>
+                        )}
+                        
+                        {/* Upload Errors */}
+                        {uploadErrors.length > 0 && (
+                          <Alert variant="destructive">
+                            <XCircle className="h-4 w-4" />
+                            <AlertDescription>
+                              <div className="space-y-1">
+                                {uploadErrors.map((error, index) => (
+                                  <div key={index} className="text-sm">{error}</div>
+                                ))}
+                    </div>
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        
+                        <p className="text-xs text-muted-foreground">
+                          Upload high-quality images and videos that represent your brand. Supported formats: JPG, PNG, GIF, MP4, MOV. Maximum file size: 10MB.
+                        </p>
+                      </div>
                     </div>
                     
-                    <div>
-                      <Label>Upload Media Files</Label>
-                    <Input
-                      type="file"
-                      multiple
-                        accept="image/*,video/*,.pdf,.doc,.docx"
-                      onChange={(e) =>
-                        setUploadFiles(Array.from(e.target.files || []))
-                      }
-                    />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Upload images, videos, documents, or other media files
+                    <div className="border-t pt-6">
+                      <Label className="text-base font-medium">Payment Integration Needs</Label>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        {["Stripe Integration", "PayPal Integration", "Bank Transfer Setup", "Subscription Billing", "Invoice Generation", "Refund Processing", "Multi-currency Support", "Payment Analytics"].map((need) => (
+                          <label key={need} className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={paymentIntegrationNeeds?.includes(need) || false}
+                              onChange={(e) => {
+                                const currentNeeds = paymentIntegrationNeeds || [];
+                                const newNeeds = e.target.checked
+                                  ? [...currentNeeds, need]
+                                  : currentNeeds.filter((n: string) => n !== need);
+                                setPaymentIntegrationNeeds(newNeeds);
+                              }}
+                            />
+                            <span className="text-sm">{need}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Select the payment features you need for your business. This helps us configure the right payment solutions.
                       </p>
                   </div>
                     
-                    <div className="border-t pt-4">
-                      <Label className="text-base font-medium">Bank Details for Payment Integration (Optional)</Label>
-                      <div className="grid md:grid-cols-2 gap-3 mt-3">
+                    <div className="border-t pt-6">
+                      <Label className="text-base font-medium">Banking Information</Label>
+                      <div className="grid md:grid-cols-2 gap-4 mt-4">
+                        <div>
+                          <Label>Account Name</Label>
                     <Input
-                      placeholder="Bank Account Name"
+                            placeholder="e.g. John Doe Business Account"
                       value={bankAccountName}
                       onChange={(e) => setBankAccountName(e.target.value)}
                     />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            The legal name on the bank account
+                          </p>
+                        </div>
+                        <div>
+                          <Label>Account Number</Label>
                     <Input
-                      placeholder="Bank Account Number"
+                            placeholder="e.g. 12345678"
                       value={bankAccountNumber}
                       onChange={(e) => setBankAccountNumber(e.target.value)}
                     />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Your domestic bank account number
+                          </p>
+                        </div>
+                        <div>
+                          <Label>IBAN</Label>
                     <Input
-                      placeholder="IBAN"
+                            placeholder="e.g. GB29 NWBK 6016 1331 9268 19"
                       value={bankIban}
                       onChange={(e) => setBankIban(e.target.value)}
                     />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            International Bank Account Number for international transfers
+                          </p>
+                        </div>
+                        <div>
+                          <Label>SWIFT / BIC</Label>
                     <Input
-                          placeholder="SWIFT Code"
+                            placeholder="e.g. ABCDGB2L"
                       value={bankSwift}
                       onChange={(e) => setBankSwift(e.target.value)}
                     />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Bank SWIFT/BIC code for international transfers
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
               {wizardStep === 5 && (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="space-y-1">
-                    <Label className="text-lg font-semibold">Step 6: Final Review & Confirm</Label>
+                    <Label className="text-lg font-semibold">Step 6: Review & Submit</Label>
                     <p className="text-sm text-muted-foreground">
-                      Show summary + obtain confirmation before submission.
+                      Review your information before submitting
                     </p>
                   </div>
                   
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                   <Card>
                     <CardHeader>
-                        <CardTitle>Brand & References</CardTitle>
-                        <CardDescription>Step 1 + Step 2 + Step 5 summary</CardDescription>
+                        <CardTitle>Project Information</CardTitle>
                     </CardHeader>
                       <CardContent className="space-y-2 text-sm">
-                        <div><strong>Project:</strong> {formData.name}</div>
-                        <div><strong>Type:</strong> {serviceType || "-"}</div>
+                        <div><strong>Project Name:</strong> {formData.name}</div>
+                        <div><strong>Project Type:</strong> {serviceType || "-"}</div>
                         <div><strong>Description:</strong> {formData.description || "-"}</div>
+                        <div><strong>Client:</strong> {formData.client || "-"}</div>
                         <div><strong>Budget:</strong> ${formData.budget || 0}</div>
+                        <div><strong>Priority:</strong> {formData.priority || "-"}</div>
                         <div><strong>Timeline:</strong> {formData.start_date || "-"} to {formData.end_date || "-"}</div>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Service-Specific Details</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
                         {serviceType === "web" && (
-                          <div><strong>Domain Suggestions:</strong> {serviceSpecific.domain_suggestions || "-"}</div>
+                          <>
+                            <div><strong>Domain Suggestions:</strong> {serviceSpecific.domainSuggestions || "-"}</div>
+                            <div><strong>Website References:</strong> {serviceSpecific.websiteReferences || "-"}</div>
+                            <div><strong>Features & Requirements:</strong> {serviceSpecific.featuresRequirements || "-"}</div>
+                          </>
                         )}
                         {serviceType === "branding" && (
-                          <div><strong>Logo Ideas:</strong> {serviceSpecific.logo_ideas || "-"}</div>
+                          <>
+                            <div><strong>Logo Ideas & Concepts:</strong> {serviceSpecific.logoIdeasConcepts || "-"}</div>
+                            <div><strong>Color & Brand Theme:</strong> {serviceSpecific.colorBrandTheme || "-"}</div>
+                            <div><strong>Design Assets Needed:</strong> {serviceSpecific.designAssetsNeeded?.join(", ") || "-"}</div>
+                          </>
                         )}
-                        {mediaLinks.length > 0 && (
-                          <div><strong>Media Links:</strong> {mediaLinks.length} links</div>
+                        {serviceType === "marketing" && (
+                          <>
+                            <div><strong>Target Audience & Industry:</strong> {serviceSpecific.targetAudienceIndustry || "-"}</div>
+                            <div><strong>Marketing Goals:</strong> {serviceSpecific.marketingGoals || "-"}</div>
+                            <div><strong>Channels of Interest:</strong> {serviceSpecific.channelsOfInterest?.join(", ") || "-"}</div>
+                          </>
                         )}
-                        {uploadFiles.length > 0 && (
-                          <div><strong>Uploaded Files:</strong> {uploadFiles.length} files</div>
+                        {serviceType === "ai" && (
+                          <>
+                            <div><strong>AI Solution Types:</strong> {serviceSpecific.aiSolutionType?.join(", ") || "-"}</div>
+                            <div><strong>Business Challenge & Use Case:</strong> {serviceSpecific.businessChallengeUseCase || "-"}</div>
+                            <div><strong>Data Availability:</strong> {serviceSpecific.dataAvailability || "-"}</div>
+                          </>
+                        )}
+                        {serviceType === "custom" && (
+                          <>
+                            <div><strong>Service Description:</strong> {serviceSpecific.serviceDescription || "-"}</div>
+                            <div><strong>Expected Outcome:</strong> {serviceSpecific.expectedOutcome || "-"}</div>
+                          </>
                         )}
                     </CardContent>
                   </Card>
                     
                     <Card>
                       <CardHeader>
-                        <CardTitle>Company & Contact</CardTitle>
-                        <CardDescription>Step 3 + Step 4 summary</CardDescription>
+                        <CardTitle>Company & Contact Information</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-2 text-sm">
-                        <div><strong>Business Number:</strong> {companyNumber || "-"}</div>
+                        <div><strong>Business Phone Number:</strong> {companyNumber || "-"}</div>
                         <div><strong>Company Email:</strong> {companyEmail || "-"}</div>
                         <div><strong>Company Address:</strong> {companyAddress || "-"}</div>
-                        <div><strong>About Company:</strong> {aboutCompany || "-"}</div>
-                        <div><strong>Public Phone:</strong> {publicContactPhone || "-"}</div>
-                        <div><strong>Public Email:</strong> {publicContactEmail || "-"}</div>
-                        <div><strong>Public Address:</strong> {publicContactAddress || "-"}</div>
-                        {socialLinks.length > 0 && (
-                          <div><strong>Social Media:</strong> {socialLinks.length} links</div>
-                        )}
+                        <div><strong>About Your Company:</strong> {aboutCompany || "-"}</div>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Social Media & Public Contact Info</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div><strong>Social Media Links:</strong> {socialLinks.length > 0 ? socialLinks.join(", ") : "-"}</div>
+                        <div><strong>Public Business Number:</strong> {publicContactPhone || "-"}</div>
+                        <div><strong>Public Company Email:</strong> {publicContactEmail || "-"}</div>
+                        <div><strong>Public Company Address:</strong> {publicContactAddress || "-"}</div>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Media & Banking Information</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div><strong>Media Links:</strong> {mediaLinks.length > 0 ? mediaLinks.join(", ") : "-"}</div>
+                        <div><strong>Uploaded Files:</strong> {uploadFiles.length > 0 ? `${uploadFiles.length} files` : "-"}</div>
+                        <div><strong>Payment Integration Needs:</strong> {paymentIntegrationNeeds?.join(", ") || "-"}</div>
+                        <div><strong>Account Name:</strong> {bankAccountName || "-"}</div>
+                        <div><strong>Account Number:</strong> {bankAccountNumber || "-"}</div>
+                        <div><strong>IBAN:</strong> {bankIban || "-"}</div>
+                        <div><strong>SWIFT / BIC:</strong> {bankSwift || "-"}</div>
                       </CardContent>
                     </Card>
                     
@@ -2616,10 +2795,10 @@ export function UnifiedProjectManagement() {
                           required
                         />
                         <span>
-                          <strong>I confirm the above information is correct and ready to submit.</strong>
+                          <strong>Review Your Information</strong>
                           <br />
                           <span className="text-muted-foreground">
-                            By checking this box, you confirm that all information provided is accurate and complete.
+                            Please review all the information you've provided before submitting your application
                           </span>
                         </span>
                   </label>
@@ -2653,16 +2832,63 @@ export function UnifiedProjectManagement() {
                       Next
                     </Button>
                   ) : (
-                    <Button onClick={handleSubmit} disabled={!confirmSubmit || isSubmitting}>
-                      {isSubmitting ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          {editingProject ? "Updating..." : "Creating..."}
+                    <div className="space-y-4">
+                      {/* Processing Status */}
+                      {isProcessing && (
+                        <Alert>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <AlertDescription>
+                            <div className="space-y-2">
+                              <p className="font-medium">Processing your project...</p>
+                              <p className="text-sm text-muted-foreground">{processingStep}</p>
+                              {uploadProgress !== null && (
+                                <div className="space-y-1">
+                                  <Progress value={uploadProgress} className="h-2" />
+                                  <p className="text-xs text-muted-foreground">Uploading files...</p>
+                                </div>
+                              )}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
+                      {/* Submit Button */}
+                      <Button 
+                        onClick={handleSubmit} 
+                        disabled={!confirmSubmit || isSubmitting || isProcessing || isUploading}
+                        className="w-full"
+                        size="lg"
+                      >
+                        {isSubmitting || isProcessing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            {editingProject ? "Updating Project..." : "Creating Project..."}
                         </>
                       ) : (
-                        editingProject ? "Update Project" : "Create Project"
+                          <>
+                            {editingProject ? (
+                              <>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Update Project
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="h-4 w-4 mr-2" />
+                                Create Project
+                              </>
+                            )}
+                          </>
                       )}
                     </Button>
+                      
+                      {/* Upload Status */}
+                      {isUploading && (
+                        <div className="text-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                          Uploading files... Please don't close this window.
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
