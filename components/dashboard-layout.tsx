@@ -114,7 +114,6 @@ export function DashboardLayout({
             href: "task-management",
             icon: CheckSquare,
             current: currentView === "task-management",
-            comingSoon: true,
           },
           {
             name: "Time Tracker",

@@ -28,6 +28,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -62,6 +64,14 @@ import {
   Upload,
   MessageSquare,
   Loader2,
+  UserPlus,
+  X,
+  Link as LinkIcon,
+  ArrowRight,
+  GitBranch,
+  Zap,
+  TrendingUp,
+  Activity,
 } from "lucide-react";
 import {
   getProjects as storeGetProjects,
@@ -71,6 +81,7 @@ import {
 } from "@/lib/project-store";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage";
 import { createClient } from "@/lib/supabase";
 import { getCurrentUser, type User } from "@/lib/auth";
@@ -189,6 +200,8 @@ interface Employee {
   name: string;
   email: string;
   role: string;
+  first_name?: string;
+  last_name?: string;
 }
 
 export function UnifiedProjectManagement() {
@@ -230,6 +243,11 @@ export function UnifiedProjectManagement() {
   const [serviceType, setServiceType] = useState<
     "web" | "branding" | "marketing" | "ai" | "custom" | ""
   >("");
+
+  // Debug serviceType changes
+  useEffect(() => {
+    console.log("serviceType changed to:", serviceType);
+  }, [serviceType]);
   const [serviceSpecific, setServiceSpecific] = useState<Record<string, any>>(
     {}
   );
@@ -258,8 +276,121 @@ export function UnifiedProjectManagement() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState<string>("");
+  
+  // Assignment management state
+  const [assignmentOpen, setAssignmentOpen] = useState(false);
+  const [selectedProjectForAssignment, setSelectedProjectForAssignment] = useState<Project | null>(null);
+  const [projectMembers, setProjectMembers] = useState<Array<{id: string, name: string, email: string}>>([]);
+  const [isUpdatingAssignments, setIsUpdatingAssignments] = useState(false);
+  
   const supabase = createClient();
   const { toast } = useToast();
+
+  // Assignment management functions
+  const handleOpenAssignment = async (project: Project) => {
+    setSelectedProjectForAssignment(project);
+    setAssignmentOpen(true);
+    
+    // Load current project members
+    try {
+      const { data: members, error } = await supabase
+        .from("project_members")
+        .select(`
+          user_id,
+          profiles!inner(id, first_name, last_name, email)
+        `)
+        .eq("project_id", project.id);
+      
+      if (error) throw error;
+      
+      const memberList = members?.map((m: any) => ({
+        id: m.user_id,
+        name: `${m.profiles.first_name} ${m.profiles.last_name}`,
+        email: m.profiles.email
+      })) || [];
+      
+      setProjectMembers(memberList);
+    } catch (error) {
+      console.error("Error loading project members:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load project members",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAssignEmployee = async (employeeId: string) => {
+    if (!selectedProjectForAssignment) return;
+    
+    setIsUpdatingAssignments(true);
+    try {
+      const { error } = await supabase
+        .from("project_members")
+        .insert({
+          project_id: selectedProjectForAssignment.id,
+          user_id: employeeId
+        });
+      
+      if (error) throw error;
+      
+      // Update local state
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (employee) {
+        setProjectMembers(prev => [...prev, {
+          id: employee.id,
+          name: `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.name,
+          email: employee.email
+        }]);
+      }
+      
+      toast({
+        title: "Success",
+        description: "Employee assigned to project",
+      });
+    } catch (error) {
+      console.error("Error assigning employee:", error);
+      toast({
+        title: "Error",
+        description: "Failed to assign employee",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingAssignments(false);
+    }
+  };
+
+  const handleRemoveEmployee = async (employeeId: string) => {
+    if (!selectedProjectForAssignment) return;
+    
+    setIsUpdatingAssignments(true);
+    try {
+      const { error } = await supabase
+        .from("project_members")
+        .delete()
+        .eq("project_id", selectedProjectForAssignment.id)
+        .eq("user_id", employeeId);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setProjectMembers(prev => prev.filter(member => member.id !== employeeId));
+      
+      toast({
+        title: "Success",
+        description: "Employee removed from project",
+      });
+    } catch (error) {
+      console.error("Error removing employee:", error);
+      toast({
+        title: "Error",
+        description: "Failed to remove employee",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingAssignments(false);
+    }
+  };
 
   // Enhanced file upload handler with progress tracking
   const handleFileUpload = async (files: File[], projectId?: string) => {
@@ -487,84 +618,61 @@ export function UnifiedProjectManagement() {
   }
 
   async function fetchEmployees() {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, first_name, last_name, role, status");
-    if (error) return;
-      const list = (data || [])
-        .filter((p: any) => (p.role || "").toLowerCase() === "employee")
-        .filter((p: any) => (p.status ?? "active") === "active")
-        .map((p: any) => ({
-          id: p.id,
-          name: `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
-          email: "",
-          role: "employee",
-        })) as Employee[];
-      setEmployees(list);
+    // Use mock data for demonstration
+    console.log("Using mock data for employees");
+    const mockEmployees = [
+      {
+        id: "emp-1",
+        name: "John Smith",
+        email: "john@dionix.ai",
+        role: "Senior Developer",
+        first_name: "John",
+        last_name: "Smith"
+      },
+      {
+        id: "emp-2",
+        name: "Sarah Johnson",
+        email: "sarah@dionix.ai",
+        role: "UI/UX Designer",
+        first_name: "Sarah",
+        last_name: "Johnson"
+      },
+      {
+        id: "emp-3",
+        name: "Mike Chen",
+        email: "mike@dionix.ai",
+        role: "Backend Developer",
+        first_name: "Mike",
+        last_name: "Chen"
+      },
+      {
+        id: "emp-4",
+        name: "Emily Davis",
+        email: "emily@dionix.ai",
+        role: "Project Manager",
+        first_name: "Emily",
+        last_name: "Davis"
+      },
+      {
+        id: "emp-5",
+        name: "Alex Rodriguez",
+        email: "alex@dionix.ai",
+        role: "Frontend Developer",
+        first_name: "Alex",
+        last_name: "Rodriguez"
+      },
+      {
+        id: "emp-6",
+        name: "Lisa Wang",
+        email: "lisa@dionix.ai",
+        role: "DevOps Engineer",
+        first_name: "Lisa",
+        last_name: "Wang"
+      }
+    ];
+    setEmployees(mockEmployees);
   }
 
-  const mockProjects: Project[] = [
-    {
-      id: "1",
-      name: "E-commerce Website",
-      description: "Complete e-commerce solution with payment integration",
-      status: "active",
-      priority: "high",
-      start_date: "2024-01-15",
-      end_date: "2024-03-15",
-      assigned_employees: ["1", "2"],
-      progress: 65,
-      budget: 50000,
-      client: "TechCorp Inc",
-      tasks: [
-        {
-          id: "t1",
-          title: "Design Homepage",
-          description: "Create responsive homepage design",
-          status: "completed",
-          assignee: "2",
-          due_date: "2024-02-01",
-          priority: "high",
-          project_id: "1",
-        },
-        {
-          id: "t2",
-          title: "Implement Payment Gateway",
-          description: "Integrate Stripe payment system",
-          status: "in-progress",
-          assignee: "1",
-          due_date: "2024-02-15",
-          priority: "high",
-          project_id: "1",
-        },
-      ],
-    },
-    {
-      id: "2",
-      name: "Mobile App Development",
-      description: "Cross-platform mobile application",
-      status: "planning",
-      priority: "medium",
-      start_date: "2024-02-01",
-      end_date: "2024-05-01",
-      assigned_employees: ["1", "3"],
-      progress: 15,
-      budget: 75000,
-      client: "StartupXYZ",
-      tasks: [
-        {
-          id: "t3",
-          title: "Market Research",
-          description: "Analyze competitor apps and user needs",
-          status: "completed",
-          assignee: "3",
-          due_date: "2024-02-10",
-          priority: "medium",
-          project_id: "2",
-        },
-      ],
-    },
-  ];
 
   const [formData, setFormData] = useState<{
     name: string;
@@ -842,9 +950,34 @@ export function UnifiedProjectManagement() {
             iban: bankIban,
             swift: bankSwift,
           },
-          service_specific: serviceSpecific,
+          service_specific: {
+            // Map form field names back to database field names
+            domain_suggestions: serviceSpecific.domainSuggestions || "",
+            references: serviceSpecific.websiteReferences || "",
+            features: serviceSpecific.featuresRequirements || "",
+            
+            // Branding fields
+            logo_ideas: serviceSpecific.logoIdeasConcepts || "",
+            color_preferences: serviceSpecific.colorBrandTheme || "",
+            design_assets: serviceSpecific.designAssetsNeeded || [],
+            
+            // AI fields
+            ai_solution_type: serviceSpecific.aiSolutionType || "",
+            business_challenge: serviceSpecific.businessChallenge || "",
+            data_availability: serviceSpecific.dataAvailability || "",
+            
+            // Marketing fields
+            target_audience: serviceSpecific.targetAudience || "",
+            marketing_goals: serviceSpecific.marketingGoals || "",
+            channels: serviceSpecific.marketingChannels || [],
+            
+            // Custom fields
+            service_description: serviceSpecific.serviceDescription || "",
+            expected_outcome: serviceSpecific.expectedOutcome || "",
+          },
         };
 
+        console.log("Sending update data:", updateData);
         const response = await fetch(`/api/projects/${editingProject.id}`, {
           method: 'PUT',
           headers: {
@@ -969,7 +1102,10 @@ export function UnifiedProjectManagement() {
     });
     
     // Set service type and map to new field names
-    setServiceType((project.service_type as any) || "");
+    console.log("Project data:", project);
+    console.log("Setting service type:", project.service_type);
+    console.log("Project type field:", project.type);
+    setServiceType((project.service_type || project.type as any) || "");
     
     // Company & Contact Information (Step 3)
     setCompanyNumber(project.company_number || "");
@@ -993,7 +1129,36 @@ export function UnifiedProjectManagement() {
     
     // Service-specific data with new field names
     const serviceSpecificData = project.service_specific || {};
-    setServiceSpecific(serviceSpecificData);
+    console.log("Project service_specific:", serviceSpecificData);
+    console.log("Project keys:", Object.keys(project));
+    console.log("Project service_specific keys:", Object.keys(serviceSpecificData));
+    
+    // Map database field names to form field names
+    setServiceSpecific({
+      // Web development fields
+      domainSuggestions: serviceSpecificData.domain_suggestions || "",
+      websiteReferences: serviceSpecificData.references || "",
+      featuresRequirements: serviceSpecificData.features || "",
+      
+      // Branding fields
+      logoIdeasConcepts: serviceSpecificData.logo_ideas || "",
+      colorBrandTheme: serviceSpecificData.color_preferences || "",
+      designAssetsNeeded: serviceSpecificData.design_assets || [],
+      
+      // AI fields
+      aiSolutionType: serviceSpecificData.ai_solution_type || "",
+      businessChallenge: serviceSpecificData.business_challenge || "",
+      dataAvailability: serviceSpecificData.data_availability || "",
+      
+      // Marketing fields
+      targetAudience: serviceSpecificData.target_audience || "",
+      marketingGoals: serviceSpecificData.marketing_goals || "",
+      marketingChannels: serviceSpecificData.channels || [],
+      
+      // Custom fields
+      serviceDescription: serviceSpecificData.service_description || "",
+      expectedOutcome: serviceSpecificData.expected_outcome || "",
+    });
     
     setIsCreating(true);
     setWizardStep(0); // Start from Step 1 for editing
@@ -1012,6 +1177,9 @@ export function UnifiedProjectManagement() {
 
   const validateStep2 = () => {
     if (!serviceType) return false;
+    
+    // If we're editing an existing project, allow empty service-specific fields
+    if (editingProject) return true;
     
     switch (serviceType) {
       case "web":
@@ -1073,6 +1241,7 @@ export function UnifiedProjectManagement() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1353,6 +1522,13 @@ export function UnifiedProjectManagement() {
                   </div>
 
                   <div className="mb-4">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                      <span>Progress</span>
+                      <div className="flex items-center gap-1">
+                        <GitBranch className="h-3 w-3" />
+                        <span>Workflow Active</span>
+                      </div>
+                    </div>
                     <Progress value={project.progress} className="w-full" />
                   </div>
 
@@ -1365,18 +1541,34 @@ export function UnifiedProjectManagement() {
                       ))}
                     </div>
                     <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenAssignment(project);
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                        Assign
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
                       <Dialog
                         open={detailsOpen && selectedProject?.id === project.id}
                         onOpenChange={setDetailsOpen}
                       >
                         <DialogContent
-                          className="max-w-[90vw] max-h-[95vh] overflow-y-auto overflow-x-hidden"
+                          className="max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <DialogHeader>
+                          <DialogHeader className="flex-shrink-0">
                             <DialogTitle>{project.name}</DialogTitle>
+                            <DialogDescription>Review all project information</DialogDescription>
                           </DialogHeader>
-                          <Tabs defaultValue="overview">
+                          <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+                            <Tabs defaultValue="overview">
                             <TabsList className="grid w-full grid-cols-4">
                               <TabsTrigger value="overview">
                                 Overview
@@ -1398,23 +1590,25 @@ export function UnifiedProjectManagement() {
                                     <CardTitle>Key Details</CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-2 text-sm">
-                                    <p>
+                                    <p className="break-words">
                                       <strong>Type:</strong>{" "}
-                                      {project.service_type || "-"}
+                                      <span className="break-all">{project.service_type || "-"}</span>
                                     </p>
-                                    <p>
-                                      <strong>Client:</strong> {project.client}
+                                    <p className="break-words">
+                                      <strong>Client:</strong>{" "}
+                                      <span className="break-all">{project.client}</span>
                                     </p>
-                                    <p>
-                                      <strong>Status:</strong> {project.status}
+                                    <p className="break-words">
+                                      <strong>Status:</strong>{" "}
+                                      <span className="break-all">{project.status}</span>
                                     </p>
-                                    <p>
+                                    <p className="break-words">
                                       <strong>Priority:</strong>{" "}
-                                      {project.priority}
+                                      <span className="break-all">{project.priority}</span>
                                     </p>
-                                    <p>
+                                    <p className="break-words">
                                       <strong>Budget:</strong> $
-                                      {project.budget.toLocaleString()}
+                                      <span className="break-all">{project.budget.toLocaleString()}</span>
                                     </p>
                                   </CardContent>
                                 </Card>
@@ -1423,13 +1617,13 @@ export function UnifiedProjectManagement() {
                                     <CardTitle>Timeline</CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-2 text-sm">
-                                    <p>
+                                    <p className="break-words">
                                       <strong>Start:</strong>{" "}
-                                      {project.start_date || "-"}
+                                      <span className="break-all">{project.start_date || "-"}</span>
                                     </p>
-                                    <p>
+                                    <p className="break-words">
                                       <strong>End:</strong>{" "}
-                                      {project.end_date || "-"}
+                                      <span className="break-all">{project.end_date || "-"}</span>
                                     </p>
                                     <div className="mt-2">
                                       <Progress value={project.progress} />
@@ -1441,43 +1635,40 @@ export function UnifiedProjectManagement() {
                                     <CardTitle>Company & Contacts</CardTitle>
                                   </CardHeader>
                                   <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                      <p>
+                                    <div className="space-y-2">
+                                      <p className="break-words">
                                         <strong>Company Number:</strong>{" "}
-                                        {project.company_number || "-"}
+                                        <span className="break-all">{project.company_number || "-"}</span>
                                       </p>
-                                      <p>
+                                      <p className="break-words">
                                         <strong>Company Email:</strong>{" "}
-                                        {project.company_email || "-"}
+                                        <span className="break-all">{project.company_email || "-"}</span>
                                       </p>
-                                      <p>
+                                      <p className="break-words">
                                         <strong>Address:</strong>{" "}
-                                        {project.company_address || "-"}
+                                        <span className="break-all">{project.company_address || "-"}</span>
                                       </p>
-                                      <p>
+                                      <p className="break-words">
                                         <strong>About:</strong>{" "}
-                                        {project.about_company || "-"}
+                                        <span className="break-words">{project.about_company || "-"}</span>
                                       </p>
                                     </div>
-                                    <div>
-                                      <p>
+                                    <div className="space-y-2">
+                                      <p className="break-words">
                                         <strong>Public Phone:</strong>{" "}
-                                        {project.public_contacts?.phone || "-"}
+                                        <span className="break-all">{project.public_contacts?.phone || "-"}</span>
                                       </p>
-                                      <p>
+                                      <p className="break-words">
                                         <strong>Public Email:</strong>{" "}
-                                        {project.public_contacts?.email || "-"}
+                                        <span className="break-all">{project.public_contacts?.email || "-"}</span>
                                       </p>
-                                      <p>
+                                      <p className="break-words">
                                         <strong>Public Address:</strong>{" "}
-                                        {project.public_contacts?.address ||
-                                          "-"}
+                                        <span className="break-all">{project.public_contacts?.address || "-"}</span>
                                       </p>
-                                      <p>
+                                      <p className="break-words">
                                         <strong>Social:</strong>{" "}
-                                        {(project.social_links || []).join(
-                                          ", "
-                                        ) || "-"}
+                                        <span className="break-all">{(project.social_links || []).join(", ") || "-"}</span>
                                       </p>
                                     </div>
                                   </CardContent>
@@ -1801,7 +1992,8 @@ export function UnifiedProjectManagement() {
                                 </div>
                               </div>
                             </TabsContent>
-                          </Tabs>
+                            </Tabs>
+                          </div>
                         </DialogContent>
                       </Dialog>
                       {currentUser?.role !== "employee" && (
@@ -1841,57 +2033,117 @@ export function UnifiedProjectManagement() {
 
         {currentUser?.role !== "employee" && (
           <TabsContent value="team" className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {teamEmployees.map((employee) => {
+
+            {/* Team Member Cards */}
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {employees.map((employee) => {
                 const employeeTasks = tasks.filter(
                   (t) => t.assignee === employee.id
                 );
                 const employeeProjects = projects.filter((p) =>
                   p.assigned_employees.includes(employee.id)
                 );
+                const completedTasks = employeeTasks.filter(t => t.status === "completed").length;
+                const inProgressTasks = employeeTasks.filter(t => t.status === "in-progress").length;
+                const reviewTasks = employeeTasks.filter(t => t.status === "review").length;
 
                 return (
-                  <Card key={employee.id}>
-                    <CardHeader>
+                  <Card key={employee.id} className="hover:shadow-lg transition-shadow">
+                    <CardHeader className="pb-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                          <UserIcon className="h-5 w-5" />
-                        </div>
-                        <div>
+                        <Avatar className="h-12 w-12">
+                          <AvatarFallback className="bg-black text-white font-semibold">
+                            {employee.first_name?.charAt(0) || employee.name.charAt(0)}{employee.last_name?.charAt(0) || ''}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
                           <CardTitle className="text-lg">
-                            {employee.name}
+                            {employee.first_name && employee.last_name 
+                              ? `${employee.first_name} ${employee.last_name}` 
+                              : employee.name}
                           </CardTitle>
                           <p className="text-sm text-muted-foreground">
-                            {employee.role}
+                            {employee.role} • {employee.email}
                           </p>
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-sm">Active Projects:</span>
-                          <Badge variant="secondary">
-                            {employeeProjects.length}
-                          </Badge>
+                    
+                    <CardContent className="space-y-4">
+                      {/* Project Assignments */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium">Assigned Projects</span>
+                          <Badge variant="outline">{employeeProjects.length}</Badge>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm">Assigned Tasks:</span>
-                          <Badge variant="secondary">
-                            {employeeTasks.length}
-                          </Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm">Completed Tasks:</span>
-                          <Badge variant="secondary">
-                            {
-                              employeeTasks.filter(
-                                (t) => t.status === "completed"
-                              ).length
-                            }
-                          </Badge>
-                        </div>
+                        {employeeProjects.length > 0 ? (
+                          <div className="space-y-2">
+                            {employeeProjects.slice(0, 2).map((project) => (
+                              <div key={project.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border">
+                                <FolderOpen className="h-4 w-4 text-black" />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium">{project.name}</p>
+                                  <p className="text-xs text-muted-foreground">{project.client}</p>
+                                </div>
+                                <Badge 
+                                  variant={project.status === "active" ? "default" : "secondary"}
+                                  className="text-xs"
+                                >
+                                  {project.status}
+                                </Badge>
+                              </div>
+                            ))}
+                            {employeeProjects.length > 2 && (
+                              <p className="text-xs text-muted-foreground">
+                                +{employeeProjects.length - 2} more projects
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-muted-foreground">
+                            <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">No assigned projects</p>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Task Statistics */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">Total Tasks</span>
+                          <Badge variant="secondary">{employeeTasks.length}</Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="p-2 bg-gray-50 rounded-lg border">
+                            <div className="text-lg font-bold text-black">{completedTasks}</div>
+                            <div className="text-xs text-gray-600">Completed</div>
+                          </div>
+                          <div className="p-2 bg-gray-50 rounded-lg border">
+                            <div className="text-lg font-bold text-black">{inProgressTasks}</div>
+                            <div className="text-xs text-gray-600">In Progress</div>
+                          </div>
+                          <div className="p-2 bg-gray-50 rounded-lg border">
+                            <div className="text-lg font-bold text-black">{reviewTasks}</div>
+                            <div className="text-xs text-gray-600">Review</div>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        {employeeTasks.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>Progress</span>
+                              <span>{Math.round((completedTasks / employeeTasks.length) * 100)}%</span>
+                            </div>
+                            <Progress 
+                              value={(completedTasks / employeeTasks.length) * 100} 
+                              className="h-2" 
+                            />
+                          </div>
+                        )}
+                      </div>
+
                     </CardContent>
                   </Card>
                 );
@@ -1902,7 +2154,11 @@ export function UnifiedProjectManagement() {
       </Tabs>
 
       {currentUser?.role !== "employee" && (isCreating || editingProject) && (
-        <Dialog open={true} onOpenChange={() => resetForm()}>
+        <Dialog open={true} onOpenChange={() => {
+          if (!editingProject) {
+            resetForm();
+          }
+        }}>
           <DialogContent className="max-w-[90vw] max-h-[95vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
@@ -1944,7 +2200,11 @@ export function UnifiedProjectManagement() {
                     
                     <div>
                       <Label>Project Type *</Label>
-                      <Select value={serviceType} onValueChange={(value) => setServiceType(value as any)}>
+                      {console.log("Current serviceType:", serviceType)}
+                      <Select key={serviceType} value={serviceType} onValueChange={(value) => {
+                        console.log("Service type changed to:", value);
+                        setServiceType(value as any);
+                      }}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select project type" />
                         </SelectTrigger>
@@ -2040,6 +2300,13 @@ export function UnifiedProjectManagement() {
                       Tell us more about your project
                     </p>
                   </div>
+                  {console.log("Current serviceType for form:", serviceType)}
+                  {console.log("Current serviceSpecific data:", serviceSpecific)}
+                  {!serviceType && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>Please select a project type to see service-specific fields</p>
+                    </div>
+                  )}
                   {serviceType === "web" && (
                     <div className="space-y-6">
                       <div>
@@ -2981,6 +3248,169 @@ export function UnifiedProjectManagement() {
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      {/* Project Assignment Dialog */}
+      <Dialog open={assignmentOpen} onOpenChange={setAssignmentOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Assign Team Members to Project
+            </DialogTitle>
+            <DialogDescription>
+              Manage team assignments for "{selectedProjectForAssignment?.name}"
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Project Overview */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5" />
+                  Project Overview
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Project Name</Label>
+                    <p className="text-sm font-medium">{selectedProjectForAssignment?.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Status</Label>
+                    <Badge className={getStatusColor(selectedProjectForAssignment?.status || "planning")}>
+                      {selectedProjectForAssignment?.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Current Members</Label>
+                    <p className="text-sm font-medium">{projectMembers.length} assigned</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Current Team Members */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Current Team Members
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {projectMembers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No team members assigned yet</p>
+                    <p className="text-sm">Add team members using the form below</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {projectMembers.map((member) => (
+                      <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="text-xs">
+                              {member.name.split(' ').map(n => n[0]).join('')}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-sm font-medium">{member.name}</p>
+                            <p className="text-xs text-muted-foreground">{member.email}</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveEmployee(member.id)}
+                          disabled={isUpdatingAssignments}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Add Team Members */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <UserPlus className="h-5 w-5" />
+                  Add Team Members
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Select Employee to Assign</Label>
+                  <Select onValueChange={handleAssignEmployee} disabled={isUpdatingAssignments}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose an employee to assign..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employees
+                        .filter(emp => !projectMembers.some(member => member.id === emp.id))
+                        .map((employee) => (
+                          <SelectItem key={employee.id} value={employee.id}>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-6 w-6">
+                                <AvatarFallback className="text-xs">
+                                  {(employee.first_name?.charAt(0) || '') + (employee.last_name?.charAt(0) || '')}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {`${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{employee.email}</p>
+                              </div>
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {employees.filter(emp => !projectMembers.some(member => member.id === emp.id)).length === 0 && (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">All available employees are already assigned</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignmentOpen(false)}>
+              Close
+            </Button>
+            <Button 
+              onClick={() => {
+                setAssignmentOpen(false);
+                // Refresh project data
+                refetchAllProjects();
+              }}
+              disabled={isUpdatingAssignments}
+            >
+              {isUpdatingAssignments ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

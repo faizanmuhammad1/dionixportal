@@ -48,6 +48,7 @@ export async function PUT(
     }
 
     const body = await request.json();
+    console.log("Received update data:", body);
     const updates: Partial<ProjectFormData> = body;
 
     const projectService = new ProjectService(supabase);

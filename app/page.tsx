@@ -13,6 +13,7 @@ import { EmployeeDashboard } from "@/components/employee-dashboard";
 import { JobManagement } from "@/components/job-management";
 import { UnifiedProjectManagement } from "@/components/unified-project-management";
 import { EmployeeProjectCenter } from "@/components/employee-project-center";
+import { TaskBoard } from "@/components/task-board";
 import { ComingSoon } from "@/components/coming-soon";
 import { getCurrentUser, signOut, type User } from "@/lib/auth";
 import { useSession } from "@/hooks/use-session";
@@ -44,6 +45,7 @@ export default function HomePage() {
     | "my-documents"
     | "employee-support"
     | "client-submissions"
+    | "task-management"
     | "settings"
   >("dashboard");
 
@@ -274,6 +276,9 @@ export default function HomePage() {
       )}
       {currentView === "client-submissions" && user.role === "admin" && (
         <ClientProjectSubmissions />
+      )}
+      {currentView === "task-management" && user.role === "admin" && (
+        <TaskBoard />
       )}
       {currentView === "team-directory" && user.role === "admin" && (
         <EmployeeManagement />

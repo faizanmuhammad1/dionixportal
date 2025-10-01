@@ -399,7 +399,7 @@ export class ProjectService {
         throw new Error(`Update project failed: ${error.message}`);
       }
 
-      return data;
+      return this.mapProjectRow(data);
     } catch (error) {
       console.error('Update project error:', error);
       throw error;
