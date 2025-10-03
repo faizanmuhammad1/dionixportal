@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 // table components removed (unused)
@@ -40,6 +41,9 @@ import {
   Loader2,
   X,
   Calendar,
+  CheckCircle,
+  FolderOpen,
+  Mail,
 } from "lucide-react";
 import {
   saveProjects as storeSaveProjects,
@@ -126,6 +130,7 @@ interface ProjectAttachment {
   uploaded_at: string;
   task_id?: string;
   client_visible?: boolean;
+  storage_path?: string;
 }
 
 interface ProjectComment {
@@ -237,6 +242,14 @@ export function UnifiedProjectManagement() {
   >([]);
   const [isUpdatingAssignments, setIsUpdatingAssignments] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const [isAddingComment, setIsAddingComment] = useState(false);
+  const [selectedEmployeeForProject, setSelectedEmployeeForProject] = useState<{
+    id: string;
+    name: string;
+    email: string;
+  } | null>(null);
+  const [employeeProjectModalOpen, setEmployeeProjectModalOpen] = useState(false);
 
   const supabase = createClient();
   const { toast } = useToast();
@@ -349,6 +362,141 @@ export function UnifiedProjectManagement() {
       toast({
         title: "Error",
         description: "Failed to remove employee",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingAssignments(false);
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from("attachments")
+        .delete()
+        .eq("attachment_id", attachmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Attachment deleted successfully",
+      });
+
+      // Refresh project data
+      await refetchAllProjects();
+    } catch (error) {
+      console.error("Error deleting attachment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete attachment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddComment = async (projectId: string, commentBody: string) => {
+    if (!commentBody.trim()) return;
+    
+    setIsAddingComment(true);
+    try {
+      const { error } = await supabase
+        .from("comments")
+        .insert({
+          project_id: projectId,
+          body: commentBody.trim(),
+          created_by: currentUser?.id || "unknown",
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Comment added successfully",
+      });
+
+      // Clear the comment input
+      setNewComment("");
+      
+      // Refresh project data
+      await refetchAllProjects();
+    } catch (error) {
+      console.error("Error adding comment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to add comment",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAddingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const { error } = await supabase
+        .from("comments")
+        .delete()
+        .eq("comment_id", commentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Comment deleted successfully",
+      });
+
+      // Refresh project data
+      await refetchAllProjects();
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete comment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAssignProjectsToEmployee = async (employeeId: string, projectIds: string[]) => {
+    setIsUpdatingAssignments(true);
+    try {
+      // Remove employee from all current projects first
+      const { error: removeError } = await supabase
+        .from("project_members")
+        .delete()
+        .eq("user_id", employeeId);
+
+      if (removeError) throw removeError;
+
+      // Add employee to selected projects
+      if (projectIds.length > 0) {
+        const assignments = projectIds.map(projectId => ({
+          project_id: projectId,
+          user_id: employeeId,
+        }));
+
+        const { error: addError } = await supabase
+          .from("project_members")
+          .insert(assignments);
+
+        if (addError) throw addError;
+      }
+
+      toast({
+        title: "Success",
+        description: `Employee assigned to ${projectIds.length} project(s)`,
+      });
+
+      // Refresh project data
+      await refetchAllProjects();
+      setEmployeeProjectModalOpen(false);
+      setSelectedEmployeeForProject(null);
+    } catch (error) {
+      console.error("Error assigning projects to employee:", error);
+      toast({
+        title: "Error",
+        description: "Failed to assign projects to employee",
         variant: "destructive",
       });
     } finally {
@@ -545,6 +693,7 @@ export function UnifiedProjectManagement() {
             uploaded_at: a.uploaded_at,
             task_id: a.task_id || undefined,
             client_visible: a.client_visible || false,
+            storage_path: a.storage_path,
           })
         );
         const comments: ProjectComment[] = (p.comments || []).map(
@@ -1474,6 +1623,8 @@ export function UnifiedProjectManagement() {
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="company">Company</TabsTrigger>
                     <TabsTrigger value="details">Details</TabsTrigger>
+                    <TabsTrigger value="attachments">Attachments</TabsTrigger>
+                    <TabsTrigger value="comments">Comments</TabsTrigger>
                     <TabsTrigger value="team">Team</TabsTrigger>
                   </TabsList>
 
@@ -1660,6 +1811,7 @@ export function UnifiedProjectManagement() {
                         </div>
                       )}
 
+
                       {selectedProject.bank_details &&
                       Object.keys(selectedProject.bank_details).length > 0 && (
                         <div className="space-y-1">
@@ -1717,6 +1869,278 @@ export function UnifiedProjectManagement() {
                               ))}
                             </div>
                           </div>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="attachments" className="pt-4">
+                    <div className="space-y-4">
+                      {/* Upload Section */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium">Project Attachments</h4>
+                          <div className="flex gap-2">
+                            <input
+                              type="file"
+                              id="attachment-upload"
+                              multiple
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && selectedProject) {
+                                  handleFileUpload(Array.from(e.target.files), selectedProject.id);
+                                }
+                              }}
+                              accept="image/*,video/*,application/pdf,.doc,.docx,.txt"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => document.getElementById('attachment-upload')?.click()}
+                              disabled={isUploading}
+                            >
+                              {isUploading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Plus className="h-4 w-4" />
+                              )}
+                              Add Files
+                            </Button>
+                          </div>
+                        </div>
+                        {isUploading && (
+                          <div className="text-xs text-muted-foreground">
+                            Uploading files... {processingStep}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Attachments List */}
+                      {selectedProject.attachments &&
+                      selectedProject.attachments.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedProject.attachments.map((a) => (
+                            <div
+                              key={a.id}
+                              className="flex items-center justify-between gap-2 p-3 rounded border bg-muted/30 hover:bg-muted/50 transition-colors"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
+                                  {a.content_type?.startsWith('image/') ? '🖼️' : 
+                                   a.content_type?.startsWith('video/') ? '🎥' :
+                                   a.content_type?.includes('pdf') ? '📄' :
+                                   a.content_type?.includes('text') ? '📝' : '📎'}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium truncate">
+                                    {a.file_name}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {typeof a.file_size === "number"
+                                      ? `${Math.max(1, Math.round(a.file_size / 1024))} KB`
+                                      : "Unknown size"} • {a.content_type || "Unknown type"}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {a.storage_path && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                    onClick={() => window.open(a.storage_path, '_blank')}
+                                    title="View file"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                  onClick={async () => {
+                                    if (confirm(`Delete "${a.file_name}"?`)) {
+                                      await handleDeleteAttachment(a.id);
+                                    }
+                                  }}
+                                  title="Delete file"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <div className="text-sm">No attachments found</div>
+                          <div className="text-xs mt-1">
+                            Upload files to attach them to this project
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload Progress */}
+                      {uploadProgress !== null && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Uploading...</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <Progress value={uploadProgress} className="h-2" />
+                        </div>
+                      )}
+
+                      {/* Upload Errors */}
+                      {uploadErrors.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-destructive">Upload Errors:</div>
+                          {uploadErrors.map((error, i) => (
+                            <div key={i} className="text-xs text-destructive bg-destructive/10 p-2 rounded">
+                              {error}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="comments" className="pt-4">
+                    <div className="space-y-4">
+                      {/* Add Comment Section */}
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-medium">Project Comments</h4>
+                        
+                        {/* Comment Form */}
+                        <div className="space-y-3 p-4 rounded border bg-muted/30">
+                          <div className="space-y-2">
+                            <label htmlFor="comment-text" className="text-xs font-medium text-muted-foreground">
+                              Add a comment
+                            </label>
+                            <textarea
+                              id="comment-text"
+                              value={newComment}
+                              onChange={(e) => setNewComment(e.target.value)}
+                              placeholder="Write your comment here..."
+                              className="w-full min-h-[80px] px-3 py-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                              disabled={isAddingComment}
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setNewComment("")}
+                              disabled={isAddingComment || !newComment.trim()}
+                            >
+                              Clear
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={async () => {
+                                if (selectedProject && newComment.trim()) {
+                                  await handleAddComment(selectedProject.id, newComment);
+                                }
+                              }}
+                              disabled={isAddingComment || !newComment.trim()}
+                            >
+                              {isAddingComment ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Adding...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add Comment
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Comments List */}
+                      {selectedProject.comments &&
+                      selectedProject.comments.length > 0 ? (
+                        <div className="space-y-3">
+                          {selectedProject.comments
+                            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                            .map((comment) => {
+                              // Find the commenter in employees or use fallback
+                              const commenter = employees.find(emp => emp.id === comment.created_by);
+                              const commenterName = commenter?.name || "Unknown User";
+                              const commenterInitials = commenterName
+                                .split(' ')
+                                .map(n => n.charAt(0))
+                                .join('')
+                                .toUpperCase()
+                                .slice(0, 2);
+
+                              return (
+                                <div
+                                  key={comment.id}
+                                  className="flex gap-3 p-3 rounded border bg-muted/30 hover:bg-muted/50 transition-colors"
+                                >
+                                  {/* Avatar */}
+                                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+                                    {commenterInitials}
+                                  </div>
+                                  
+                                  {/* Comment Content */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-sm font-medium">
+                                        {commenterName}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {new Date(comment.created_at).toLocaleDateString('en-US', {
+                                          month: 'short',
+                                          day: 'numeric',
+                                          year: 'numeric',
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        })}
+                                      </span>
+                                    </div>
+                                    <div className="text-sm text-foreground whitespace-pre-wrap break-words">
+                                      {comment.body}
+                                    </div>
+                                  </div>
+
+                                  {/* Comment Actions */}
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0"
+                                      onClick={async () => {
+                                        if (confirm(`Delete this comment?`)) {
+                                          await handleDeleteComment(comment.id);
+                                        }
+                                      }}
+                                      title="Delete comment"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <div className="text-sm">No comments yet</div>
+                          <div className="text-xs mt-1">
+                            Add the first comment to start the discussion
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Comment Stats */}
+                      {selectedProject.comments && selectedProject.comments.length > 0 && (
+                        <div className="text-xs text-muted-foreground text-center pt-2 border-t">
+                          {selectedProject.comments.length} comment{selectedProject.comments.length !== 1 ? 's' : ''}
                         </div>
                       )}
                     </div>
@@ -1994,62 +2418,104 @@ export function UnifiedProjectManagement() {
           </div>
         </TabsContent>
         <TabsContent value="team" className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Team Members Grid */}
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {employees.length === 0 && (
-              <div className="col-span-full text-center py-10">
-                <p className="text-sm text-muted-foreground">
-                  No team members found. Add employees to your account to see
-                  them here.
+              <div className="col-span-full text-center py-16">
+                <div className="mx-auto w-24 h-24 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+                  <Users className="h-12 w-12 text-muted-foreground/50" />
+                            </div>
+                <h3 className="text-lg font-semibold mb-2">No Team Members</h3>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  Add employees to your account to see them here and start building your team.
                 </p>
-              </div>
+                            </div>
             )}
-            {employees.map((employee) => (
-              <Card key={employee.id} className="flex flex-col">
-                <CardHeader className="flex-1">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center">
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="text-lg font-semibold truncate">
-                        {employee.name}
-                      </CardTitle>
-                      <CardDescription className="text-sm text-muted-foreground truncate">
-                        {employee.role}
-                      </CardDescription>
+            {employees.map((employee) => {
+              const employeeProjects = projects.filter((p) =>
+                p.assigned_employees.includes(employee.id)
+              );
+              const projectCount = employeeProjects.length;
+              
+              const initials = employee.name
+                .split(' ')
+                .map(n => n.charAt(0))
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+
+              return (
+                <Card key={employee.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-12 w-12">
+                        <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-lg font-semibold truncate">
+                          {employee.name}
+                        </CardTitle>
+                        <CardDescription className="text-sm text-muted-foreground truncate">
+                          {employee.role} • {employee.email}
+                        </CardDescription>
+                      </div>
                     </div>
+                  </CardHeader>
+                  
+                  <CardContent className="space-y-3">
+                    <div className="flex items-start gap-4">
+                      <div className="text-center px-2">
+                        <div className="text-2xl font-bold text-foreground">{projectCount}</div>
+                        <div className="text-xs text-muted-foreground">Projects</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-muted-foreground mb-1">Projects</div>
+                        {employeeProjects.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {employeeProjects.slice(0, 4).map((p) => (
+                              <Badge
+                                key={p.id}
+                                variant="secondary"
+                                className="text-xs font-medium truncate max-w-[140px]"
+                                title={p.name}
+                              >
+                                {p.name}
+                              </Badge>
+                            ))}
+                            {employeeProjects.length > 4 && (
+                              <span className="text-xs text-muted-foreground">
+                                +{employeeProjects.length - 4} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">None</div>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                  
+                  <div className="p-4 pt-0">
+                    <Button
+                      onClick={() => {
+                        setSelectedEmployeeForProject({
+                          id: employee.id,
+                          name: employee.name,
+                          email: employee.email,
+                        });
+                        setEmployeeProjectModalOpen(true);
+                      }}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Assign to Project
+                    </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Email</p>
-                      <p className="font-medium">{employee.email}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Projects</p>
-                      <p className="font-medium">
-                        {
-                          projects.filter((p) =>
-                            p.assigned_employees.includes(employee.id)
-                          ).length
-                        }
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      setSelectedProjectForAssignment(null);
-                      setAssignmentOpen(true);
-                    }}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Assign to Project
-                  </Button>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </TabsContent>
       </Tabs>
@@ -2245,6 +2711,7 @@ export function UnifiedProjectManagement() {
                         uploaded_at: a.uploaded_at,
                         task_id: a.task_id || undefined,
                         client_visible: a.client_visible || false,
+                        storage_path: a.storage_path,
                       }));
                       const normalizedComments: ProjectComment[] = (
                         updatedProject.comments || []
@@ -2331,6 +2798,88 @@ export function UnifiedProjectManagement() {
               ) : (
                 "Update Assignments"
               )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Employee project assignment modal */}
+      <Dialog open={employeeProjectModalOpen} onOpenChange={setEmployeeProjectModalOpen}>
+        <DialogContent className="max-w-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">
+              Assign Projects to {selectedEmployeeForProject?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="mt-4">
+            <Label>Employee</Label>
+            <p className="mt-1 text-sm font-medium">
+              {selectedEmployeeForProject?.name} • {selectedEmployeeForProject?.email}
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <Label>Available Projects</Label>
+            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {projects.map((project) => {
+                const isAssigned = project.assigned_employees.includes(selectedEmployeeForProject?.id || '');
+                return (
+                  <div
+                    key={project.id}
+                    className="flex items-center justify-between rounded-md bg-muted p-3"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{project.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {project.description}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={async () => {
+                        if (selectedEmployeeForProject) {
+                          const currentProjects = projects
+                            .filter(p => p.assigned_employees.includes(selectedEmployeeForProject.id))
+                            .map(p => p.id);
+                          
+                          let newProjectIds;
+                          if (isAssigned) {
+                            // Remove from this project
+                            newProjectIds = currentProjects.filter(id => id !== project.id);
+                          } else {
+                            // Add to this project
+                            newProjectIds = [...currentProjects, project.id];
+                          }
+                          
+                          await handleAssignProjectsToEmployee(selectedEmployeeForProject.id, newProjectIds);
+                        }
+                      }}
+                      variant={isAssigned ? "destructive" : "default"}
+                      size="sm"
+                      disabled={isUpdatingAssignments}
+                    >
+                      {isUpdatingAssignments ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        isAssigned ? "Remove" : "Assign"
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2">
+            <Button
+              onClick={() => {
+                setEmployeeProjectModalOpen(false);
+                setSelectedEmployeeForProject(null);
+              }}
+              variant="outline"
+              className="mr-2"
+            >
+              Cancel
             </Button>
           </div>
         </DialogContent>
