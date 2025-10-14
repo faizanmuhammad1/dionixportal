@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server";
 import { withAuth, withCors } from "@/lib/api-middleware";
 
 export const runtime = "nodejs";
@@ -35,12 +35,13 @@ export const PATCH = withAuth(
   async ({ user, request }, { params }: { params: { id: string } }) => {
     try {
       const body = await request.json();
-      const { role, first_name, last_name, department, position, status } = body;
+      const { role, first_name, last_name, department, position, status, phone, hire_date, employment_type } = body;
 
-      const supabase = createServerSupabaseClient();
+      // Use admin client to bypass RLS for admin operations
+      const supabase = createAdminSupabaseClient();
 
-      // Try to update in profiles table first
-      let { data, error } = await supabase
+      // Update in profiles table
+      const { data, error } = await supabase
         .from("profiles")
         .update({ 
           role, 
@@ -49,35 +50,29 @@ export const PATCH = withAuth(
           department, 
           position, 
           status,
+          phone,
+          hire_date,
+          employment_type,
           updated_at: new Date().toISOString()
         })
         .eq("id", params.id)
-        .select("id, role, first_name, last_name, department, position, status")
+        .select("id, role, first_name, last_name, department, position, status, phone, hire_date, employment_type")
         .single();
 
-      // If not found in profiles, try employee_profiles
-      if (error && error.code === 'PGRST116') {
-        const { data: empData, error: empError } = await supabase
-          .from("employee_profiles")
-          .update({ 
-            role, 
-            first_name, 
-            last_name, 
-            department, 
-            position, 
-            status,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", params.id)
-          .select("id, email, role, first_name, last_name, department, position, status")
-          .single();
-        
-        if (empError) {
-          return withCors(NextResponse.json({ error: empError.message }, { status: 400 }));
-        }
-        data = empData;
-      } else if (error) {
+      if (error) {
+        console.error("Error updating profile:", error);
         return withCors(NextResponse.json({ error: error.message }, { status: 400 }));
+      }
+
+      // Also update auth.users metadata if role changed
+      if (role) {
+        try {
+          await supabase.auth.admin.updateUserById(params.id, {
+            user_metadata: { role, first_name, last_name, department, position }
+          });
+        } catch (metadataError) {
+          console.warn("Could not update user metadata:", metadataError);
+        }
       }
 
       return withCors(NextResponse.json(data));
@@ -86,7 +81,7 @@ export const PATCH = withAuth(
     }
   },
   {
-    roles: ["admin"], // Only admins can update employee details
+    roles: ["admin"],
     permissions: ["employees:write"]
   }
 );
@@ -94,10 +89,11 @@ export const PATCH = withAuth(
 export const DELETE = withAuth(
   async ({ user, request }, { params }: { params: { id: string } }) => {
     try {
-      const supabase = createServerSupabaseClient();
+      // Use admin client to bypass RLS for admin operations
+      const supabase = createAdminSupabaseClient();
       
-      // Try to soft delete in profiles table first
-      let { error: profileError } = await supabase
+      // Soft delete by setting status to inactive
+      const { error } = await supabase
         .from("profiles")
         .update({ 
           status: "inactive",
@@ -105,25 +101,10 @@ export const DELETE = withAuth(
         })
         .eq("id", params.id);
 
-      // If not found in profiles, try employee_profiles
-      if (profileError && profileError.code === 'PGRST116') {
-        const { error: empError } = await supabase
-          .from("employee_profiles")
-          .update({ 
-            status: "inactive",
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", params.id);
-        
-        if (empError) {
-          return withCors(NextResponse.json({ error: "Failed to deactivate user" }, { status: 500 }));
-        }
-      } else if (profileError) {
+      if (error) {
+        console.error("Error deactivating profile:", error);
         return withCors(NextResponse.json({ error: "Failed to deactivate user" }, { status: 500 }));
       }
-
-      // Note: Auth user deactivation requires service key
-      // For now, just deactivate the profile
 
       return withCors(NextResponse.json({ ok: true, message: "User deactivated successfully" }));
     } catch (e: any) {
@@ -131,7 +112,7 @@ export const DELETE = withAuth(
     }
   },
   {
-    roles: ["admin"], // Only admins can delete employees
+    roles: ["admin"],
     permissions: ["employees:delete"]
   }
 );

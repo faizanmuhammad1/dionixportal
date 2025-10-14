@@ -57,9 +57,11 @@ export function EmployeeManagement() {
     firstName: "",
     lastName: "",
     role: "employee",
-    password: "",
     department: "",
     position: "",
+    phone: "",
+    hireDate: "",
+    employmentType: "full-time",
   })
 
   useEffect(() => {
@@ -99,35 +101,56 @@ export function EmployeeManagement() {
             last_name: newEmployee.lastName,
             department: newEmployee.department,
             position: newEmployee.position,
+            phone: newEmployee.phone,
+            hire_date: newEmployee.hireDate || null,
+            employment_type: newEmployee.employmentType,
           }),
           credentials: "same-origin",
         })
         if (!res.ok) throw new Error((await res.json()).error || "Failed")
       } else {
-        // Create new employee
+        // Create new employee invitation
         const res = await fetch("/api/employees", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: newEmployee.email,
-            password: newEmployee.password,
             firstName: newEmployee.firstName,
             lastName: newEmployee.lastName,
             role: newEmployee.role,
             department: newEmployee.department,
             position: newEmployee.position,
+            phone: newEmployee.phone,
+            hireDate: newEmployee.hireDate || null,
+            employmentType: newEmployee.employmentType,
           }),
           credentials: "same-origin",
         })
-        if (!res.ok) throw new Error((await res.json()).error || "Failed")
+        if (!res.ok) {
+          const errorData = await res.json()
+          throw new Error(errorData.error || "Failed to create employee")
+        }
+        const result = await res.json()
+        alert(result.message || "Employee invitation created successfully!")
       }
 
-      setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", password: "", department: "", position: "" })
+      setNewEmployee({ 
+        email: "", 
+        firstName: "", 
+        lastName: "", 
+        role: "employee", 
+        department: "", 
+        position: "",
+        phone: "",
+        hireDate: "",
+        employmentType: "full-time"
+      })
       setEditingEmployee(null)
       setIsCreateDialogOpen(false)
       fetchEmployees()
     } catch (error: any) {
       console.error("Error saving employee:", error.message)
+      alert("Error: " + error.message)
     } finally {
       setIsUpdating(false)
     }
@@ -195,7 +218,7 @@ export function EmployeeManagement() {
             if (!open) {
               setEditingEmployee(null)
               setIsUpdating(false)
-              setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", password: "", department: "", position: "" })
+              setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", department: "", position: "", phone: "", hireDate: "", employmentType: "full-time" })
             }
           }}>
             <DialogTrigger asChild>
@@ -243,17 +266,6 @@ export function EmployeeManagement() {
                     disabled={!!editingEmployee}
                   />
                 </div>
-                {!editingEmployee && (
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Temporary Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={newEmployee.password}
-                      onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
-                    />
-                  </div>
-                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="department">Department</Label>
@@ -299,6 +311,49 @@ export function EmployeeManagement() {
                     placeholder="e.g. Frontend Developer"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone (Optional)</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={newEmployee.phone}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
+                      placeholder="+1 (555) 000-0000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employmentType">Employment Type</Label>
+                    <Select
+                      value={newEmployee.employmentType}
+                      onValueChange={(value) => setNewEmployee({ ...newEmployee, employmentType: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full-time">Full-Time</SelectItem>
+                        <SelectItem value="part-time">Part-Time</SelectItem>
+                        <SelectItem value="contract">Contract</SelectItem>
+                        <SelectItem value="intern">Intern</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hireDate">Hire Date (Optional)</Label>
+                  <Input
+                    id="hireDate"
+                    type="date"
+                    value={newEmployee.hireDate}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, hireDate: e.target.value })}
+                  />
+                </div>
+                {!editingEmployee && (
+                  <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3 text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Note:</strong> An invitation will be sent to the employee's email. They will need to sign up to access the portal.
+                  </div>
+                )}
                 <Button onClick={handleCreateEmployee} className="w-full" disabled={isUpdating}>
                   {isUpdating ? (
                     <span className="flex items-center gap-2">
@@ -417,9 +472,11 @@ export function EmployeeManagement() {
                             firstName: employee.first_name || "",
                             lastName: employee.last_name || "",
                             role: (employee.role as any) || "employee",
-                            password: "",
                             department: employee.department || "",
                             position: employee.position || "",
+                            phone: employee.phone || "",
+                            hireDate: employee.hire_date || "",
+                            employmentType: employee.employment_type || "full-time",
                           })
                         }}>
                           <Edit className="h-4 w-4" />
@@ -523,7 +580,6 @@ export function EmployeeManagement() {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      {deleteConfirmOpen && <div style={{position: 'fixed', top: 0, left: 0, background: 'red', color: 'white', zIndex: 9999, padding: '10px'}}>DIALOG SHOULD BE OPEN</div>}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

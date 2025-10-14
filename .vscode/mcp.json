@@ -12,7 +12,7 @@
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@supabase/mcp-server-supabase@latest"],
       "env": {
-        "SUPABASE_ACCESS_TOKEN": "sbp_2504fc9e77080abf4730086c2cdbc45b04b23e68"
+        "SUPABASE_ACCESS_TOKEN": "${supabase-access-token}"
       }
     }
   }

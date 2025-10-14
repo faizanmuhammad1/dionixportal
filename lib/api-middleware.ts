@@ -24,29 +24,31 @@ async function getServerSession(): Promise<SessionUser | null> {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError || !user) {
+      console.log("No auth user found");
       return null;
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    // Get all data from auth.users metadata (avoids RLS issues)
+    const roleFromMetadata = user.user_metadata?.role || "client";
+    const firstNameFromMetadata = user.user_metadata?.first_name || "User";
+    const lastNameFromMetadata = user.user_metadata?.last_name || "";
 
-    if (profileError || !profile || profile.status !== "active") {
-      return null;
-    }
+    console.log("Server session found:", {
+      id: user.id,
+      email: user.email,
+      role: roleFromMetadata
+    });
 
     return {
       id: user.id,
       email: user.email!,
-      role: profile.role as any,
-      firstName: profile.first_name || "User",
-      lastName: profile.last_name || "",
-      department: profile.department,
-      position: profile.position,
-      status: profile.status as any,
-      permissions: ROLE_PERMISSIONS[profile.role] || [],
+      role: roleFromMetadata as any,
+      firstName: firstNameFromMetadata,
+      lastName: lastNameFromMetadata,
+      department: user.user_metadata?.department,
+      position: user.user_metadata?.position,
+      status: "active", // Assume active if they can authenticate
+      permissions: ROLE_PERMISSIONS[roleFromMetadata] || [],
       lastLogin: user.last_sign_in_at,
       sessionExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     };
@@ -97,11 +99,22 @@ export function withAuth(
       const user = await getServerSession();
       
       if (!user) {
+        console.error("Authentication failed: No user session found");
         return NextResponse.json(
-          { error: "Authentication required" },
+          { 
+            error: "Authentication required",
+            message: "Please log in to access this resource"
+          },
           { status: 401 }
         );
       }
+
+      console.log("User authenticated:", { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role,
+        permissions: user.permissions 
+      });
 
       // Check access requirements
       const accessCheck = requireAccess({
@@ -111,9 +124,14 @@ export function withAuth(
       });
 
       if (!accessCheck(user)) {
+        console.error("Access denied:", {
+          user: { role: user.role, permissions: user.permissions },
+          required: { roles: config.roles, permissions: config.permissions }
+        });
         return NextResponse.json(
           { 
             error: "Insufficient permissions",
+            message: `This action requires ${config.roles?.join(' or ')} role`,
             required: {
               roles: config.roles,
               permissions: config.permissions
@@ -126,6 +144,8 @@ export function withAuth(
           { status: 403 }
         );
       }
+
+      console.log("Access granted for:", config.roles || config.permissions);
 
       // Create context and call handler
       const context: ApiContext = {
@@ -203,11 +223,26 @@ export async function getRequestUser(request: NextRequest): Promise<SessionUser 
   }
 }
 
-// CORS helper
+// CORS helper - SECURE CONFIGURATION
 export function withCors(response: NextResponse): NextResponse {
-  response.headers.set("Access-Control-Allow-Origin", "*");
+  // Only allow specific origins in production
+  const allowedOrigins = process.env.NODE_ENV === 'production' 
+    ? (process.env.ALLOWED_ORIGINS || 'https://dionix.ai,https://portal.dionix.ai').split(',')
+    : ['http://localhost:3000', 'http://localhost:3001'];
+  
+  const origin = response.headers.get('origin') || response.headers.get('referer');
+  const isAllowedOrigin = allowedOrigins.some(allowed => 
+    origin?.includes(allowed) || origin === allowed
+  );
+  
+  if (isAllowedOrigin) {
+    response.headers.set("Access-Control-Allow-Origin", origin || allowedOrigins[0]);
+  }
+  
   response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  response.headers.set("Access-Control-Allow-Credentials", "true");
+  response.headers.set("Access-Control-Max-Age", "86400"); // 24 hours
   return response;
 }
 

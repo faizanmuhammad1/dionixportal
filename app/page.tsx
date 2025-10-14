@@ -223,16 +223,30 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+        <div className="text-center space-y-6 p-8">
+          <div className="relative">
+            {/* Animated loader */}
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-transparent border-t-primary rounded-full animate-spin"></div>
+              <div className="absolute inset-2 border-4 border-transparent border-t-primary/60 rounded-full animate-spin" style={{animationDirection: 'reverse', animationDuration: '0.8s'}}></div>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <p className="text-lg font-medium text-foreground">Loading your workspace...</p>
+            <p className="text-sm text-muted-foreground">Please wait a moment</p>
+          </div>
+          
           {loadingTimeout && (
-            <div className="mt-4">
-              <p className="text-sm text-red-600 mb-2">Loading is taking longer than expected</p>
+            <div className="mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg animate-slide-in-up">
+              <p className="text-sm text-destructive font-medium mb-3">
+                Loading is taking longer than expected
+              </p>
               <button 
                 onClick={() => window.location.reload()} 
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium"
               >
                 Refresh Page
               </button>

@@ -1,4 +1,55 @@
 import { createClient } from "./supabase"
+import { sanitizeFilename } from "./sanitize"
+
+// SECURITY: File validation function
+function validateFile(file: File): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  // Check file size (max 50MB)
+  const maxSize = 50 * 1024 * 1024; // 50MB
+  if (file.size > maxSize) {
+    errors.push('File size exceeds 50MB limit');
+  }
+  
+  // Check file name
+  if (!file.name || file.name.length > 255) {
+    errors.push('Invalid file name');
+  }
+  
+  // Check file type (allow common safe types)
+  const allowedTypes = [
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+    'text/plain', 'text/csv',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/zip',
+    'application/x-zip-compressed'
+  ];
+  
+  if (!allowedTypes.includes(file.type)) {
+    errors.push('File type not allowed');
+  }
+  
+  // Check for dangerous file extensions
+  const dangerousExtensions = ['.exe', '.bat', '.cmd', '.scr', '.pif', '.com', '.vbs', '.js', '.jar', '.sh', '.ps1'];
+  const hasDangerousExtension = dangerousExtensions.some(ext => 
+    file.name.toLowerCase().endsWith(ext)
+  );
+  
+  if (hasDangerousExtension) {
+    errors.push('File type is potentially dangerous');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
 
 export async function uploadProjectFile(params: {
   projectId: string
@@ -6,7 +57,14 @@ export async function uploadProjectFile(params: {
   path?: string
 }) {
   const { projectId, file } = params
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+  
+  // SECURITY: Validate file before upload
+  const validation = validateFile(file);
+  if (!validation.valid) {
+    throw new Error(`File validation failed: ${validation.errors.join(', ')}`);
+  }
+  
+  const safeName = sanitizeFilename(file.name);
   const prefix = params.path ? params.path.replace(/^\/+|\/+$/g, "") + "/" : ""
   const key = `${prefix}${Date.now()}_${safeName}`
   const objectPath = `project/${projectId}/${key}`

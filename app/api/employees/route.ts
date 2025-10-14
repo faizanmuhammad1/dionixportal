@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server"
 import { withAuth, withCors } from "@/lib/api-middleware"
 
 export const runtime = "nodejs"
@@ -8,62 +8,26 @@ export const dynamic = "force-dynamic"
 export const GET = withAuth(
   async ({ user, request }) => {
     try {
-      const supabase = createServerSupabaseClient()
-      
-      
-      // Try view first (fast path) - use regular client
-      try {
-        const { data: viewData, error: viewError } = await supabase
-          .from("employee_directory")
-          .select("*")
-          .order("created_at", { ascending: false })
-        
-        if (!viewError && Array.isArray(viewData)) {
-          const filtered = (viewData as any[]).filter((u) => (u.email || "").toLowerCase() !== "admin@dionix.ai")
-          return withCors(NextResponse.json(filtered))
-        }
-      } catch (viewErr) {
-        // View failed, continue to fallback
-      }
+      // Use admin client to bypass RLS for admin/manager operations
+      const supabase = createAdminSupabaseClient()
 
-      
-      // Fallback: get profiles directly (no admin API needed)
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select(`
-          id, 
-          role, 
-          first_name, 
-          last_name, 
-          department, 
-          position, 
-          status,
-          created_at,
-          updated_at
-        `)
+      // Query profiles and join with auth.users for email
+      const { data: employees, error } = await supabase
+        .from("employee_directory")
+        .select("*")
         .order("created_at", { ascending: false })
 
-      if (profilesError) {
-        console.error("Error fetching profiles:", profilesError)
+      if (error) {
+        console.error("Error fetching employee directory:", error)
         return withCors(NextResponse.json({ error: "Failed to fetch employees" }, { status: 500 }))
       }
 
+      // Filter out admin@dionix.ai if needed
+      const filtered = (employees || []).filter((emp: any) => 
+        (emp.email || "").toLowerCase() !== "admin@dionix.ai"
+      )
 
-      // Return profiles with basic info (no email/last_login without admin API)
-      const employees = (profiles || []).map((profile) => ({
-        id: profile.id,
-        email: `user-${profile.id}@dionix.ai`, // Placeholder email
-        role: profile.role,
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        department: profile.department,
-        position: profile.position,
-        status: profile.status,
-        last_login: null, // Not available without admin API
-        created_at: profile.created_at,
-      }))
-
-      return withCors(NextResponse.json(employees))
+      return withCors(NextResponse.json(filtered))
     } catch (e: any) {
       console.error("Employee API Error:", e)
       return withCors(NextResponse.json({ 
@@ -73,7 +37,7 @@ export const GET = withAuth(
     }
   },
   {
-    roles: ["admin", "manager"], // Only admins and managers can access
+    roles: ["admin", "manager"],
     permissions: ["employees:read"]
   }
 )
@@ -81,37 +45,118 @@ export const GET = withAuth(
 export const POST = withAuth(
   async ({ user, request }) => {
     try {
-      const body = await request.json()
-      const { email, password, firstName, lastName, role = "employee", department, position } = body || {}
+      console.log("POST /api/employees - User:", user.email, "Role:", user.role);
       
-      if (!email || !password) {
-        return withCors(NextResponse.json({ error: "email and password required" }, { status: 400 }))
+      const body = await request.json()
+      console.log("Request body:", body);
+      
+      const { 
+        email, 
+        firstName, 
+        lastName, 
+        role = "employee", 
+        department, 
+        position, 
+        phone, 
+        hireDate, 
+        employmentType = "full-time" 
+      } = body || {}
+      
+      if (!email) {
+        console.error("Validation failed: Email is required");
+        return withCors(NextResponse.json({ error: "Email is required" }, { status: 400 }))
       }
 
-      const supabase = createServerSupabaseClient()
+      if (!firstName || !lastName) {
+        console.error("Validation failed: First name and last name are required");
+        return withCors(NextResponse.json({ error: "First name and last name are required" }, { status: 400 }))
+      }
+
+            console.log("Creating employee invitation for:", email);
+            // Use admin client to bypass RLS for admin operations
+            const supabase = createAdminSupabaseClient()
       
-      const { data: profile, error: profileError } = await supabase
-        .from("employee_profiles")
+      // Check if invitation already exists
+      const { data: existingInvitation } = await supabase
+        .from("employee_invitations")
+        .select("id, status")
+        .eq("email", email.toLowerCase())
+        .single()
+
+      if (existingInvitation) {
+        if (existingInvitation.status === 'accepted') {
+          return withCors(NextResponse.json({ 
+            error: "This employee has already signed up" 
+          }, { status: 400 }))
+        }
+        
+        // Update existing pending invitation
+        const { data: updated, error: updateError } = await supabase
+          .from("employee_invitations")
+          .update({
+            role,
+            first_name: firstName,
+            last_name: lastName,
+            department,
+            position,
+            phone,
+            hire_date: hireDate || null,
+            employment_type: employmentType,
+            invited_by: user.id,
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", existingInvitation.id)
+          .select()
+          .single()
+
+        if (updateError) {
+          console.error("Error updating invitation:", updateError)
+          return withCors(NextResponse.json({ 
+            error: "Failed to update invitation",
+            details: updateError.message 
+          }, { status: 500 }))
+        }
+
+        return withCors(NextResponse.json({
+          ...updated,
+          message: "Employee invitation updated. They can sign up at: " + email
+        }))
+      }
+
+      // Create new invitation
+      const invitationToken = crypto.randomUUID()
+      
+      const { data: invitation, error: invitationError } = await supabase
+        .from("employee_invitations")
         .insert({ 
-          email,
+          email: email.toLowerCase(),
           role, 
           first_name: firstName, 
           last_name: lastName, 
           department, 
           position,
-          status: "active"
+          phone,
+          hire_date: hireDate || null,
+          employment_type: employmentType,
+          invited_by: user.id,
+          invitation_token: invitationToken,
+          status: "pending"
         })
-        .select("id, email, role, first_name, last_name, department, position, status")
+        .select()
         .single()
 
-      if (profileError) {
-        console.error("Error creating profile:", profileError)
-        return withCors(NextResponse.json({ error: "Failed to create user profile" }, { status: 500 }))
+      if (invitationError) {
+        console.error("Error creating invitation:", invitationError)
+        return withCors(NextResponse.json({ 
+          error: "Failed to create employee invitation",
+          details: invitationError.message 
+        }, { status: 500 }))
       }
 
       return withCors(NextResponse.json({
-        ...profile,
-        message: "Profile created. User will need to sign up separately to get auth access."
+        ...invitation,
+        message: `Employee invitation created. Send signup link to: ${email}`
       }))
     } catch (e: any) {
       console.error("Employee creation error:", e)
@@ -119,7 +164,7 @@ export const POST = withAuth(
     }
   },
   {
-    roles: ["admin"], // Only admins can create employees
+    roles: ["admin"],
     permissions: ["employees:write"]
   }
 )

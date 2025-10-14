@@ -2,12 +2,23 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 function withCors(res: NextResponse) {
-  res.headers.set("Access-Control-Allow-Origin", "*");
-  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
+  // SECURE CORS - Only allow specific origins
+  const allowedOrigins = process.env.NODE_ENV === 'production' 
+    ? (process.env.ALLOWED_ORIGINS || 'https://dionix.ai,https://portal.dionix.ai').split(',')
+    : ['http://localhost:3000', 'http://localhost:3001'];
+  
+  const origin = res.headers.get('origin') || res.headers.get('referer');
+  const isAllowedOrigin = allowedOrigins.some(allowed => 
+    origin?.includes(allowed) || origin === allowed
   );
+  
+  if (isAllowedOrigin) {
+    res.headers.set("Access-Control-Allow-Origin", origin || allowedOrigins[0]);
+  }
+  
+  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.headers.set("Access-Control-Allow-Credentials", "true");
   res.headers.set(
     "Cache-Control",
     "public, s-maxage=60, stale-while-revalidate=300"

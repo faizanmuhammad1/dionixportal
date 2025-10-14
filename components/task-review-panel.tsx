@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 // Rich editor replaces simple Textarea
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { sanitizeHtml } from "@/lib/sanitize";
 import {
   CheckCircle2,
   AlertCircle,
@@ -303,7 +304,7 @@ Props) {
           >
             {/* Existing HTML content when editing */}
             {html && !editorRef.current?.innerText && (
-              <div dangerouslySetInnerHTML={{ __html: html }} />
+              <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
             )}
             {/* Image blocks rendered from state (ensures React control) */}
             {images.map((img) => (

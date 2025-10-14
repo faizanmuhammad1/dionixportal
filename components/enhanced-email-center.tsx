@@ -16,6 +16,7 @@ import { Mail, Search, Star, Archive, Trash2, Reply, Forward, Plus, Send, Paperc
 import dynamic from "next/dynamic"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase"
+import { sanitizeEmailContent } from "@/lib/sanitize"
 
 interface Email {
   id: string
@@ -315,7 +316,7 @@ export function EnhancedEmailCenter() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="p-4 bg-muted rounded-lg">
-              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: selectedEmail.content }} />
+              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeEmailContent(selectedEmail.content) }} />
             </div>
             {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
               <div>

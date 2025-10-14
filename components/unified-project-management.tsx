@@ -176,6 +176,12 @@ interface Employee {
   role: string;
   first_name?: string;
   last_name?: string;
+  department?: string;
+  position?: string;
+  status?: string;
+  phone?: string;
+  hire_date?: string;
+  employment_type?: string;
 }
 
 export function UnifiedProjectManagement() {
@@ -753,59 +759,40 @@ export function UnifiedProjectManagement() {
   }
 
   async function fetchEmployees() {
-    // Use mock data for demonstration
-    console.log("Using mock data for employees");
-    const mockEmployees = [
-      {
-        id: "emp-1",
-        name: "John Smith",
-        email: "john@dionix.ai",
-        role: "Senior Developer",
-        first_name: "John",
-        last_name: "Smith",
-      },
-      {
-        id: "emp-2",
-        name: "Sarah Johnson",
-        email: "sarah@dionix.ai",
-        role: "UI/UX Designer",
-        first_name: "Sarah",
-        last_name: "Johnson",
-      },
-      {
-        id: "emp-3",
-        name: "Mike Chen",
-        email: "mike@dionix.ai",
-        role: "Backend Developer",
-        first_name: "Mike",
-        last_name: "Chen",
-      },
-      {
-        id: "emp-4",
-        name: "Emily Davis",
-        email: "emily@dionix.ai",
-        role: "Project Manager",
-        first_name: "Emily",
-        last_name: "Davis",
-      },
-      {
-        id: "emp-5",
-        name: "Alex Rodriguez",
-        email: "alex@dionix.ai",
-        role: "Frontend Developer",
-        first_name: "Alex",
-        last_name: "Rodriguez",
-      },
-      {
-        id: "emp-6",
-        name: "Lisa Wang",
-        email: "lisa@dionix.ai",
-        role: "DevOps Engineer",
-        first_name: "Lisa",
-        last_name: "Wang",
-      },
-    ];
-    setEmployees(mockEmployees);
+    try {
+      // Use API endpoint to get employees with email (server-side can access auth.users)
+      const response = await fetch("/api/employees", {
+        credentials: "same-origin",
+      });
+
+      if (!response.ok) {
+        console.error("Error fetching employees:", response.statusText);
+        setEmployees([]);
+        return;
+      }
+
+      const data = await response.json();
+
+      const mappedEmployees = (data || []).map((emp: any) => ({
+        id: emp.id,
+        name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.full_name || "Unknown",
+        email: emp.email || "",
+        role: emp.role || "employee",
+        first_name: emp.first_name || "",
+        last_name: emp.last_name || "",
+        department: emp.department || "",
+        position: emp.position || "",
+        status: emp.status || "active",
+        phone: emp.phone || "",
+        hire_date: emp.hire_date || "",
+        employment_type: emp.employment_type || "full-time",
+      }));
+
+      setEmployees(mappedEmployees);
+    } catch (error) {
+      console.error("Error in fetchEmployees:", error);
+      setEmployees([]);
+    }
   }
 
   const [formData, setFormData] = useState<{
@@ -2457,43 +2444,82 @@ export function UnifiedProjectManagement() {
                         <CardTitle className="text-lg font-semibold truncate">
                           {employee.name}
                         </CardTitle>
-                        <CardDescription className="text-sm text-muted-foreground truncate">
-                          {employee.role} • {employee.email}
+                        <CardDescription className="text-sm text-muted-foreground">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {employee.role}
+                              </Badge>
+                              {employee.employment_type && (
+                                <Badge variant="secondary" className="text-xs capitalize">
+                                  {employee.employment_type}
+                                </Badge>
+                              )}
+                            </div>
+                            {employee.position && (
+                              <div className="text-xs truncate">{employee.position}</div>
+                            )}
+                            {employee.department && (
+                              <div className="text-xs truncate">{employee.department}</div>
+                            )}
+                          </div>
                         </CardDescription>
                       </div>
                     </div>
                   </CardHeader>
                   
                   <CardContent className="space-y-3">
-                    <div className="flex items-start gap-4">
-                      <div className="text-center px-2">
-                        <div className="text-2xl font-bold text-foreground">{projectCount}</div>
-                        <div className="text-xs text-muted-foreground">Projects</div>
+                    {/* Contact Information */}
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{employee.email}</span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-muted-foreground mb-1">Projects</div>
-                        {employeeProjects.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {employeeProjects.slice(0, 4).map((p) => (
-                              <Badge
-                                key={p.id}
-                                variant="secondary"
-                                className="text-xs font-medium truncate max-w-[140px]"
-                                title={p.name}
-                              >
-                                {p.name}
-                              </Badge>
-                            ))}
-                            {employeeProjects.length > 4 && (
-                              <span className="text-xs text-muted-foreground">
-                                +{employeeProjects.length - 4} more
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-muted-foreground">None</div>
-                        )}
+                      {employee.phone && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          <span className="truncate">{employee.phone}</span>
+                        </div>
+                      )}
+                      {employee.hire_date && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span>Hired: {new Date(employee.hire_date).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Projects Section */}
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-medium text-muted-foreground">Assigned Projects</div>
+                        <Badge variant="secondary" className="text-xs">
+                          {projectCount}
+                        </Badge>
                       </div>
+                      {employeeProjects.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {employeeProjects.slice(0, 3).map((p) => (
+                            <Badge
+                              key={p.id}
+                              variant="outline"
+                              className="text-xs font-normal truncate max-w-[140px]"
+                              title={p.name}
+                            >
+                              {p.name}
+                            </Badge>
+                          ))}
+                          {employeeProjects.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{employeeProjects.length - 3}
+                            </Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground italic">No projects assigned</div>
+                      )}
                     </div>
                   </CardContent>
                   

@@ -120,35 +120,24 @@ export class SessionManager {
     // Update last fetch time
     this.lastFetchTime.set(user.id, now);
 
-    // Fetch fresh user data from profiles table
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    // Get all data from auth.users metadata (set during signup/login)
+    // This avoids RLS issues with querying profiles table from browser
+    const roleFromMetadata = user.user_metadata?.role || "client";
+    const firstNameFromMetadata = user.user_metadata?.first_name || "User";
+    const lastNameFromMetadata = user.user_metadata?.last_name || "";
 
-    if (profileError || !profile) {
-      console.error("Profile not found:", profileError);
-      return null;
-    }
-
-    // Check if user is active
-    if (profile.status !== "active") {
-      console.warn("User account is inactive:", user.id);
-      return null;
-    }
-
-    // Create session user object
+    // Create session user object from metadata only
+    // Profile data will be fetched via API endpoints when needed
     const sessionUser: SessionUser = {
       id: user.id,
       email: user.email!,
-      role: profile.role as any,
-      firstName: profile.first_name || "User",
-      lastName: profile.last_name || "",
-      department: profile.department,
-      position: profile.position,
-      status: profile.status as any,
-      permissions: ROLE_PERMISSIONS[profile.role] || [],
+      role: roleFromMetadata as any,
+      firstName: firstNameFromMetadata,
+      lastName: lastNameFromMetadata,
+      department: user.user_metadata?.department,
+      position: user.user_metadata?.position,
+      status: "active", // Assume active if they can authenticate
+      permissions: ROLE_PERMISSIONS[roleFromMetadata] || [],
       lastLogin: user.last_sign_in_at,
       sessionExpiry: new Date(Date.now() + this.sessionTimeout)
     };

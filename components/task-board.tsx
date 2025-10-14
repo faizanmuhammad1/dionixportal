@@ -229,143 +229,117 @@ export function TaskBoard() {
   useEffect(() => {
     loadData();
     getCurrentUser().then(setCurrentUser);
+
+    // Real-time subscriptions
+    const channel = supabase
+      .channel("task-board-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "tasks" },
+        () => loadData()
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "tasks" },
+        () => loadData()
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "tasks" },
+        () => loadData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
   }, []);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      await Promise.allSettled([
-        supabase
-          .from("tasks")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase.from("projects").select("id, name, status").order("name"),
-        supabase
-          .from("employees")
-          .select("id, name, email, avatar_url")
-          .order("name"),
-      ]);
+      
+      // Fetch tasks with related data
+      const { data: tasksData, error: tasksError } = await supabase
+        .from("tasks")
+        .select(`
+          *,
+          projects!tasks_project_id_fkey (project_id, project_name, status),
+          profiles!tasks_assignee_id_fkey (id, first_name, last_name, email)
+        `)
+        .order("created_at", { ascending: false });
 
-      // Mock/fallback data
-      setTasks([
-        {
-          id: "mock-1",
-          title: "Design Homepage Mockup",
-          description: "Create wireframes and mockups for new homepage design",
-          status: "in-progress",
-          priority: "high",
-          assignee_id: "emp-1",
-          assignee_name: "John Smith",
-          assignee_email: "john@dionix.ai",
-          project_id: "proj-1",
-          project_name: "Website Redesign",
-          due_date: "2024-02-15",
-          created_at: "2024-01-15T10:00:00Z",
-          updated_at: "2024-01-20T14:30:00Z",
-          created_by: "admin",
-          tags: ["design", "frontend"],
-          estimated_hours: 8,
-          actual_hours: 4,
-          progress: 50,
-        },
-        {
-          id: "mock-2",
-          title: "Setup Development Environment",
-          description: "Configure development tools and repositories",
-          status: "completed",
-          priority: "medium",
-          assignee_id: "emp-2",
-          assignee_name: "Sarah Johnson",
-          assignee_email: "sarah@dionix.ai",
-          project_id: "proj-1",
-          project_name: "Website Redesign",
-          due_date: "2024-01-20",
-          created_at: "2024-01-10T09:00:00Z",
-          updated_at: "2024-01-18T15:30:00Z",
-          created_by: "admin",
-          tags: ["development", "setup"],
-          estimated_hours: 4,
-          actual_hours: 3,
-          progress: 100,
-        },
-        {
-          id: "mock-3",
-          title: "Review API Documentation",
-          description: "Review and update API documentation for new endpoints",
-          status: "review",
-          priority: "medium",
-          assignee_id: "emp-3",
-          assignee_name: "Mike Chen",
-          assignee_email: "mike@dionix.ai",
-          project_id: "proj-2",
-          project_name: "Mobile App Development",
-          due_date: "2024-02-20",
-          created_at: "2024-01-25T11:00:00Z",
-          updated_at: "2024-01-28T16:45:00Z",
-          created_by: "admin",
-          tags: ["documentation", "api"],
-          estimated_hours: 6,
-          actual_hours: 5,
-          progress: 85,
-        },
-        {
-          id: "mock-4",
-          title: "Implement User Authentication",
-          description: "Implement secure user authentication system",
-          status: "todo",
-          priority: "high",
-          assignee_id: "emp-1",
-          assignee_name: "John Smith",
-          assignee_email: "john@dionix.ai",
-          project_id: "proj-2",
-          project_name: "Mobile App Development",
-          due_date: "2024-03-01",
-          created_at: "2024-01-30T08:00:00Z",
-          updated_at: "2024-01-30T08:00:00Z",
-          created_by: "admin",
-          tags: ["backend", "security"],
-          estimated_hours: 12,
-          actual_hours: 0,
-          progress: 0,
-        },
-        {
-          id: "mock-5",
-          title: "Database Schema Design",
-          description:
-            "Design and implement database schema for user management",
-          status: "in-progress",
-          priority: "medium",
-          assignee_id: "emp-4",
-          assignee_name: "Emily Davis",
-          assignee_email: "emily@dionix.ai",
-          project_id: "proj-3",
-          project_name: "E-commerce Platform",
-          due_date: "2024-02-25",
-          created_at: "2024-01-28T14:00:00Z",
-          updated_at: "2024-01-30T10:15:00Z",
-          created_by: "admin",
-          tags: ["database", "backend"],
-          estimated_hours: 10,
-          actual_hours: 6,
-          progress: 60,
-        },
-      ]);
+      // Fetch projects
+      const { data: projectsData, error: projectsError } = await supabase
+        .from("projects")
+        .select("project_id, project_name, status")
+        .order("project_name");
 
-      setProjects([
-        { id: "proj-1", name: "Website Redesign", status: "active" },
-        { id: "proj-2", name: "Mobile App Development", status: "active" },
-        { id: "proj-3", name: "E-commerce Platform", status: "planning" },
-      ]);
+      // Fetch employees via API (server-side can access auth.users for email)
+      let employeesData: any[] = [];
+      let employeesError = null;
+      try {
+        const empResponse = await fetch("/api/employees", { credentials: "same-origin" });
+        if (empResponse.ok) {
+          employeesData = await empResponse.json();
+        } else {
+          employeesError = { message: "Failed to fetch employees" };
+        }
+      } catch (err) {
+        employeesError = err;
+      }
 
-      setEmployees([
-        { id: "emp-1", name: "John Smith", email: "john@dionix.ai" },
-        { id: "emp-2", name: "Sarah Johnson", email: "sarah@dionix.ai" },
-        { id: "emp-3", name: "Mike Chen", email: "mike@dionix.ai" },
-        { id: "emp-4", name: "Emily Davis", email: "emily@dionix.ai" },
-      ]);
+      if (tasksError) console.error("Tasks error:", tasksError);
+      if (projectsError) console.error("Projects error:", projectsError);
+      if (employeesError) console.error("Employees error:", employeesError);
+
+      // Map tasks to expected format
+      const mappedTasks = (tasksData || []).map((t: any) => ({
+        id: t.id || t.task_id,
+        title: t.title,
+        description: t.description || "",
+        status: t.status as Task["status"],
+        priority: t.priority as Task["priority"],
+        assignee_id: t.assignee_id || undefined,
+        assignee_name: t.profiles 
+          ? `${t.profiles.first_name || ""} ${t.profiles.last_name || ""}`.trim()
+          : undefined,
+        assignee_email: t.profiles?.email || undefined,
+        project_id: t.project_id || undefined,
+        project_name: t.projects?.project_name || undefined,
+        due_date: t.due_date || undefined,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        created_by: t.created_by || "system",
+        tags: Array.isArray(t.tags) ? t.tags : [],
+        estimated_hours: t.estimated_hours || undefined,
+        actual_hours: t.actual_hours || undefined,
+        progress: t.progress || 0,
+      }));
+
+      // Map projects to expected format
+      const mappedProjects = (projectsData || []).map((p: any) => ({
+        id: p.project_id,
+        name: p.project_name,
+        status: p.status || "planning",
+      }));
+
+      // Map employees to expected format
+      const mappedEmployees = (employeesData || []).map((e: any) => ({
+        id: e.id,
+        name: `${e.first_name || ""} ${e.last_name || ""}`.trim() || "Unknown",
+        email: e.email || "",
+      }));
+
+      setTasks(mappedTasks);
+      setProjects(mappedProjects);
+      setEmployees(mappedEmployees);
     } catch (err) {
       console.error("Error loading data", err);
+      setTasks([]);
+      setProjects([]);
+      setEmployees([]);
     } finally {
       setLoading(false);
     }
@@ -417,73 +391,69 @@ export function TaskBoard() {
         .filter(Boolean);
 
       if (editingTask) {
-        // Update (attempt DB, then update local state)
-        const updatePayload: Partial<Task> = {
+        // Update task in database
+        const updatePayload = {
           title: taskForm.title.trim(),
           description: taskForm.description.trim(),
-          priority: taskForm.priority as Task["priority"],
-          assignee_id: taskForm.assignee_id || undefined,
-          project_id: taskForm.project_id || undefined,
-          due_date: taskForm.due_date || undefined,
+          priority: taskForm.priority,
+          assignee_id: taskForm.assignee_id || null,
+          project_id: taskForm.project_id || null,
+          due_date: taskForm.due_date || null,
           estimated_hours: taskForm.estimated_hours
             ? Number(taskForm.estimated_hours)
-            : undefined,
+            : null,
           tags: parsedTags,
           updated_at: new Date().toISOString(),
         };
+        
         const { error } = await supabase
           .from("tasks")
           .update(updatePayload)
           .eq("id", editingTask.id);
-        if (error) console.log("Skipping DB update (maybe table missing)");
-
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === editingTask.id
-              ? ({
-                  ...t,
-                  ...updatePayload,
-                  assignee_name: getAssigneeName(taskForm.assignee_id),
-                  project_name:
-                    getProjectName(taskForm.project_id) || undefined,
-                  estimated_hours:
-                    updatePayload.estimated_hours ?? t.estimated_hours,
-                } as Task)
-              : t
-          )
-        );
-        toast({ title: "Task updated" });
+        
+        if (error) {
+          console.error("Error updating task:", error);
+          toast({ title: "Failed to update task", variant: "destructive" });
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Reload data to get fresh state
+        await loadData();
+        toast({ title: "Task updated successfully" });
       } else {
-        const newTask: Task = {
-          id: `temp-${Date.now()}`,
+        // Create new task in database
+        const newTaskData = {
           title: taskForm.title.trim(),
           description: taskForm.description.trim(),
           status: "todo",
-          priority: taskForm.priority as Task["priority"],
-          assignee_id: taskForm.assignee_id || undefined,
-          assignee_name: getAssigneeName(taskForm.assignee_id),
-          assignee_email: employees.find((e) => e.id === taskForm.assignee_id)
-            ?.email,
-          project_id: taskForm.project_id || undefined,
-          project_name: getProjectName(taskForm.project_id) || undefined,
-          due_date: taskForm.due_date || undefined,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          created_by: currentUser?.id || "admin",
-          tags: parsedTags,
+          priority: taskForm.priority,
+          assignee_id: taskForm.assignee_id || null,
+          project_id: taskForm.project_id || null,
+          due_date: taskForm.due_date || null,
           estimated_hours: taskForm.estimated_hours
             ? Number(taskForm.estimated_hours)
-            : undefined,
+            : null,
+          tags: parsedTags,
+          created_by: currentUser?.id || null,
           actual_hours: 0,
           progress: 0,
         };
-        const { error } = await supabase.from("tasks").insert({
-          id: newTask.id,
-          title: newTask.title,
-        });
-        if (error) console.log("Skipping DB insert (maybe table missing)");
-        setTasks((prev) => [newTask, ...prev]);
-        toast({ title: "Task created" });
+        
+        const { error } = await supabase
+          .from("tasks")
+          .insert(newTaskData);
+        
+        if (error) {
+          console.error("Error creating task:", error);
+          toast({ title: "Failed to create task", variant: "destructive" });
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Reload data to get fresh state
+        await loadData();
+        toast({ title: "Task created successfully" });
       }
       setTaskDialogOpen(false);
     } catch (err) {
@@ -497,9 +467,13 @@ export function TaskBoard() {
   const handleDeleteTask = async (taskId: string) => {
     try {
       const { error } = await supabase.from("tasks").delete().eq("id", taskId);
-      if (error) console.log("Skipping DB delete (maybe table missing)");
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      toast({ title: "Task deleted" });
+      if (error) {
+        console.error("Error deleting task:", error);
+        toast({ title: "Delete failed", variant: "destructive" });
+        return;
+      }
+      await loadData();
+      toast({ title: "Task deleted successfully" });
     } catch (err) {
       console.error(err);
       toast({ title: "Delete failed", variant: "destructive" });
@@ -515,10 +489,14 @@ export function TaskBoard() {
         .from("tasks")
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq("id", taskId);
-      if (error) console.log("Skipping DB status update (maybe table missing)");
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-      );
+      
+      if (error) {
+        console.error("Error updating status:", error);
+        toast({ title: "Status update failed", variant: "destructive" });
+        return;
+      }
+      
+      await loadData();
     } catch (err) {
       console.error(err);
       toast({ title: "Status update failed", variant: "destructive" });

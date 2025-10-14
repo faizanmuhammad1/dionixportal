@@ -166,9 +166,9 @@ export async function getCurrentUser(): Promise<User | null> {
 
   if (!user) return null;
 
-  // Try to load profile for role and names; fallback to auth metadata
+  // Try to load profile for role and names; fallback to least privileged role
   let role: "admin" | "manager" | "employee" | "client" =
-    (user.user_metadata?.role as any) || "employee";
+    (user.user_metadata?.role as any) || "client"; // SECURITY: Default to least privileged role
   let firstName: string = user.user_metadata?.firstName || "User";
   let lastName: string = user.user_metadata?.lastName || "";
 
@@ -217,10 +217,11 @@ export async function getFormSubmissions(): Promise<FormSubmission[]> {
 export async function getClientProjects(): Promise<ClientProject[]> {
   try {
     const supabase = createClient();
+    // Use submissions table instead of non-existent client_project_details
     const { data, error } = await supabase
-      .from("client_project_details")
+      .from("submissions")
       .select(
-        "id, created_at, contact_email, contact_phone, company_details, services_details, status, approved_project_id"
+        "submission_id, created_at, company_email, client_name, project_type, description, status, budget"
       )
       .order("created_at", { ascending: false });
 
@@ -250,15 +251,15 @@ export async function getClientProjects(): Promise<ClientProject[]> {
     };
 
     return (data || []).map((row: any) => ({
-      id: row.id,
-      company_details: row.company_details ?? "",
-      contact_email: row.contact_email ?? "",
-      contact_phone: row.contact_phone ?? "",
-      services_details: row.services_details ?? "",
+      id: row.submission_id,
+      company_details: row.client_name ?? "",
+      contact_email: row.company_email ?? "",
+      contact_phone: "", // Not available in submissions table
+      services_details: `${row.project_type || ""}: ${row.description || ""}`,
       status: toUiStatus(row.status),
       created_at: row.created_at,
       submitted_at: row.created_at,
-      approved_project_id: row.approved_project_id ?? null,
+      approved_project_id: null, // Can be linked later if needed
     }));
   } catch (error) {
     return [];
