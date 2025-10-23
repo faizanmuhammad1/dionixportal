@@ -657,104 +657,200 @@ export function UnifiedProjectManagement() {
   };
 
   async function refetchAllProjects() {
-    const { data, error } = await supabase
-      .from("projects")
-      .select(
-        `project_id, project_name, description, status, priority, start_date, end_date, budget, client_name, business_number, company_email, company_address, about_company, social_media_links, public_business_number, public_company_email, public_address, media_links, bank_details, step2_data, project_type,
-         tasks ( task_id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at ),
-         attachments ( attachment_id, project_id, task_id, storage_path, file_name, file_size, content_type, version, client_visible, uploaded_by, uploaded_at ),
-         comments ( comment_id, project_id, task_id, body, file_refs, created_by, created_at ),
-         project_members ( user_id )`
-      )
-      .order("created_at", { ascending: false });
-    if (!error && data) {
-      const mapped = (data as RawProjectRow[]).map((p: RawProjectRow) => {
-        const taskList: Task[] = (p.tasks || []).map((t: RawTaskRow) => ({
-          id: t.task_id,
-          title: t.title,
-          description: t.description,
-          status: t.status,
-          assignee: t.assignee_id || "",
-          due_date: t.due_date || "",
-          priority: t.priority,
-          project_id: t.project_id,
-        }));
-        const completed = taskList.filter(
-          (t: Task) => t.status === "completed"
-        ).length;
-        const progress = taskList.length
-          ? Math.round((completed / taskList.length) * 100)
-          : 0;
-        const members = (p.project_members || []).map(
-          (m: { user_id: string }) => m.user_id
-        );
-        const attachments: ProjectAttachment[] = (p.attachments || []).map(
-          (a: RawAttachmentRow) => ({
-            id: a.attachment_id,
-            file_name: a.file_name,
-            file_size: a.file_size,
-            content_type: a.content_type,
-            version: a.version,
-            uploaded_by: a.uploaded_by || "",
-            uploaded_at: a.uploaded_at,
-            task_id: a.task_id || undefined,
-            client_visible: a.client_visible || false,
-            storage_path: a.storage_path,
-          })
-        );
-        const comments: ProjectComment[] = (p.comments || []).map(
-          (c: RawCommentRow) => ({
-            id: c.comment_id,
-            body: c.body,
-            created_by: c.created_by || "",
-            created_at: c.created_at,
-          })
-        );
-        return {
-          id: p.project_id,
-          name: p.project_name,
-          description: p.description || "",
-          status: p.status,
-          priority: p.priority,
-          start_date: p.start_date || "",
-          end_date: p.end_date || "",
-          assigned_employees: members,
-          progress,
-          budget: Number(p.budget || 0),
-          client: p.client_name || "",
-          tasks: taskList,
-          service_type: p.project_type || undefined,
-          company_number: p.business_number || undefined,
-          company_email: p.company_email || undefined,
-          company_address: p.company_address || undefined,
-          about_company: p.about_company || undefined,
-          social_links: p.social_media_links
-            ? p.social_media_links.split(",")
-            : [],
-          public_contacts: {
-            phone: p.public_business_number || undefined,
-            email: p.public_company_email || undefined,
-            address: p.public_address || undefined,
-          },
-          media_links: p.media_links ? p.media_links.split(",") : [],
-          bank_details: p.bank_details
-            ? (() => {
-                try {
-                  return JSON.parse(p.bank_details);
-                } catch {
-                  // If it's not valid JSON, treat it as a plain string
-                  return { details: p.bank_details };
-                }
-              })()
-            : {},
-          service_specific: p.step2_data || {},
-          attachments,
-          comments,
-          payment_integration_needs: p.payment_integration_needs || [],
-        } as Project;
+    try {
+      console.log("📁 Fetching projects from API...");
+      
+      // Use API endpoint instead of direct Supabase query
+      const response = await fetch("/api/projects", {
+        credentials: "same-origin",
       });
-      setProjects(mapped);
-      setTasks(mapped.flatMap((p) => p.tasks));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Error fetching projects:", response.status, response.statusText, errorText);
+        
+        toast({
+          title: "Error loading projects",
+          description: `Failed to load projects: ${response.statusText}`,
+          variant: "destructive",
+        });
+        
+        setProjects([]);
+        setTasks([]);
+        return;
+      }
+
+      const responseData = await response.json();
+      const projectsData = responseData.projects || [];
+      
+      if (!projectsData || projectsData.length === 0) {
+        console.log("No projects found");
+        setProjects([]);
+        setTasks([]);
+        return;
+      }
+
+      // Now fetch tasks, members, attachments, and comments for each project
+      const enrichedProjects = await Promise.all(
+        projectsData.map(async (project: any) => {
+          try {
+            // Fetch tasks for this project
+            const tasksResponse = await fetch(`/api/projects/${project.project_id}/tasks`, {
+              credentials: "same-origin",
+            });
+            let taskList: Task[] = [];
+            if (tasksResponse.ok) {
+              const tasksData = await tasksResponse.json();
+              taskList = (tasksData.tasks || []).map((t: any) => ({
+                id: t.task_id,
+                title: t.title,
+                description: t.description || "",
+                status: t.status,
+                assignee: t.assignee_id || "",
+                due_date: t.due_date || "",
+                priority: t.priority,
+                project_id: t.project_id,
+              }));
+            }
+
+            // Fetch members for this project
+            const membersResponse = await fetch(`/api/projects/${project.project_id}/members`, {
+              credentials: "same-origin",
+            });
+            let members: string[] = [];
+            if (membersResponse.ok) {
+              const membersData = await membersResponse.json();
+              members = (membersData.members || []).map((m: any) => m.user_id);
+            }
+
+            // Fetch attachments for this project
+            const attachmentsResponse = await fetch(`/api/projects/${project.project_id}/attachments`, {
+              credentials: "same-origin",
+            });
+            let attachments: ProjectAttachment[] = [];
+            if (attachmentsResponse.ok) {
+              const attachmentsData = await attachmentsResponse.json();
+              attachments = (attachmentsData.attachments || []).map((a: any) => ({
+                id: a.attachment_id,
+                file_name: a.file_name,
+                file_size: a.file_size,
+                content_type: a.content_type,
+                version: a.version || 1,
+                uploaded_by: a.uploaded_by || "",
+                uploaded_at: a.uploaded_at,
+                task_id: a.task_id || undefined,
+                client_visible: a.client_visible || false,
+                storage_path: a.storage_path,
+              }));
+            }
+
+            // Fetch comments for this project
+            const commentsResponse = await fetch(`/api/projects/${project.project_id}/comments`, {
+              credentials: "same-origin",
+            });
+            let comments: ProjectComment[] = [];
+            if (commentsResponse.ok) {
+              const commentsData = await commentsResponse.json();
+              comments = (commentsData.comments || []).map((c: any) => ({
+                id: c.comment_id,
+                body: c.body,
+                created_by: c.created_by || "",
+                created_at: c.created_at,
+              }));
+            }
+
+            const completed = taskList.filter((t: Task) => t.status === "completed").length;
+            const progress = taskList.length
+              ? Math.round((completed / taskList.length) * 100)
+              : 0;
+
+            return {
+              id: project.project_id,
+              name: project.project_name || project.name,
+              description: project.description || "",
+              status: project.status,
+              priority: project.priority,
+              start_date: project.start_date || "",
+              end_date: project.end_date || "",
+              assigned_employees: members,
+              progress,
+              budget: Number(project.budget || 0),
+              client: project.client_name || "",
+              tasks: taskList,
+              service_type: project.project_type || project.type || undefined,
+              company_number: project.business_number || undefined,
+              company_email: project.company_email || undefined,
+              company_address: project.company_address || undefined,
+              about_company: project.about_company || undefined,
+              social_links: project.social_media_links
+                ? (typeof project.social_media_links === 'string' 
+                    ? project.social_media_links.split(",") 
+                    : project.social_media_links)
+                : [],
+              public_contacts: {
+                phone: project.public_business_number || undefined,
+                email: project.public_company_email || undefined,
+                address: project.public_address || undefined,
+              },
+              media_links: project.media_links 
+                ? (typeof project.media_links === 'string'
+                    ? project.media_links.split(",")
+                    : project.media_links)
+                : [],
+              bank_details: project.bank_details
+                ? (typeof project.bank_details === 'string'
+                    ? (() => {
+                        try {
+                          return JSON.parse(project.bank_details);
+                        } catch {
+                          return { details: project.bank_details };
+                        }
+                      })()
+                    : project.bank_details)
+                : {},
+              service_specific: project.step2_data || project.service_specific || {},
+              attachments,
+              comments,
+              payment_integration_needs: project.payment_integration_needs || [],
+            } as Project;
+          } catch (projectError) {
+            console.error(`Error enriching project ${project.project_id}:`, projectError);
+            // Return basic project data even if enrichment fails
+            return {
+              id: project.project_id,
+              name: project.project_name || project.name,
+              description: project.description || "",
+              status: project.status,
+              priority: project.priority,
+              start_date: project.start_date || "",
+              end_date: project.end_date || "",
+              assigned_employees: [],
+              progress: 0,
+              budget: Number(project.budget || 0),
+              client: project.client_name || "",
+              tasks: [],
+              attachments: [],
+              comments: [],
+              social_links: [],
+              media_links: [],
+              bank_details: {},
+              service_specific: {},
+              payment_integration_needs: [],
+            } as Project;
+          }
+        })
+      );
+      
+      console.log(`✅ Successfully loaded ${enrichedProjects.length} projects from API`);
+      setProjects(enrichedProjects);
+      setTasks(enrichedProjects.flatMap((p) => p.tasks));
+    } catch (err) {
+      console.error("❌ Unexpected error in refetchAllProjects:", err);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while loading projects",
+        variant: "destructive",
+      });
     }
   }
 
@@ -766,12 +862,31 @@ export function UnifiedProjectManagement() {
       });
 
       if (!response.ok) {
-        console.error("Error fetching employees:", response.statusText);
+        const errorText = await response.text();
+        console.error("Error fetching employees:", response.status, response.statusText, errorText);
+        
+        // Only show error toast for non-permission errors
+        if (response.status !== 401 && response.status !== 403) {
+          toast({
+            title: "Error loading team members",
+            description: `Failed to load team members: ${response.statusText}`,
+            variant: "destructive",
+          });
+        } else {
+          console.log("Skipping employee fetch - insufficient permissions (expected for non-admin users)");
+        }
+        
         setEmployees([]);
         return;
       }
 
       const data = await response.json();
+      
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        console.log("No employees found in the system");
+        setEmployees([]);
+        return;
+      }
 
       const mappedEmployees = (data || []).map((emp: any) => ({
         id: emp.id,
@@ -788,9 +903,15 @@ export function UnifiedProjectManagement() {
         employment_type: emp.employment_type || "full-time",
       }));
 
+      console.log(`Successfully loaded ${mappedEmployees.length} employees`);
       setEmployees(mappedEmployees);
     } catch (error) {
-      console.error("Error in fetchEmployees:", error);
+      console.error("Unexpected error in fetchEmployees:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while loading team members",
+        variant: "destructive",
+      });
       setEmployees([]);
     }
   }
@@ -822,13 +943,23 @@ export function UnifiedProjectManagement() {
   useEffect(() => {
     // initial fetch
     (async () => {
+      console.log("🚀 Initializing Project Management...");
       let fetchedUser: User | null = null;
+      
       try {
         fetchedUser = await getCurrentUser();
+        console.log("✅ Current user:", fetchedUser?.email, "Role:", fetchedUser?.role);
         setCurrentUser(fetchedUser);
-      } catch {}
+      } catch (err) {
+        console.error("❌ Failed to get current user:", err);
+      }
+      
+      console.log("📋 Fetching employees...");
       await fetchEmployees();
+      
+      console.log("📁 Fetching projects...");
       await refetchAllProjects();
+      
       // Default employees to My Projects tab for quicker access
       setActiveTab((prev) =>
         prev === "overview" &&
@@ -836,6 +967,8 @@ export function UnifiedProjectManagement() {
           ? "projects"
           : prev
       );
+      
+      console.log("✅ Initialization complete");
       setLoading(false);
     })();
 
@@ -845,32 +978,50 @@ export function UnifiedProjectManagement() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "projects" },
-        refetchAllProjects
+        () => {
+          console.log("🔄 Project INSERT detected, refetching...");
+          refetchAllProjects();
+        }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "projects" },
-        refetchAllProjects
+        () => {
+          console.log("🔄 Project UPDATE detected, refetching...");
+          refetchAllProjects();
+        }
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "projects" },
-        refetchAllProjects
+        () => {
+          console.log("🔄 Project DELETE detected, refetching...");
+          refetchAllProjects();
+        }
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "tasks" },
-        refetchAllProjects
+        () => {
+          console.log("🔄 Task INSERT detected, refetching...");
+          refetchAllProjects();
+        }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "tasks" },
-        refetchAllProjects
+        () => {
+          console.log("🔄 Task UPDATE detected, refetching...");
+          refetchAllProjects();
+        }
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "tasks" },
-        refetchAllProjects
+        () => {
+          console.log("🔄 Task DELETE detected, refetching...");
+          refetchAllProjects();
+        }
       )
       .subscribe();
 
@@ -879,12 +1030,18 @@ export function UnifiedProjectManagement() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "profiles" },
-        fetchEmployees
+        () => {
+          console.log("🔄 Profile INSERT detected, refetching employees...");
+          fetchEmployees();
+        }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
-        fetchEmployees
+        () => {
+          console.log("🔄 Profile UPDATE detected, refetching employees...");
+          fetchEmployees();
+        }
       )
       .subscribe();
 
@@ -900,10 +1057,26 @@ export function UnifiedProjectManagement() {
       project.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
       project.description.toLowerCase().includes(searchTerm.toLowerCase());
     if (currentUser && currentUser.role === "employee") {
-      return matchesText && project.assigned_employees.includes(currentUser.id);
+      const isAssigned = project.assigned_employees.includes(currentUser.id);
+      return matchesText && isAssigned;
     }
     return matchesText;
   });
+
+  // Debug logging for filtered results
+  useEffect(() => {
+    console.log("📊 Projects State:", {
+      total: projects.length,
+      filtered: filteredProjects.length,
+      searchTerm,
+      userRole: currentUser?.role,
+      userId: currentUser?.id
+    });
+    
+    if (projects.length > 0 && filteredProjects.length === 0 && currentUser?.role === "employee") {
+      console.warn("⚠️ Employee has no assigned projects. Total projects available:", projects.length);
+    }
+  }, [projects, filteredProjects, searchTerm, currentUser]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -2238,10 +2411,39 @@ export function UnifiedProjectManagement() {
 
           {/* Project Cards Grid */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredProjects.length === 0 && (
+              {loading && (
+                <div className="col-span-full text-center py-10">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Loading projects...</p>
+                </div>
+              )}
+              
+              {!loading && filteredProjects.length === 0 && projects.length === 0 && (
+                <div className="col-span-full text-center py-10">
+                  <FolderOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+                  <h3 className="text-lg font-semibold mb-2">No Projects Yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {currentUser?.role === "employee" 
+                      ? "You haven't been assigned to any projects yet. Contact your manager for project assignments."
+                      : "Get started by creating your first project."}
+                  </p>
+                  {currentUser?.role !== "employee" && (
+                    <Button onClick={() => setIsCreating(true)} className="mt-2">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create First Project
+                    </Button>
+                  )}
+                </div>
+              )}
+              
+              {!loading && filteredProjects.length === 0 && projects.length > 0 && (
                 <div className="col-span-full text-center py-10">
                   <p className="text-sm text-muted-foreground">
-                    No projects found. Try adjusting your search or filters.
+                    {currentUser?.role === "employee" 
+                      ? `No assigned projects found. There are ${projects.length} total project(s) in the system.`
+                      : searchTerm 
+                      ? `No projects match "${searchTerm}". Try a different search.`
+                      : "No projects match your current filters."}
                   </p>
                 </div>
               )}
@@ -2407,16 +2609,30 @@ export function UnifiedProjectManagement() {
         <TabsContent value="team" className="space-y-6">
           {/* Team Members Grid */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {employees.length === 0 && (
+            {loading && (
+              <div className="col-span-full text-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Loading team members...</p>
+              </div>
+            )}
+            
+            {!loading && employees.length === 0 && (
               <div className="col-span-full text-center py-16">
                 <div className="mx-auto w-24 h-24 rounded-full bg-muted/30 flex items-center justify-center mb-4">
                   <Users className="h-12 w-12 text-muted-foreground/50" />
-                            </div>
+                </div>
                 <h3 className="text-lg font-semibold mb-2">No Team Members</h3>
-                <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                  Add employees to your account to see them here and start building your team.
+                <p className="text-sm text-muted-foreground max-w-md mx-auto mb-2">
+                  {currentUser?.role === "employee" 
+                    ? "No team members are visible to you."
+                    : "Add employees to your account to see them here and start building your team."}
                 </p>
-                            </div>
+                {currentUser?.role !== "employee" && (
+                  <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                    Tip: Use the Employee Management section to invite team members.
+                  </p>
+                )}
+              </div>
             )}
             {employees.map((employee) => {
               const employeeProjects = projects.filter((p) =>
@@ -2579,7 +2795,8 @@ export function UnifiedProjectManagement() {
                       description: "The project has been deleted successfully",
                     });
                     setDeleteOpen(false);
-                    deleteProjectLocal(deleteTarget.id);
+                    // Refetch all projects from the backend to stay in sync
+                    await refetchAllProjects();
                   } catch (error) {
                     setDeleteError(
                       error instanceof Error ? error.message : "Unknown error"
@@ -2908,6 +3125,178 @@ export function UnifiedProjectManagement() {
               Cancel
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project Create/Edit Dialog */}
+      <Dialog open={isCreating} onOpenChange={(open) => {
+        if (!open) {
+          resetForm();
+        }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingProject ? 'Edit Project' : 'Create New Project'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }} className="space-y-6 py-4">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-sm">Basic Information</h3>
+              
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="project-name">Project Name *</Label>
+                  <input
+                    id="project-name"
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Enter project name"
+                    required
+                  />
+                  {formErrors.name && (
+                    <p className="text-sm text-destructive">{formErrors.name}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="client-name">Client Name *</Label>
+                  <input
+                    id="client-name"
+                    type="text"
+                    value={formData.client}
+                    onChange={(e) => setFormData({ ...formData, client: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Enter client name"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Enter project description"
+                  rows={4}
+                />
+              </div>
+            </div>
+
+            {/* Status & Priority */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-sm">Status & Priority</h3>
+              
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <select
+                    id="status"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as Project["status"] })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="planning">Planning</option>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="on-hold">On Hold</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="priority">Priority</Label>
+                  <select
+                    id="priority"
+                    value={formData.priority}
+                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as Project["priority"] })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="budget">Budget ($)</Label>
+                  <input
+                    id="budget"
+                    type="number"
+                    value={formData.budget}
+                    onChange={(e) => setFormData({ ...formData, budget: parseFloat(e.target.value) || 0 })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Dates */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-sm">Timeline</h3>
+              
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">Start Date</Label>
+                  <input
+                    id="start-date"
+                    type="date"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="end-date">End Date</Label>
+                  <input
+                    id="end-date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Form Actions */}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                type="button"
+                onClick={() => resetForm()}
+                variant="outline"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  editingProject ? 'Update Project' : 'Create Project'
+                )}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

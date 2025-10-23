@@ -13,6 +13,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Get user's profile to check role
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const userRole = profile?.role || 'employee';
+
     // Get query parameters for filtering
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status')?.split(',');
@@ -22,21 +31,62 @@ export async function GET(request: NextRequest) {
     const start_date = searchParams.get('start_date');
     const end_date = searchParams.get('end_date');
 
-    const filters = {
-      status: status?.length ? status : undefined,
-      priority: priority?.length ? priority : undefined,
-      project_type: project_type?.length ? project_type : undefined,
-      search: search || undefined,
-      date_range: start_date && end_date ? { start: start_date, end: end_date } : undefined,
-    };
+    // Build query
+    let query = supabase
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    const projects = await projectService.getUserProjects(filters);
+    // Apply role-based filtering
+    if (userRole === 'employee') {
+      // Employees only see projects they're assigned to
+      const { data: memberProjects } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', user.id);
+      
+      const projectIds = memberProjects?.map(m => m.project_id) || [];
+      
+      if (projectIds.length === 0) {
+        // No projects assigned to this employee
+        return NextResponse.json({ projects: [] });
+      }
+      
+      query = query.in('project_id', projectIds);
+    }
+    // Admins and managers see all projects (no additional filter needed)
+
+    // Apply other filters
+    if (status && status.length > 0) {
+      query = query.in('status', status);
+    }
+    if (priority && priority.length > 0) {
+      query = query.in('priority', priority);
+    }
+    if (project_type && project_type.length > 0) {
+      query = query.in('project_type', project_type);
+    }
+    if (search) {
+      query = query.or(`project_name.ilike.%${search}%,client_name.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+    if (start_date && end_date) {
+      query = query
+        .gte('created_at', start_date)
+        .lte('created_at', end_date);
+    }
+
+    const { data: projects, error } = await query;
+
+    if (error) {
+      console.error('Database error:', error);
+      throw error;
+    }
     
-    return NextResponse.json({ projects });
+    return NextResponse.json({ projects: projects || [] });
   } catch (error) {
     console.error('Get projects error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch projects' },
+      { error: 'Failed to fetch projects', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
