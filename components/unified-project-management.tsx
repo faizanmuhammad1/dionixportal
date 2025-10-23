@@ -1217,6 +1217,7 @@ export function UnifiedProjectManagement() {
         // Update existing project via API
         const updateData = {
           name: formData.name,
+          client_name: formData.client,
           type: serviceType,
           description: formData.description,
           status: formData.status,
@@ -1284,7 +1285,11 @@ export function UnifiedProjectManagement() {
         }
 
         const result = await response.json();
-        toast({ title: "Project updated successfully" });
+        console.log("Project updated successfully:", result);
+        toast({ 
+          title: "Project updated successfully",
+          description: "The project list will refresh automatically."
+        });
       } else {
         // Create new project using project service
         setProcessingStep("Creating project...");
