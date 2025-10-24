@@ -1937,44 +1937,136 @@ export function UnifiedProjectManagement() {
                           <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
                             Social Links
                           </div>
-                          <div className="text-xs rounded border bg-muted/30 px-2 py-1 break-words">
-                            {selectedProject.social_links &&
-                            selectedProject.social_links.length > 0
-                              ? selectedProject.social_links.join(", ")
-                              : "—"}
-                          </div>
+                          {(() => {
+                            // Parse social links - handle both array and string formats
+                            let links: string[] = [];
+                            const socialLinks = selectedProject.social_links as any;
+                            
+                            if (socialLinks) {
+                              if (Array.isArray(socialLinks)) {
+                                // If already array, flatten and split any comma/space separated entries
+                                links = socialLinks.flatMap((link: string) => 
+                                  typeof link === 'string' 
+                                    ? link.split(/[,\s]+/).filter((l: string) => l.trim())
+                                    : []
+                                );
+                              } else if (typeof socialLinks === 'string') {
+                                // If string, split by comma or space
+                                links = socialLinks.split(/[,\s]+/).filter((l: string) => l.trim());
+                              }
+                            }
+                            
+                            if (links.length === 0) {
+                              return (
+                                <div className="text-xs rounded border bg-muted/30 px-2 py-1 break-words text-muted-foreground italic">
+                                  —
+                                </div>
+                              );
+                            }
+                            
+                            return (
+                              <div className="rounded border bg-muted/30 p-2">
+                                <ul className="space-y-1">
+                                  {links.map((link, i) => {
+                                    // Normalize the link properly
+                                    let normalized = link.trim();
+                                    
+                                    // Skip empty links
+                                    if (!normalized) return null;
+                                    
+                                    // Fix common protocol issues
+                                    normalized = normalized.replace(/^https?\/\//, 'https://'); // Fix missing colon
+                                    normalized = normalized.replace(/^http:\/([^\/])/, 'http://$1'); // Fix single slash
+                                    
+                                    // Add protocol if missing
+                                    if (!normalized.match(/^https?:\/\//)) {
+                                      normalized = `https://${normalized}`;
+                                    }
+                                    
+                                    return (
+                                      <li key={i} className="text-xs">
+                                        <a
+                                          href={normalized}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-primary hover:underline break-all"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {normalized.replace(/^https?:\/\//, "")}
+                                        </a>
+                                      </li>
+                                    );
+                                  }).filter(Boolean)}
+                                </ul>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
 
-                      {selectedProject.media_links &&
-                      selectedProject.media_links.length > 0 && (
-                        <div className="space-y-1">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                            Media Links
+                      {(() => {
+                        // Parse media links - handle both array and string formats
+                        let links: string[] = [];
+                        const mediaLinks = selectedProject.media_links as any;
+                        
+                        if (mediaLinks) {
+                          if (Array.isArray(mediaLinks)) {
+                            // If already array, flatten and split any comma/space separated entries
+                            links = mediaLinks.flatMap((link: string) => 
+                              typeof link === 'string' 
+                                ? link.split(/[,\s]+/).filter((l: string) => l.trim())
+                                : []
+                            );
+                          } else if (typeof mediaLinks === 'string') {
+                            // If string, split by comma or space
+                            links = mediaLinks.split(/[,\s]+/).filter((l: string) => l.trim());
+                          }
+                        }
+                        
+                        if (links.length === 0) return null;
+                        
+                        return (
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                              Media Links
+                            </div>
+                            <div className="rounded border bg-muted/30 p-2">
+                              <ul className="space-y-1">
+                                {links.map((link, i) => {
+                                  // Normalize the link properly
+                                  let normalized = link.trim();
+                                  
+                                  // Skip empty links
+                                  if (!normalized) return null;
+                                  
+                                  // Fix common protocol issues
+                                  normalized = normalized.replace(/^https?\/\//, 'https://'); // Fix missing colon
+                                  normalized = normalized.replace(/^http:\/([^\/])/, 'http://$1'); // Fix single slash
+                                  
+                                  // Add protocol if missing
+                                  if (!normalized.match(/^https?:\/\//)) {
+                                    normalized = `https://${normalized}`;
+                                  }
+                                  
+                                  return (
+                                    <li key={i} className="text-xs">
+                                      <a
+                                        href={normalized}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary hover:underline break-all"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {normalized.replace(/^https?:\/\//, "")}
+                                      </a>
+                                    </li>
+                                  );
+                                }).filter(Boolean)}
+                              </ul>
+                            </div>
                           </div>
-                          <div className="rounded border bg-muted/30 p-2">
-                            <ul className="space-y-1">
-                              {selectedProject.media_links.map((link, i) => {
-                                const normalized = link.startsWith("http")
-                                  ? link
-                                  : `https://${link}`;
-                                return (
-                                  <li key={i} className="text-xs">
-                                    <a
-                                      href={normalized}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline break-all"
-                                    >
-                                      {normalized.replace(/^https?:\/\//, "")}
-                                    </a>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
 
                       {selectedProject.bank_details &&
@@ -2005,37 +2097,112 @@ export function UnifiedProjectManagement() {
                         </div>
                       )}
 
-                      {selectedProject.service_specific &&
-                      Object.keys(selectedProject.service_specific).length >
-                        0 && (
-                        <div className="space-y-1">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                            Service-Specific Details
-                          </div>
-                          <div className="rounded border bg-muted/30 p-2">
-                            <div className="space-y-2 text-xs">
-                              {Object.entries(
-                                selectedProject.service_specific
-                              ).map(([k, v]) => (
-                                <div key={k} className="space-y-1">
-                                  <span className="text-muted-foreground capitalize block">
-                                    {k
-                                      .replace(/([A-Z])/g, " $1")
-                                      .trim()
-                                      .replace(/_/g, " ")}
-                                    :
-                                  </span>
-                                  <span className="font-medium break-words block">
-                                    {Array.isArray(v)
-                                      ? v.join(", ")
-                                      : String(v) || "—"}
-                                  </span>
+                      {(() => {
+                        const serviceSpecific = selectedProject.service_specific || {};
+                        const serviceType = selectedProject.service_type?.toLowerCase() || '';
+                        
+                        // Helper to render a field
+                        const renderField = (label: string, value: any) => {
+                          if (!value || (typeof value === 'string' && value.trim() === '')) return null;
+                          
+                          return (
+                            <div className="space-y-1">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                                {label}
+                              </div>
+                              <div className="text-xs rounded border bg-muted/30 px-2 py-1 leading-relaxed break-words whitespace-pre-wrap">
+                                {Array.isArray(value)
+                                  ? value.join(", ")
+                                  : String(value)}
+                              </div>
+                            </div>
+                          );
+                        };
+                        
+                        // Render fields based on service type
+                        let fields: JSX.Element[] = [];
+                        
+                        if (serviceType === 'web' || serviceType === 'web-development') {
+                          fields = [
+                            renderField('Domain Suggestions', serviceSpecific.domainSuggestions || serviceSpecific.domain_suggestions),
+                            renderField('Website References', serviceSpecific.websiteReferences || serviceSpecific.website_references),
+                            renderField('Features & Requirements', serviceSpecific.featuresRequirements || serviceSpecific.features_requirements),
+                            renderField('Budget & Timeline', serviceSpecific.budgetTimeline || serviceSpecific.budget_timeline),
+                            renderField('Additional Requirements', serviceSpecific.additional_requirements),
+                          ].filter(Boolean) as JSX.Element[];
+                        } else if (serviceType === 'branding' || serviceType === 'branding-design') {
+                          fields = [
+                            renderField('Logo Ideas & Concepts', serviceSpecific.logoIdeasConcepts || serviceSpecific.logo_ideas_concepts),
+                            renderField('Color & Brand Theme', serviceSpecific.colorBrandTheme || serviceSpecific.color_brand_theme),
+                            renderField('Design Assets Needed', serviceSpecific.designAssetsNeeded || serviceSpecific.design_assets_needed),
+                            renderField('Target Audience & Industry', serviceSpecific.targetAudienceIndustry || serviceSpecific.target_audience_industry),
+                          ].filter(Boolean) as JSX.Element[];
+                        } else if (serviceType === 'ai' || serviceType === 'ai-solutions') {
+                          fields = [
+                            renderField('AI Solution Type', serviceSpecific.aiSolutionType || serviceSpecific.ai_solution_type),
+                            renderField('Business Challenge & Use Case', serviceSpecific.businessChallengeUseCase || serviceSpecific.business_challenge_use_case),
+                            renderField('Data Availability', serviceSpecific.dataAvailability || serviceSpecific.data_availability),
+                            renderField('Expected Outcome', serviceSpecific.expectedOutcome || serviceSpecific.expected_outcome),
+                            renderField('Budget Range', serviceSpecific.budgetRange || serviceSpecific.budget_range),
+                          ].filter(Boolean) as JSX.Element[];
+                        } else if (serviceType === 'marketing' || serviceType === 'digital-marketing') {
+                          fields = [
+                            renderField('Marketing Goals', serviceSpecific.marketingGoals || serviceSpecific.marketing_goals),
+                            renderField('Channels of Interest', serviceSpecific.channelsOfInterest || serviceSpecific.channels_of_interest),
+                            renderField('Target Audience & Industry', serviceSpecific.targetAudienceIndustry || serviceSpecific.target_audience_industry),
+                            renderField('Monthly Budget Range', serviceSpecific.budgetRangeMonthly || serviceSpecific.monthly_budget_range),
+                          ].filter(Boolean) as JSX.Element[];
+                        } else if (serviceType === 'custom') {
+                          fields = [
+                            renderField('Service Description', serviceSpecific.serviceDescription || serviceSpecific.service_description),
+                            renderField('Expected Outcome', serviceSpecific.expectedOutcome || serviceSpecific.expected_outcome),
+                            renderField('Budget Range', serviceSpecific.budgetRange || serviceSpecific.budget_range),
+                          ].filter(Boolean) as JSX.Element[];
+                        } else {
+                          // Fallback: display all non-empty fields
+                          fields = Object.entries(serviceSpecific)
+                            .filter(([k, v]) => 
+                              v !== undefined && 
+                              v !== null && 
+                              v !== "" && 
+                              !["selected_service", "selectedService"].includes(k) &&
+                              (typeof v === "string" ? v.trim() !== "" : true)
+                            )
+                            .map(([k, v]) => renderField(
+                              k.replace(/([A-Z])/g, " $1").trim().replace(/_/g, " "),
+                              v
+                            ))
+                            .filter(Boolean) as JSX.Element[];
+                        }
+                        
+                        if (fields.length === 0) {
+                          // Show a message if no fields but data exists
+                          if (Object.keys(serviceSpecific).length > 0) {
+                            return (
+                              <div className="space-y-3">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                                  Service-Specific Details
                                 </div>
-                              ))}
+                                <div className="text-xs text-muted-foreground italic">
+                                  No service-specific details available for this project type.
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }
+                        
+                        return (
+                          <div className="space-y-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                              Service-Specific Details
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {fields}
                             </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </TabsContent>
 
@@ -2470,37 +2637,37 @@ export function UnifiedProjectManagement() {
                     }}
                   >
                     <CardHeader className="flex-1 pb-3">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
-                        <div className="min-w-0 flex-1">
-                          <CardTitle className="text-lg font-semibold truncate group-hover:text-primary transition-colors">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex justify-between items-start gap-2">
+                          <CardTitle className="text-lg font-semibold truncate group-hover:text-primary transition-colors flex-1 min-w-0">
                             {project.name}
                           </CardTitle>
-                          <CardDescription className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                            {project.description || "No description provided"}
-                          </CardDescription>
-                        </div>
-                        <div className="flex gap-2 shrink-0">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "uppercase text-[10px] font-semibold tracking-wider",
-                              getStatusColor(project.status)
-                            )}
-                          >
-                            {project.status}
-                          </Badge>
-                          {project.priority && (
+                          <div className="flex flex-wrap gap-2 shrink-0">
                             <Badge
-                              variant="secondary"
+                              variant="outline"
                               className={cn(
-                                "uppercase text-[10px] font-semibold tracking-wider",
-                                getPriorityColor(project.priority)
+                                "uppercase text-[10px] font-semibold tracking-wider whitespace-nowrap",
+                                getStatusColor(project.status)
                               )}
                             >
-                              {project.priority}
+                              {project.status}
                             </Badge>
-                          )}
+                            {project.priority && (
+                              <Badge
+                                variant="secondary"
+                                className={cn(
+                                  "uppercase text-[10px] font-semibold tracking-wider whitespace-nowrap",
+                                  getPriorityColor(project.priority)
+                                )}
+                              >
+                                {project.priority}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
+                        <CardDescription className="text-sm text-muted-foreground line-clamp-2">
+                          {project.description || "No description provided"}
+                        </CardDescription>
                       </div>
                     </CardHeader>
                     <CardContent className="flex-1 pt-0 space-y-4">
@@ -2799,6 +2966,13 @@ export function UnifiedProjectManagement() {
                       title: "Project deleted",
                       description: "The project has been deleted successfully",
                     });
+                    
+                    // Close the details panel if the deleted project is currently being viewed
+                    if (selectedProject?.id === deleteTarget.id) {
+                      setDetailsOpen(false);
+                      setSelectedProject(null);
+                    }
+                    
                     setDeleteOpen(false);
                     // Refetch all projects from the backend to stay in sync
                     await refetchAllProjects();

@@ -45,10 +45,12 @@ export const ROLE_PERMISSIONS: RolePermissions = {
     "analytics:read", "reports:read"
   ],
   employee: [
-    "projects:read",
-    "tasks:read", "tasks:write",
-    "profile:read", "profile:write",
-    "emails:read"
+    "projects:read", "projects:write",  // Can view and update assigned projects
+    "tasks:read", "tasks:write", "tasks:delete",  // Full CRUD on tasks
+    "profile:read", "profile:write",  // Can manage own profile
+    "emails:read", "emails:write",  // Can read and send emails
+    "comments:read", "comments:write",  // Can comment on projects
+    "attachments:read", "attachments:write"  // Can view and upload files
   ],
   client: [
     "profile:read", "profile:write",

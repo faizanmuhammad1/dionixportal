@@ -517,6 +517,8 @@ export function ClientProjectSubmissions() {
     null
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
   // Removed unused currentUser state
   const { toast } = useToast();
   const [projectName, setProjectName] = useState("");
@@ -645,24 +647,37 @@ export function ClientProjectSubmissions() {
 
   const confirmApprove = async () => {
     if (!activeSubmissionId) return;
+    
+    setIsApproving(true);
     try {
       const response = await fetch("/api/submissions/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           submission_id: activeSubmissionId,
-          project_name: projectName,
-          project_type: projectType,
-          description,
-          status: projectStatus,
-          priority: projectPriority,
-          budget: budget ? Number(budget) : null,
-          start_date: startDate || null,
-          end_date: endDate || null,
+          step1_data: {
+            project_name: projectName,
+            description,
+            budget: budget ? Number(budget) : null,
+            start_date: startDate || null,
+            end_date: endDate || null,
+            status: projectStatus,
+            priority: projectPriority,
+          },
         }),
       });
-      if (!response.ok) throw new Error("Failed to approve submission");
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Failed to approve submission" }));
+        throw new Error(error.error || "Failed to approve submission");
+      }
       const result = await response.json();
+      
+      // Close the inline view if the approved submission is currently being viewed
+      if (selectedSubmission?.submission_id === activeSubmissionId) {
+        setInlineOpen(false);
+        setSelectedSubmission(null);
+      }
+      
       toast({
         title: "Submission approved",
         description: `Project created: ${result.project_name || projectName}`,
@@ -676,6 +691,8 @@ export function ClientProjectSubmissions() {
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
+    } finally {
+      setIsApproving(false);
     }
   };
 
@@ -692,6 +709,8 @@ export function ClientProjectSubmissions() {
 
   const confirmReject = async () => {
     if (!activeSubmissionId) return;
+    
+    setIsRejecting(true);
     try {
       const response = await fetch("/api/submissions/reject", {
         method: "POST",
@@ -708,6 +727,12 @@ export function ClientProjectSubmissions() {
         throw new Error("Failed to reject submission");
       }
 
+      // Close the inline view if the rejected submission is currently being viewed
+      if (selectedSubmission?.submission_id === activeSubmissionId) {
+        setInlineOpen(false);
+        setSelectedSubmission(null);
+      }
+      
       toast({
         title: "Submission rejected",
         description: "The submission has been rejected.",
@@ -721,6 +746,8 @@ export function ClientProjectSubmissions() {
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -738,10 +765,17 @@ export function ClientProjectSubmissions() {
         throw new Error("Failed to delete submission");
       }
 
+      // Close the inline view if the deleted submission is currently being viewed
+      if (selectedSubmission?.submission_id === activeSubmissionId) {
+        setInlineOpen(false);
+        setSelectedSubmission(null);
+      }
+      
       toast({
         title: "Submission deleted",
         description: "The submission has been deleted.",
       });
+      
       setDeleteOpen(false);
       setActiveSubmissionId(null);
       await refresh();
@@ -1705,10 +1739,27 @@ export function ClientProjectSubmissions() {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setApproveOpen(false)}>
+              <Button 
+                variant="outline" 
+                onClick={() => setApproveOpen(false)}
+                disabled={isApproving}
+              >
                 Cancel
               </Button>
-              <Button onClick={confirmApprove}>Approve Project</Button>
+              <Button 
+                onClick={confirmApprove}
+                disabled={isApproving}
+                className="min-w-[140px]"
+              >
+                {isApproving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Approving...
+                  </>
+                ) : (
+                  "Approve Project"
+                )}
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -1728,11 +1779,27 @@ export function ClientProjectSubmissions() {
             />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRejectOpen(false)}>
+            <Button 
+              variant="ghost" 
+              onClick={() => setRejectOpen(false)}
+              disabled={isRejecting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmReject}>
-              Reject
+            <Button 
+              variant="destructive" 
+              onClick={confirmReject}
+              disabled={isRejecting}
+              className="min-w-[120px]"
+            >
+              {isRejecting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Rejecting...
+                </>
+              ) : (
+                "Reject"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -23,7 +23,9 @@ export async function GET(
       return NextResponse.json({ error: "Missing project id" }, { status: 400 });
     }
 
-    const { data: members, error } = await supabase
+    // Use admin client to bypass RLS for reading project members with profile data
+    const adminSupabase = createAdminSupabaseClient();
+    const { data: members, error } = await adminSupabase
       .from("project_members")
       .select(`
         user_id,
