@@ -32,11 +32,25 @@ export function createServerSupabaseClient() {
 }
 
 export function createAdminSupabaseClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !serviceRoleKey) {
-    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY for admin client")
+  
+  if (!url) {
+    throw new Error(
+      "Missing Supabase URL. Please set NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL in your .env.local file. " +
+      "See ENVIRONMENT_SETUP.md for details."
+    )
   }
+  
+  if (!serviceRoleKey) {
+    throw new Error(
+      "Missing SUPABASE_SERVICE_ROLE_KEY. This is required for admin operations. " +
+      "Add it to your .env.local file (never commit this key to git!). " +
+      "Get it from: Supabase Dashboard → Settings → API → service_role key. " +
+      "See ENVIRONMENT_SETUP.md for details."
+    )
+  }
+  
   return createServerClient(url, serviceRoleKey, { cookies: { get() { return undefined } } })
 }
 

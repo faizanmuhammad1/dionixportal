@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Mail, Edit, Trash2, Users, Search, UserPlus } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface Employee {
   id: string
@@ -40,9 +41,13 @@ interface Employee {
   department?: string
   position?: string
   last_login?: string
+  phone?: string
+  hire_date?: string
+  employment_type?: string
 }
 
 export function EmployeeManagement() {
+  const { toast } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -62,6 +67,7 @@ export function EmployeeManagement() {
     phone: "",
     hireDate: "",
     employmentType: "full-time",
+    password: "",
   })
 
   useEffect(() => {
@@ -91,25 +97,37 @@ export function EmployeeManagement() {
     try {
       setIsUpdating(true)
       if (editingEmployee) {
-        // Update existing employee
+        // Update existing employee - send both camelCase and snake_case for compatibility
         const res = await fetch(`/api/employees/${editingEmployee.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             role: newEmployee.role,
             first_name: newEmployee.firstName,
+            firstName: newEmployee.firstName, // also send camelCase
             last_name: newEmployee.lastName,
+            lastName: newEmployee.lastName, // also send camelCase
             department: newEmployee.department,
             position: newEmployee.position,
             phone: newEmployee.phone,
             hire_date: newEmployee.hireDate || null,
+            hireDate: newEmployee.hireDate || null, // also send camelCase
             employment_type: newEmployee.employmentType,
+            employmentType: newEmployee.employmentType, // also send camelCase
           }),
           credentials: "same-origin",
         })
-        if (!res.ok) throw new Error((await res.json()).error || "Failed")
+        if (!res.ok) {
+          const errorData = await res.json()
+          throw new Error(errorData.error || "Failed to update employee")
+        }
+        toast({
+          title: "Success",
+          description: "Employee updated successfully!",
+          variant: "default",
+        })
       } else {
-        // Create new employee invitation
+        // Create new employee directly
         const res = await fetch("/api/employees", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -123,6 +141,7 @@ export function EmployeeManagement() {
             phone: newEmployee.phone,
             hireDate: newEmployee.hireDate || null,
             employmentType: newEmployee.employmentType,
+            password: newEmployee.password || undefined,
           }),
           credentials: "same-origin",
         })
@@ -131,7 +150,16 @@ export function EmployeeManagement() {
           throw new Error(errorData.error || "Failed to create employee")
         }
         const result = await res.json()
-        alert(result.message || "Employee invitation created successfully!")
+        const successMessage = result.message || "Employee created successfully!"
+        
+        toast({
+          title: "Success",
+          description: successMessage + (result.note ? ` ${result.note}` : ''),
+          variant: "default",
+        })
+        
+        // Refresh employee list to show newly created employee immediately
+        await fetchEmployees()
       }
 
       setNewEmployee({ 
@@ -143,14 +171,18 @@ export function EmployeeManagement() {
         position: "",
         phone: "",
         hireDate: "",
-        employmentType: "full-time"
+        employmentType: "full-time",
+        password: ""
       })
       setEditingEmployee(null)
       setIsCreateDialogOpen(false)
-      fetchEmployees()
     } catch (error: any) {
       console.error("Error saving employee:", error.message)
-      alert("Error: " + error.message)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save employee",
+        variant: "destructive",
+      })
     } finally {
       setIsUpdating(false)
     }
@@ -168,14 +200,30 @@ export function EmployeeManagement() {
     
     try {
       setDeactivatingId(employeeToDelete.id)
-      await fetch(`/api/employees/${employeeToDelete.id}`, {
-        method: "PATCH",
+      const res = await fetch(`/api/employees/${employeeToDelete.id}`, {
+        method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "inactive" }),
+        credentials: "same-origin",
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || "Failed to deactivate employee")
+      }
+      
+      toast({
+        title: "Success",
+        description: "Employee deactivated successfully!",
+        variant: "default",
       })
       fetchEmployees()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deactivating employee:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to deactivate employee",
+        variant: "destructive",
+      })
     } finally {
       setDeactivatingId(null)
       setDeleteConfirmOpen(false)
@@ -208,7 +256,7 @@ export function EmployeeManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Employee Management</h1>
-          <p className="text-muted-foreground">Manage employee accounts and access across dionix.ai</p>
+          <p className="text-muted-foreground">Create and manage employee accounts</p>
         </div>
         <div className="flex items-center gap-4">
           <Badge variant="secondary">{activeEmployees} Active</Badge>
@@ -350,8 +398,18 @@ export function EmployeeManagement() {
                   />
                 </div>
                 {!editingEmployee && (
-                  <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3 text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Note:</strong> An invitation will be sent to the employee's email. They will need to sign up to access the portal.
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password (Optional)</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={newEmployee.password}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
+                      placeholder="Leave empty to auto-generate"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave empty to auto-generate a secure password. The employee can log in immediately with this password.
+                    </p>
                   </div>
                 )}
                 <Button onClick={handleCreateEmployee} className="w-full" disabled={isUpdating}>
@@ -384,9 +442,9 @@ export function EmployeeManagement() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Employee Directory ({filteredEmployees.length})
+            Employees ({filteredEmployees.length})
           </CardTitle>
-          <CardDescription>All employees with portal access to dionix.ai systems</CardDescription>
+          <CardDescription>Manage employee accounts and access</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -467,6 +525,10 @@ export function EmployeeManagement() {
                         <Button variant="ghost" size="sm" title="Edit Employee" onClick={() => {
                           setEditingEmployee(employee)
                           setIsCreateDialogOpen(true)
+                          // Format hire_date for date input (YYYY-MM-DD)
+                          const hireDateFormatted = employee.hire_date 
+                            ? new Date(employee.hire_date).toISOString().split('T')[0]
+                            : ""
                           setNewEmployee({
                             email: employee.email,
                             firstName: employee.first_name || "",
@@ -475,8 +537,9 @@ export function EmployeeManagement() {
                             department: employee.department || "",
                             position: employee.position || "",
                             phone: employee.phone || "",
-                            hireDate: employee.hire_date || "",
+                            hireDate: hireDateFormatted,
                             employmentType: employee.employment_type || "full-time",
+                            password: "" // Don't populate password for editing
                           })
                         }}>
                           <Edit className="h-4 w-4" />

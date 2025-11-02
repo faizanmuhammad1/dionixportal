@@ -21,10 +21,34 @@ async function getServerSession(): Promise<SessionUser | null> {
   try {
     const supabase = createServerSupabaseClient();
     
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get auth user with timeout handling
+    let authResult: { data: { user: any }, error: any };
+    try {
+      authResult = await Promise.race([
+        supabase.auth.getUser(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("Authentication timeout after 15 seconds")), 15000);
+        })
+      ]);
+    } catch (error: any) {
+      // Handle connection/timeout errors
+      if (error?.code === 'ENOTFOUND' || error?.code === 'UND_ERR_CONNECT_TIMEOUT' || 
+          error?.message?.includes('timeout') || error?.message?.includes('getaddrinfo')) {
+        console.error("Supabase connection error:", {
+          code: error.code,
+          message: error.message,
+          hostname: error.hostname || 'unknown',
+          syscall: error.syscall
+        });
+        throw new Error("Cannot connect to Supabase. Please check your network connection and Supabase URL configuration.");
+      }
+      throw error;
+    }
+    
+    const { data: { user }, error: authError } = authResult;
     
     if (authError || !user) {
-      console.log("No auth user found");
+      console.log("No auth user found", authError ? `Error: ${authError.message}` : "");
       return null;
     }
 
@@ -52,7 +76,17 @@ async function getServerSession(): Promise<SessionUser | null> {
       lastLogin: user.last_sign_in_at,
       sessionExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     };
-  } catch (error) {
+  } catch (error: any) {
+    // Log connection errors more clearly
+    if (error?.code === 'ENOTFOUND' || error?.code === 'UND_ERR_CONNECT_TIMEOUT' || error?.message?.includes('timeout') || error?.message?.includes('connect')) {
+      console.error("Supabase connection failed:", {
+        error: error.message,
+        code: error.code,
+        suggestion: "Check your network connection and verify SUPABASE_URL is correct in .env.local"
+      });
+      // Don't return null for connection errors - throw to provide better error message
+      throw error;
+    }
     console.error("Server session error:", error);
     return null;
   }
@@ -96,7 +130,26 @@ export function withAuth(
       }
 
       // Get user session
-      const user = await getServerSession();
+      let user: SessionUser | null;
+      try {
+        user = await getServerSession();
+      } catch (error: any) {
+        // Handle connection errors specifically
+        if (error?.message?.includes('connect') || error?.message?.includes('timeout') || error?.code === 'ENOTFOUND' || error?.code === 'UND_ERR_CONNECT_TIMEOUT') {
+          console.error("Connection error during authentication:", error.message);
+          return NextResponse.json(
+            { 
+              error: "Connection error",
+              message: error.message || "Cannot connect to authentication service. Please check your network connection.",
+              code: error.code || "CONNECTION_ERROR",
+              suggestion: "Verify your Supabase URL is correct and network connectivity is available"
+            },
+            { status: 503 } // Service Unavailable
+          );
+        }
+        // Re-throw other errors
+        throw error;
+      }
       
       if (!user) {
         console.error("Authentication failed: No user session found");

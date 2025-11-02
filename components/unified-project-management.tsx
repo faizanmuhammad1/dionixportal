@@ -467,42 +467,39 @@ export function UnifiedProjectManagement() {
   const handleAssignProjectsToEmployee = async (employeeId: string, projectIds: string[]) => {
     setIsUpdatingAssignments(true);
     try {
-      // Remove employee from all current projects first
-      const { error: removeError } = await supabase
-        .from("project_members")
-        .delete()
-        .eq("user_id", employeeId);
+      // Use API endpoint with proper RBAC checks
+      const response = await fetch(`/api/employees/${employeeId}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          project_ids: projectIds,
+        }),
+      });
 
-      if (removeError) throw removeError;
-
-      // Add employee to selected projects
-      if (projectIds.length > 0) {
-        const assignments = projectIds.map(projectId => ({
-          project_id: projectId,
-          user_id: employeeId,
-        }));
-
-        const { error: addError } = await supabase
-          .from("project_members")
-          .insert(assignments);
-
-        if (addError) throw addError;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to assign projects");
       }
+
+      const result = await response.json();
 
       toast({
         title: "Success",
-        description: `Employee assigned to ${projectIds.length} project(s)`,
+        description: result.message || `Employee assigned to ${projectIds.length} project(s)`,
       });
 
       // Refresh project data
       await refetchAllProjects();
       setEmployeeProjectModalOpen(false);
       setSelectedEmployeeForProject(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error assigning projects to employee:", error);
       toast({
         title: "Error",
-        description: "Failed to assign projects to employee",
+        description: error.message || "Failed to assign projects to employee",
         variant: "destructive",
       });
     } finally {
@@ -690,14 +687,27 @@ export function UnifiedProjectManagement() {
         return;
       }
 
-      // Now fetch tasks, members, attachments, and comments for each project
+      // Now fetch tasks, members, attachments, and comments for each project IN PARALLEL
       const enrichedProjects = await Promise.all(
         projectsData.map(async (project: any) => {
           try {
-            // Fetch tasks for this project
-            const tasksResponse = await fetch(`/api/projects/${project.project_id}/tasks`, {
-              credentials: "same-origin",
-            });
+            // Fetch all data for this project in parallel
+            const [tasksResponse, membersResponse, attachmentsResponse, commentsResponse] = await Promise.all([
+              fetch(`/api/projects/${project.project_id}/tasks`, {
+                credentials: "same-origin",
+              }),
+              fetch(`/api/projects/${project.project_id}/members`, {
+                credentials: "same-origin",
+              }),
+              fetch(`/api/projects/${project.project_id}/attachments`, {
+                credentials: "same-origin",
+              }),
+              fetch(`/api/projects/${project.project_id}/comments`, {
+                credentials: "same-origin",
+              }),
+            ]);
+
+            // Process tasks
             let taskList: Task[] = [];
             if (tasksResponse.ok) {
               const tasksData = await tasksResponse.json();
@@ -713,20 +723,14 @@ export function UnifiedProjectManagement() {
               }));
             }
 
-            // Fetch members for this project
-            const membersResponse = await fetch(`/api/projects/${project.project_id}/members`, {
-              credentials: "same-origin",
-            });
+            // Process members
             let members: string[] = [];
             if (membersResponse.ok) {
               const membersData = await membersResponse.json();
               members = (membersData.members || []).map((m: any) => m.user_id);
             }
 
-            // Fetch attachments for this project
-            const attachmentsResponse = await fetch(`/api/projects/${project.project_id}/attachments`, {
-              credentials: "same-origin",
-            });
+            // Process attachments
             let attachments: ProjectAttachment[] = [];
             if (attachmentsResponse.ok) {
               const attachmentsData = await attachmentsResponse.json();
@@ -744,10 +748,7 @@ export function UnifiedProjectManagement() {
               }));
             }
 
-            // Fetch comments for this project
-            const commentsResponse = await fetch(`/api/projects/${project.project_id}/comments`, {
-              credentials: "same-origin",
-            });
+            // Process comments
             let comments: ProjectComment[] = [];
             if (commentsResponse.ok) {
               const commentsData = await commentsResponse.json();

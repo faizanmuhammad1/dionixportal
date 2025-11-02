@@ -1,26 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { createServerSupabaseClient, createAdminSupabaseClient } from '@/lib/supabase-server';
 import { projectService } from '@/lib/project-service';
 import { ProjectFormData } from '@/lib/types/project';
+import { withAuth, withCors } from '@/lib/api-middleware';
 
-export async function GET(request: NextRequest) {
-  try {
-    const supabase = createServerSupabaseClient();
-    
-    // Check authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Get user's profile to check role
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    const userRole = profile?.role || 'employee';
+export const GET = withAuth(
+  async ({ user, request }) => {
+    try {
+      const supabase = createServerSupabaseClient();
+      const userRole = user.role;
 
     // Get query parameters for filtering
     const { searchParams } = new URL(request.url);
@@ -49,10 +37,13 @@ export async function GET(request: NextRequest) {
       
       if (projectIds.length === 0) {
         // No projects assigned to this employee
-        return NextResponse.json({ projects: [] });
+        return withCors(NextResponse.json({ projects: [] }));
       }
       
       query = query.in('project_id', projectIds);
+    } else if (userRole === 'client') {
+      // Clients only see their own projects
+      query = query.eq('client_id', user.id);
     }
     // Admins and managers see all projects (no additional filter needed)
 
@@ -82,45 +73,56 @@ export async function GET(request: NextRequest) {
       throw error;
     }
     
-    return NextResponse.json({ projects: projects || [] });
-  } catch (error) {
-    console.error('Get projects error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch projects', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = createServerSupabaseClient();
-    
-    // Check authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return withCors(NextResponse.json({ projects: projects || [] }));
+    } catch (error) {
+      console.error('Get projects error:', error);
+      return withCors(NextResponse.json(
+        { error: 'Failed to fetch projects', details: error instanceof Error ? error.message : 'Unknown error' },
+        { status: 500 }
+      ));
     }
-
-    const body = await request.json();
-    const projectData: ProjectFormData = body;
-
-    // Validate required fields
-    if (!projectData.name || !projectData.type) {
-      return NextResponse.json(
-        { error: 'Project name and type are required' },
-        { status: 400 }
-      );
-    }
-
-    const project = await projectService.createProject(projectData);
-    
-    return NextResponse.json({ project }, { status: 201 });
-  } catch (error) {
-    console.error('Create project error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create project' },
-      { status: 500 }
-    );
+  },
+  {
+    roles: ['admin', 'manager', 'employee', 'client'],
+    permissions: ['projects:read']
   }
-}
+)
+
+export const POST = withAuth(
+  async ({ user, request }) => {
+    try {
+      const body = await request.json();
+      const projectData: ProjectFormData = body;
+
+      // Validate required fields
+      if (!projectData.name || !projectData.type) {
+        return withCors(NextResponse.json(
+          { error: 'Project name and type are required' },
+          { status: 400 }
+        ));
+      }
+
+      // Only admins and managers can create projects
+      if (user.role !== 'admin' && user.role !== 'manager') {
+        return withCors(NextResponse.json(
+          { error: 'Insufficient permissions to create projects' },
+          { status: 403 }
+        ));
+      }
+
+      const project = await projectService.createProject(projectData);
+      
+      return withCors(NextResponse.json({ project }, { status: 201 }));
+    } catch (error) {
+      console.error('Create project error:', error);
+      return withCors(NextResponse.json(
+        { error: 'Failed to create project', details: error instanceof Error ? error.message : 'Unknown error' },
+        { status: 500 }
+      ));
+    }
+  },
+  {
+    roles: ['admin', 'manager'],
+    permissions: ['projects:write']
+  }
+)
