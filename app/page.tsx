@@ -15,6 +15,7 @@ import { UnifiedProjectManagement } from "@/components/unified-project-managemen
 import { EmployeeProjectCenter } from "@/components/employee-project-center";
 import { TaskBoard } from "@/components/task-board";
 import { ComingSoon } from "@/components/coming-soon";
+import { UserProfile } from "@/components/user-profile";
 import { getCurrentUser, signOut, type User } from "@/lib/auth";
 import { useSession } from "@/hooks/use-session";
 import { ProtectedRoute } from "@/components/protected-route";
@@ -356,7 +357,7 @@ export default function HomePage() {
         <ComingSoon title="Help Desk" />
       )}
 
-      {currentView === "settings" && <ComingSoon title="Settings Panel" />}
+      {currentView === "settings" && <UserProfile user={user} />}
     </DashboardLayout>
   );
 }

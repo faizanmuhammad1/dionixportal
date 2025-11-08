@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server";
 import { withAuth, withCors } from "@/lib/api-middleware";
 
 export const runtime = "nodejs";
@@ -27,31 +27,47 @@ export const GET = withAuth(
         ));
       }
 
-      const supabase = createServerSupabaseClient();
-      const { data: projectAssignments, error } = await supabase
+      // Use admin client to bypass RLS issues with joins
+      // Authorization is already handled by withAuth middleware
+      const supabase = createAdminSupabaseClient();
+      
+      // First, get project IDs from project_members
+      const { data: projectMembers, error: membersError } = await supabase
         .from("project_members")
-        .select(`
-          project_id,
-          projects!inner(
-            project_id,
-            project_name,
-            description,
-            status,
-            priority,
-            start_date,
-            end_date,
-            client_name
-          )
-        `)
+        .select("project_id")
         .eq("user_id", employeeId);
 
-      if (error) {
-        console.error("Error fetching employee projects:", error);
-        return withCors(NextResponse.json({ error: error.message }, { status: 500 }));
+      if (membersError) {
+        console.error("Error fetching project members:", membersError);
+        return withCors(NextResponse.json({ error: membersError.message }, { status: 500 }));
       }
 
-      const projects = (projectAssignments || []).map((pa: any) => pa.projects);
-      return withCors(NextResponse.json({ projects }));
+      if (!projectMembers || projectMembers.length === 0) {
+        return withCors(NextResponse.json({ projects: [] }));
+      }
+
+      // Then, fetch project details
+      const projectIds = projectMembers.map((pm: any) => pm.project_id);
+      const { data: projects, error: projectsError } = await supabase
+        .from("projects")
+        .select(`
+          project_id,
+          project_name,
+          description,
+          status,
+          priority,
+          start_date,
+          end_date,
+          client_name
+        `)
+        .in("project_id", projectIds);
+
+      if (projectsError) {
+        console.error("Error fetching projects:", projectsError);
+        return withCors(NextResponse.json({ error: projectsError.message }, { status: 500 }));
+      }
+
+      return withCors(NextResponse.json({ projects: projects || [] }));
     } catch (err) {
       console.error("Unexpected error fetching employee projects:", err);
       return withCors(NextResponse.json({ error: "Internal server error" }, { status: 500 }));

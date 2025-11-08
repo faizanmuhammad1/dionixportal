@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import type { User } from "@/lib/auth";
 import { createClient } from "@/lib/supabase";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface EmployeeDashboardProps {
   user: User;
@@ -57,29 +58,47 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
 
     const load = async () => {
       try {
-        const { data: projRows, error: projErr } = await supabase
-          .from("projects")
-          .select(
-            `id, name, client_name, status, start_date, end_date,
-             tasks ( id, title, status, priority, due_date, assignee_id ),
-             project_members ( user_id )`
-          )
-          .order("created_at", { ascending: false });
-        if (projErr) throw projErr;
+        // Use API endpoint to get assigned projects
+        const response = await fetch(`/api/employees/${user.id}/projects`, {
+          credentials: "same-origin",
+        });
 
-        const myProjects = (projRows || []).filter((p: any) =>
-          (p.project_members || []).some((m: any) => m.user_id === user.id)
+        if (!response.ok) {
+          throw new Error("Failed to fetch assigned projects");
+        }
+
+        const data = await response.json();
+        const projects = data.projects || [];
+
+        // Fetch tasks for each project
+        const projectsWithTasks = await Promise.all(
+          projects.map(async (project: any) => {
+            const { data: tasksData, error: tasksError } = await supabase
+              .from("tasks")
+              .select("task_id, title, status, priority, due_date, assignee_id")
+              .eq("project_id", project.project_id);
+
+            if (tasksError) {
+              console.error("Error fetching tasks:", tasksError);
+              return { ...project, tasks: [] };
+            }
+
+            return {
+              ...project,
+              tasks: tasksData || [],
+            };
+          })
         );
 
-        const mappedProjects = myProjects.map((p: any) => {
+        const mappedProjects = projectsWithTasks.map((p: any) => {
           const total = (p.tasks || []).length;
           const done = (p.tasks || []).filter(
             (t: any) => t.status === "completed"
           ).length;
           const progress = total ? Math.round((done / total) * 100) : 0;
           return {
-            id: p.id,
-            name: p.name,
+            id: p.project_id,
+            name: p.project_name,
             client: p.client_name || "",
             status: p.status,
             progress,
@@ -87,13 +106,13 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
           };
         });
 
-        const myTasks = myProjects
+        const myTasks = projectsWithTasks
           .flatMap((p: any) =>
-            (p.tasks || []).map((t: any) => ({ ...t, projectName: p.name }))
+            (p.tasks || []).map((t: any) => ({ ...t, projectName: p.project_name }))
           )
           .filter((t: any) => (t.assignee_id || "") === user.id)
           .map((t: any) => ({
-            id: t.id,
+            id: t.task_id,
             title: t.title,
             project: t.projectName,
             priority: t.priority,
@@ -105,7 +124,12 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
         setAssignedProjects(mappedProjects);
         setAssignedTasks(myTasks);
       } catch (e) {
-        // soft-fail
+        console.error("Error loading employee dashboard:", e);
+        toast({
+          title: "Error",
+          description: "Failed to load your projects and tasks",
+          variant: "destructive",
+        });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -113,11 +137,12 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
 
     load();
 
+    // Set up real-time subscriptions
     const channel = supabase
       .channel("employee-dash")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "projects" },
+        { event: "*", schema: "public", table: "project_members", filter: `user_id=eq.${user.id}` },
         () => {
           load();
         }
@@ -151,7 +176,7 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
       const { error } = await supabase
         .from("tasks")
         .update(updates)
-        .eq("id", taskId);
+        .eq("task_id", taskId);
       if (error) throw error;
       toast({ title: "Task updated" });
     } catch (e: any) {
@@ -184,60 +209,81 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
 
       {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Assigned Tasks
-            </CardTitle>
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{assignedTasks.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {assignedTasks.filter((t) => t.status === "todo").length} not
-              started
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Active Projects
-            </CardTitle>
-            <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{assignedProjects.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Projects assigned to you
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unread Emails</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">Email disabled</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Progress</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {Math.round(
-                assignedProjects.reduce((acc, p) => acc + p.progress, 0) /
-                  assignedProjects.length
-              )}
-              %
-            </div>
-            <p className="text-xs text-muted-foreground">Across all projects</p>
-          </CardContent>
-        </Card>
+        {loading ? (
+          <>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-4" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-12 mb-2" />
+                  <Skeleton className="h-3 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        ) : (
+          <>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Assigned Tasks
+                </CardTitle>
+                <CheckSquare className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{assignedTasks.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  {assignedTasks.filter((t) => t.status === "todo").length} not
+                  started
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Active Projects
+                </CardTitle>
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{assignedProjects.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  Projects assigned to you
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Unread Emails</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">0</div>
+                <p className="text-xs text-muted-foreground">Email disabled</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Avg. Progress</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {assignedProjects.length > 0
+                    ? Math.round(
+                        assignedProjects.reduce((acc, p) => acc + p.progress, 0) /
+                          assignedProjects.length
+                      )
+                    : 0}
+                  %
+                </div>
+                <p className="text-xs text-muted-foreground">Across all projects</p>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       <Card>
@@ -261,7 +307,39 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {assignedTasks.map((task) => (
+                {loading ? (
+                  // Loading skeleton rows
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-task-${index}`}>
+                      <TableCell>
+                        <Skeleton className="h-4 w-48" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-6 w-16" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-6 w-20" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-8 w-20" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : assignedTasks.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <CheckSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-sm">No tasks assigned</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  assignedTasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell className="font-medium">{task.title}</TableCell>
                     <TableCell>{task.project}</TableCell>
@@ -320,7 +398,8 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
           </div>
@@ -347,7 +426,39 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {assignedProjects.map((project) => (
+                {loading ? (
+                  // Loading skeleton rows
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-project-${index}`}>
+                      <TableCell>
+                        <Skeleton className="h-4 w-48" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Skeleton className="h-2 w-20" />
+                          <Skeleton className="h-4 w-12" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-6 w-16" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : assignedProjects.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      <FolderOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-sm">No projects assigned</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  assignedProjects.map((project) => (
                   <TableRow key={project.id}>
                     <TableCell className="font-medium">
                       {project.name}
@@ -379,7 +490,8 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
                       </Badge>
                     </TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
           </div>

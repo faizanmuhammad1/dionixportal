@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { createServerSupabaseClient, createAdminSupabaseClient } from '@/lib/supabase-server';
 import { ProjectService } from '@/lib/project-service';
 import { ProjectFormData } from '@/lib/types/project';
 import { withAuth, withCors } from '@/lib/api-middleware';
@@ -18,35 +18,74 @@ export const GET = withAuth(
         return withCors(NextResponse.json({ error: 'Project ID is required' }, { status: 400 }));
       }
 
-      // Get the project
-      const { data: project, error } = await supabase
+      // For employees, use admin client to bypass RLS for both project and membership checks
+      // Authorization is already handled by withAuth middleware
+      const dbClient = (user.role === 'employee' || user.role === 'client') 
+        ? createAdminSupabaseClient() 
+        : supabase;
+
+      // Check access first for employees/clients before fetching project
+      if (user.role === 'employee') {
+        const adminSupabase = createAdminSupabaseClient();
+        const { data: membership, error: membershipError } = await adminSupabase
+          .from('project_members')
+          .select('user_id')
+          .eq('project_id', projectId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (membershipError) {
+          console.error('Error checking project membership:', membershipError);
+          return withCors(NextResponse.json(
+            { error: 'Failed to verify project access', details: membershipError.message },
+            { status: 500 }
+          ));
+        }
+
+        if (!membership) {
+          console.log(`Employee ${user.id} attempted to access project ${projectId} but is not a member`);
+          return withCors(NextResponse.json(
+            { error: 'You do not have access to this project' },
+            { status: 403 }
+          ));
+        }
+      }
+
+      // Get the project using appropriate client
+      const { data: project, error } = await dbClient
         .from('projects')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       if (error || !project) {
+        console.error('Error fetching project:', error);
         return withCors(NextResponse.json({ error: 'Project not found' }, { status: 404 }));
       }
 
-      // Check if employee/client has access to this project
-      if (user.role === 'employee') {
-        const { data: membership } = await supabase
-          .from('project_members')
-          .select('user_id')
-          .eq('project_id', projectId)
-          .eq('user_id', user.id)
-          .single();
+      // Debug logging for step2_data
+      console.log('Backend: Project fetched for employee:', {
+        project_id: project.project_id,
+        project_name: project.project_name,
+        project_type: project.project_type,
+        has_step2_data: !!project.step2_data,
+        step2_data_type: typeof project.step2_data,
+        step2_data_value: project.step2_data,
+        step2_data_keys: project.step2_data && typeof project.step2_data === 'object' 
+          ? Object.keys(project.step2_data) 
+          : 'not an object',
+        has_service_specific: !!project.service_specific,
+        service_specific_type: typeof project.service_specific,
+        all_step_service_fields: Object.keys(project).filter(k => 
+          k.includes('step') || k.includes('service') || k.includes('type')
+        ),
+      });
 
-        if (!membership) {
-          return withCors(NextResponse.json(
-            { error: 'You do not have access to this project' },
-            { status: 403 }
-          ));
-        }
-      } else if (user.role === 'client') {
+      // Additional check for clients
+      if (user.role === 'client') {
         // Clients can only see their own projects
         if (project.client_id !== user.id) {
+          console.log(`Client ${user.id} attempted to access project ${projectId} but client_id is ${project.client_id}`);
           return withCors(NextResponse.json(
             { error: 'You do not have access to this project' },
             { status: 403 }

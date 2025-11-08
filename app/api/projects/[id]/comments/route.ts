@@ -11,8 +11,38 @@ export async function GET(
   try {
     const projectId = params.id;
     if (!projectId) return NextResponse.json({ error: "Missing project id" }, { status: 400 });
+    
     const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check if employee has access to this project
+    const userRole = (user.user_metadata?.role as string) || 'employee';
+    
+    if (userRole === 'employee') {
+      // Verify employee is a member of this project
+      const adminSupabase = createAdminSupabaseClient();
+      const { data: membership } = await adminSupabase
+        .from('project_members')
+        .select('user_id')
+        .eq('project_id', projectId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!membership) {
+        return NextResponse.json(
+          { error: 'You do not have access to this project' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Use admin client for employees to bypass RLS
+    const dbClient = userRole === 'employee' ? createAdminSupabaseClient() : supabase;
+    const { data, error } = await dbClient
       .from("comments")
       .select("*")
       .eq("project_id", projectId)

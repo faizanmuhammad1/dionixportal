@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server";
 import { withAuth } from "@/lib/api-middleware";
 
 export const runtime = "nodejs";
@@ -26,7 +26,32 @@ export async function GET(
       return NextResponse.json({ error: "Missing project id" }, { status: 400 });
     }
 
-    const { data: tasks, error } = await supabase
+    // Check if employee has access to this project
+    // Get user role from metadata (set by withAuth middleware in other routes)
+    // For this route, we'll check directly
+    const userRole = (user.user_metadata?.role as string) || 'employee';
+    
+    if (userRole === 'employee') {
+      // Verify employee is a member of this project
+      const adminSupabase = createAdminSupabaseClient();
+      const { data: membership } = await adminSupabase
+        .from('project_members')
+        .select('user_id')
+        .eq('project_id', projectId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!membership) {
+        return NextResponse.json(
+          { error: 'You do not have access to this project' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Use admin client for employees to bypass RLS
+    const dbClient = userRole === 'employee' ? createAdminSupabaseClient() : supabase;
+    const { data: tasks, error } = await dbClient
       .from("tasks")
       .select("*")
       .eq("project_id", projectId)
