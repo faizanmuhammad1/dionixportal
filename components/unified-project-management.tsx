@@ -279,38 +279,89 @@ export function UnifiedProjectManagement() {
   const handleOpenAssignment = async (project: Project) => {
     setSelectedProjectForAssignment(project);
     setAssignmentOpen(true);
-
-    // Load current project members
-    try {
-      const { data: members, error } = await supabase
-        .from("project_members")
-        .select(
-          `
-          user_id,
-          profiles!inner(id, first_name, last_name, email)
-        `
-        )
-        .eq("project_id", project.id);
-
-      if (error) throw error;
-
-      const memberList =
-        members?.map((m: any) => ({
-          id: m.user_id,
-          name: `${m.profiles.first_name} ${m.profiles.last_name}`,
-          email: m.profiles.email,
-        })) || [];
-
-      setProjectMembers(memberList);
-    } catch (error) {
-      console.error("Error loading project members:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load project members",
-        variant: "destructive",
-      });
-    }
+    // Don't load here - let useEffect handle it to ensure fresh data
   };
+
+  // Load project members when modal opens or project changes
+  useEffect(() => {
+    const loadProjectMembers = async () => {
+      if (!assignmentOpen || !selectedProjectForAssignment || !employees || employees.length === 0) {
+        return;
+      }
+
+      try {
+        // Get project members - profiles table doesn't have email, so we'll use employees list
+        const { data: members, error } = await supabase
+          .from("project_members")
+          .select("user_id")
+          .eq("project_id", selectedProjectForAssignment.id);
+
+
+        if (error) {
+          console.error("Error loading project members:", error);
+          throw error;
+        }
+
+        // Build member list from employees array (which has email)
+        const memberList: Array<{ id: string; name: string; email: string }> = [];
+        
+        if (members && members.length > 0) {
+          for (const member of members) {
+            const employee = employees.find((emp) => emp.id === member.user_id);
+            if (employee) {
+              memberList.push({
+                id: employee.id,
+                name: `${employee.first_name || ""} ${employee.last_name || ""}`.trim() || employee.name,
+                email: employee.email || "",
+              });
+            } else {
+              // If employee not found in list, try to get from profiles
+              try {
+                const { data: profile } = await supabase
+                  .from("profiles")
+                  .select("first_name, last_name")
+                  .eq("id", member.user_id)
+                  .single();
+                
+                if (profile) {
+                  memberList.push({
+                    id: member.user_id,
+                    name: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Unknown User",
+                    email: "", // Email not in profiles table
+                  });
+                } else {
+                  memberList.push({
+                    id: member.user_id,
+                    name: "Unknown User",
+                    email: "",
+                  });
+                }
+              } catch (profileError) {
+                console.error("Error fetching profile:", profileError);
+                memberList.push({
+                  id: member.user_id,
+                  name: "Unknown User",
+                  email: "",
+                });
+              }
+            }
+          }
+        }
+
+        setProjectMembers(memberList);
+      } catch (error) {
+        console.error("Error loading project members:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load project members",
+          variant: "destructive",
+        });
+        setProjectMembers([]);
+      }
+    };
+
+    loadProjectMembers();
+  }, [assignmentOpen, selectedProjectForAssignment?.id, employees]);
 
   const handleAssignEmployee = async (employeeId: string) => {
     if (!selectedProjectForAssignment) return;
@@ -324,20 +375,62 @@ export function UnifiedProjectManagement() {
 
       if (error) throw error;
 
-      // Update local state
-      const employee = employees.find((emp) => emp.id === employeeId);
-      if (employee) {
-        setProjectMembers((prev) => [
-          ...prev,
-          {
-            id: employee.id,
-            name:
-              `${employee.first_name || ""} ${
-                employee.last_name || ""
-              }`.trim() || employee.name,
-            email: employee.email,
-          },
-        ]);
+      // Refresh project members from database to ensure we have the latest data
+      const { data: members, error: fetchError } = await supabase
+        .from("project_members")
+        .select("user_id")
+        .eq("project_id", selectedProjectForAssignment.id);
+
+      if (!fetchError && members) {
+        const memberList: Array<{ id: string; name: string; email: string }> = [];
+        for (const member of members) {
+          const employee = employees.find((emp) => emp.id === member.user_id);
+          if (employee) {
+            memberList.push({
+              id: employee.id,
+              name: `${employee.first_name || ""} ${employee.last_name || ""}`.trim() || employee.name,
+              email: employee.email || "",
+            });
+          } else {
+            // Try to get from profiles if not in employees list
+            try {
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("first_name, last_name")
+                .eq("id", member.user_id)
+                .single();
+              
+              memberList.push({
+                id: member.user_id,
+                name: profile ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Unknown User" : "Unknown User",
+                email: "",
+              });
+            } catch {
+              memberList.push({
+                id: member.user_id,
+                name: "Unknown User",
+                email: "",
+              });
+            }
+          }
+        }
+        setProjectMembers(memberList);
+      } else {
+        // Fallback: update local state if refresh fails
+        const employee = employees.find((emp) => emp.id === employeeId);
+        if (employee) {
+          setProjectMembers((prev) => [
+            ...prev,
+            {
+              id: employee.id,
+              name:
+                `${employee.first_name || ""} ${
+                  employee.last_name || ""
+                }`.trim() || employee.name,
+              email: employee.email,
+            },
+          ]);
+        }
       }
 
       toast({
@@ -369,10 +462,52 @@ export function UnifiedProjectManagement() {
 
       if (error) throw error;
 
-      // Update local state
-      setProjectMembers((prev) =>
-        prev.filter((member) => member.id !== employeeId)
-      );
+      // Refresh project members from database to ensure we have the latest data
+      const { data: members, error: fetchError } = await supabase
+        .from("project_members")
+        .select("user_id")
+        .eq("project_id", selectedProjectForAssignment.id);
+
+      if (!fetchError && members) {
+        const memberList: Array<{ id: string; name: string; email: string }> = [];
+        for (const member of members) {
+          const employee = employees.find((emp) => emp.id === member.user_id);
+          if (employee) {
+            memberList.push({
+              id: employee.id,
+              name: `${employee.first_name || ""} ${employee.last_name || ""}`.trim() || employee.name,
+              email: employee.email || "",
+            });
+          } else {
+            // Try to get from profiles if not in employees list
+            try {
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("first_name, last_name")
+                .eq("id", member.user_id)
+                .single();
+              
+              memberList.push({
+                id: member.user_id,
+                name: profile ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Unknown User" : "Unknown User",
+                email: "",
+              });
+            } catch {
+              memberList.push({
+                id: member.user_id,
+                name: "Unknown User",
+                email: "",
+              });
+            }
+          }
+        }
+        setProjectMembers(memberList);
+      } else {
+        // Fallback: update local state if refresh fails
+        setProjectMembers((prev) =>
+          prev.filter((member) => member.id !== employeeId)
+        );
+      }
 
       toast({
         title: "Success",
@@ -2817,16 +2952,6 @@ export function UnifiedProjectManagement() {
                           </div>
                         </div>
                       </div>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => handleOpenAssignment(selectedProject)}
-                      >
-                        <Users className="h-4 w-4 mr-2" />
-                        Manage Team
-                      </Button>
                     </div>
                   </TabsContent>
                 </Tabs>
@@ -3310,9 +3435,9 @@ export function UnifiedProjectManagement() {
                     key={member.id}
                     className="flex items-center justify-between rounded-md bg-muted p-3"
                   >
-                    <div>
-                      <p className="text-sm font-medium">{member.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{member.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
                         {member.email}
                       </p>
                     </div>
@@ -3320,8 +3445,14 @@ export function UnifiedProjectManagement() {
                       onClick={() => handleRemoveEmployee(member.id)}
                       variant="destructive"
                       size="sm"
+                      className="ml-2 shrink-0"
+                      disabled={isUpdatingAssignments}
                     >
-                      Remove
+                      {isUpdatingAssignments ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Remove"
+                      )}
                     </Button>
                   </div>
                 ))}
