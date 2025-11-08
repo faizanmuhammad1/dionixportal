@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function withCors(res: NextResponse) {
   // SECURE CORS - Only allow specific origins
   const allowedOrigins = process.env.NODE_ENV === 'production' 

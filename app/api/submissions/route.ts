@@ -4,6 +4,9 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { withAuth, withCors } from "@/lib/api-middleware";
 import { validateInput, submissionCreateSchema } from "@/lib/validation";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export const GET = withAuth(
   async ({ user, request }) => {
     try {

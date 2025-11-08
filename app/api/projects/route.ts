@@ -4,6 +4,9 @@ import { projectService } from '@/lib/project-service';
 import { ProjectFormData } from '@/lib/types/project';
 import { withAuth, withCors } from '@/lib/api-middleware';
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export const GET = withAuth(
   async ({ user, request }) => {
     try {

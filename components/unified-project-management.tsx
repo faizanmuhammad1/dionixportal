@@ -51,7 +51,7 @@ import {
 } from "@/lib/project-store";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { uploadProjectFile } from "@/lib/storage";
+import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage";
 import { createClient } from "@/lib/supabase";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -257,6 +257,21 @@ export function UnifiedProjectManagement() {
   } | null>(null);
   const [employeeProjectModalOpen, setEmployeeProjectModalOpen] = useState(false);
 
+  // Lazy loading state - track which project's data has been loaded
+  const [loadedProjectData, setLoadedProjectData] = useState<Set<string>>(new Set());
+  const [loadingProjectData, setLoadingProjectData] = useState<{
+    attachments: Set<string>;
+    comments: Set<string>;
+    members: Set<string>;
+  }>({
+    attachments: new Set(),
+    comments: new Set(),
+    members: new Set(),
+  });
+
+  // Track active tab in project details view
+  const [projectDetailTab, setProjectDetailTab] = useState("overview");
+
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -376,26 +391,34 @@ export function UnifiedProjectManagement() {
   };
 
   const handleDeleteAttachment = async (attachmentId: string) => {
+    if (!selectedProject) return;
+    
     try {
-      const { error } = await supabase
-        .from("attachments")
-        .delete()
-        .eq("attachment_id", attachmentId);
+      const response = await fetch(
+        `/api/projects/${selectedProject.id}/attachments?attachment_id=${encodeURIComponent(attachmentId)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+        }
+      );
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete attachment");
+      }
 
       toast({
         title: "Success",
         description: "Attachment deleted successfully",
       });
 
-      // Refresh project data
-      await refetchAllProjects();
+      // Refresh attachments for the selected project (force refresh)
+      await loadProjectAttachments(selectedProject.id, true);
     } catch (error) {
       console.error("Error deleting attachment:", error);
       toast({
         title: "Error",
-        description: "Failed to delete attachment",
+        description: error instanceof Error ? error.message : "Failed to delete attachment",
         variant: "destructive",
       });
     }
@@ -406,15 +429,19 @@ export function UnifiedProjectManagement() {
     
     setIsAddingComment(true);
     try {
-      const { error } = await supabase
-        .from("comments")
-        .insert({
-          project_id: projectId,
+      const response = await fetch(`/api/projects/${projectId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           body: commentBody.trim(),
-          created_by: currentUser?.id || "unknown",
-        });
+        }),
+        credentials: "same-origin",
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to add comment");
+      }
 
       toast({
         title: "Success",
@@ -424,13 +451,15 @@ export function UnifiedProjectManagement() {
       // Clear the comment input
       setNewComment("");
       
-      // Refresh project data
-      await refetchAllProjects();
+      // Refresh comments for the selected project (force refresh)
+      if (selectedProject) {
+        await loadProjectComments(selectedProject.id, true);
+      }
     } catch (error) {
       console.error("Error adding comment:", error);
       toast({
         title: "Error",
-        description: "Failed to add comment",
+        description: error instanceof Error ? error.message : "Failed to add comment",
         variant: "destructive",
       });
     } finally {
@@ -439,27 +468,220 @@ export function UnifiedProjectManagement() {
   };
 
   const handleDeleteComment = async (commentId: string) => {
+    if (!selectedProject) return;
+    
     try {
-      const { error } = await supabase
-        .from("comments")
-        .delete()
-        .eq("comment_id", commentId);
+      const response = await fetch(
+        `/api/projects/${selectedProject.id}/comments?comment_id=${encodeURIComponent(commentId)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+        }
+      );
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete comment");
+      }
 
       toast({
         title: "Success",
         description: "Comment deleted successfully",
       });
 
-      // Refresh project data
-      await refetchAllProjects();
+      // Refresh comments for the selected project (force refresh)
+      await loadProjectComments(selectedProject.id, true);
     } catch (error) {
       console.error("Error deleting comment:", error);
       toast({
         title: "Error",
-        description: "Failed to delete comment",
+        description: error instanceof Error ? error.message : "Failed to delete comment",
         variant: "destructive",
+      });
+    }
+  };
+
+  // Lazy loading functions - fetch data only when needed
+  const loadProjectAttachments = async (projectId: string, forceRefresh = false) => {
+    const cacheKey = `${projectId}:attachments`;
+    
+    // If force refresh, clear the cache
+    if (forceRefresh) {
+      setLoadedProjectData(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(cacheKey);
+        return newSet;
+      });
+    }
+    
+    if (loadedProjectData.has(cacheKey) || loadingProjectData.attachments.has(projectId)) {
+      if (!forceRefresh) {
+        return; // Already loaded or loading
+      }
+    }
+
+    setLoadingProjectData(prev => ({
+      ...prev,
+      attachments: new Set(prev.attachments).add(projectId)
+    }));
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/attachments`, {
+        credentials: "same-origin",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const attachments = (data.attachments || []).map((a: any) => ({
+          id: a.attachment_id,
+          file_name: a.file_name,
+          file_size: a.file_size,
+          content_type: a.content_type,
+          version: a.version || 1,
+          uploaded_by: a.uploaded_by || "",
+          uploaded_at: a.uploaded_at,
+          task_id: a.task_id || undefined,
+          client_visible: a.client_visible || false,
+          storage_path: a.storage_path,
+        }));
+
+        // Update the project in state
+        setProjects(prev => prev.map(p => 
+          p.id === projectId ? { ...p, attachments } : p
+        ));
+
+        // Update selected project if it's the one being loaded
+        if (selectedProject?.id === projectId) {
+          setSelectedProject(prev => prev ? { ...prev, attachments } : null);
+        }
+
+        setLoadedProjectData(prev => new Set(prev).add(cacheKey));
+      }
+    } catch (error) {
+      console.error("Error loading attachments:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load attachments",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingProjectData(prev => {
+        const newSet = new Set(prev.attachments);
+        newSet.delete(projectId);
+        return { ...prev, attachments: newSet };
+      });
+    }
+  };
+
+  const loadProjectComments = async (projectId: string, forceRefresh = false) => {
+    const cacheKey = `${projectId}:comments`;
+    
+    // If force refresh, clear the cache
+    if (forceRefresh) {
+      setLoadedProjectData(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(cacheKey);
+        return newSet;
+      });
+    }
+    
+    if (loadedProjectData.has(cacheKey) || loadingProjectData.comments.has(projectId)) {
+      if (!forceRefresh) {
+        return; // Already loaded or loading
+      }
+    }
+
+    setLoadingProjectData(prev => ({
+      ...prev,
+      comments: new Set(prev.comments).add(projectId)
+    }));
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/comments`, {
+        credentials: "same-origin",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const comments = (data.comments || []).map((c: any) => ({
+          id: c.comment_id,
+          body: c.body,
+          created_by: c.created_by || "",
+          created_at: c.created_at,
+        }));
+
+        // Update the project in state
+        setProjects(prev => prev.map(p => 
+          p.id === projectId ? { ...p, comments } : p
+        ));
+
+        // Update selected project if it's the one being loaded
+        if (selectedProject?.id === projectId) {
+          setSelectedProject(prev => prev ? { ...prev, comments } : null);
+        }
+
+        setLoadedProjectData(prev => new Set(prev).add(cacheKey));
+      }
+    } catch (error) {
+      console.error("Error loading comments:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load comments",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingProjectData(prev => {
+        const newSet = new Set(prev.comments);
+        newSet.delete(projectId);
+        return { ...prev, comments: newSet };
+      });
+    }
+  };
+
+  const loadProjectMembers = async (projectId: string) => {
+    const cacheKey = `${projectId}:members`;
+    if (loadedProjectData.has(cacheKey) || loadingProjectData.members.has(projectId)) {
+      return; // Already loaded or loading
+    }
+
+    setLoadingProjectData(prev => ({
+      ...prev,
+      members: new Set(prev.members).add(projectId)
+    }));
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/members`, {
+        credentials: "same-origin",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const members = (data.members || []).map((m: any) => m.user_id);
+
+        // Update the project in state
+        setProjects(prev => prev.map(p => 
+          p.id === projectId ? { ...p, assigned_employees: members } : p
+        ));
+
+        // Update selected project if it's the one being loaded
+        if (selectedProject?.id === projectId) {
+          setSelectedProject(prev => prev ? { ...prev, assigned_employees: members } : null);
+        }
+
+        setLoadedProjectData(prev => new Set(prev).add(cacheKey));
+      }
+    } catch (error) {
+      console.error("Error loading members:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load team members",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingProjectData(prev => {
+        const newSet = new Set(prev.members);
+        newSet.delete(projectId);
+        return { ...prev, members: newSet };
       });
     }
   };
@@ -510,6 +732,14 @@ export function UnifiedProjectManagement() {
   // Enhanced file upload handler with progress tracking
   const handleFileUpload = async (files: File[], projectId?: string) => {
     if (!files.length) return;
+    if (!projectId) {
+      toast({
+        title: "Error",
+        description: "No project selected",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsUploading(true);
     setUploadErrors([]);
@@ -537,28 +767,38 @@ export function UnifiedProjectManagement() {
           throw new Error(`File ${file.name} has an unsupported format.`);
         }
 
-        if (projectId) {
-          const result = await uploadProjectFile({
-            projectId,
-            file,
-            path: "media",
-          });
+        // Upload file to storage
+        const result = await uploadProjectFile({
+          projectId,
+          file,
+          path: "media",
+        });
 
-          return {
-            name: file.name,
-            url: result.path,
-            size: file.size,
-            success: true,
-          };
-        } else {
-          // For preview before project creation
-          return {
-            name: file.name,
-            url: URL.createObjectURL(file),
-            size: file.size,
-            success: true,
-          };
+        // Create attachment record via API
+        const attachmentResponse = await fetch(`/api/projects/${projectId}/attachments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storage_path: result.path,
+            file_name: file.name,
+            file_size: file.size,
+            content_type: file.type,
+            client_visible: false,
+          }),
+          credentials: "same-origin",
+        });
+
+        if (!attachmentResponse.ok) {
+          const errorData = await attachmentResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to create attachment record");
         }
+
+        return {
+          name: file.name,
+          url: result.path,
+          size: file.size,
+          success: true,
+        };
       } catch (error) {
         const errorMessage =
           error instanceof Error
@@ -587,6 +827,11 @@ export function UnifiedProjectManagement() {
           title: "Files uploaded successfully",
           description: `${successful.length} file(s) uploaded`,
         });
+        
+        // Refresh attachments for the selected project
+        if (selectedProject?.id === projectId) {
+          await loadProjectAttachments(projectId, true);
+        }
       }
 
       if (failed.length > 0) {
@@ -687,160 +932,141 @@ export function UnifiedProjectManagement() {
         return;
       }
 
-      // Now fetch tasks, members, attachments, and comments for each project IN PARALLEL
-      const enrichedProjects = await Promise.all(
-        projectsData.map(async (project: any) => {
-          try {
-            // Fetch all data for this project in parallel
-            const [tasksResponse, membersResponse, attachmentsResponse, commentsResponse] = await Promise.all([
-              fetch(`/api/projects/${project.project_id}/tasks`, {
-                credentials: "same-origin",
-              }),
-              fetch(`/api/projects/${project.project_id}/members`, {
-                credentials: "same-origin",
-              }),
-              fetch(`/api/projects/${project.project_id}/attachments`, {
-                credentials: "same-origin",
-              }),
-              fetch(`/api/projects/${project.project_id}/comments`, {
-                credentials: "same-origin",
-              }),
-            ]);
+      // Fetch all tasks for all projects in ONE query instead of one per project
+      const projectIds = projectsData.map((p: any) => p.project_id);
+      let allTasks: Task[] = [];
+      
+      if (projectIds.length > 0) {
+        try {
+          // Fetch all tasks for these projects in a single query
+          const supabase = createClient();
+          const { data: tasksData, error: tasksError } = await supabase
+            .from("tasks")
+            .select("*")
+            .in("project_id", projectIds)
+            .order("created_at", { ascending: false });
 
-            // Process tasks
-            let taskList: Task[] = [];
-            if (tasksResponse.ok) {
-              const tasksData = await tasksResponse.json();
-              taskList = (tasksData.tasks || []).map((t: any) => ({
-                id: t.task_id,
-                title: t.title,
-                description: t.description || "",
-                status: t.status,
-                assignee: t.assignee_id || "",
-                due_date: t.due_date || "",
-                priority: t.priority,
-                project_id: t.project_id,
-              }));
-            }
-
-            // Process members
-            let members: string[] = [];
-            if (membersResponse.ok) {
-              const membersData = await membersResponse.json();
-              members = (membersData.members || []).map((m: any) => m.user_id);
-            }
-
-            // Process attachments
-            let attachments: ProjectAttachment[] = [];
-            if (attachmentsResponse.ok) {
-              const attachmentsData = await attachmentsResponse.json();
-              attachments = (attachmentsData.attachments || []).map((a: any) => ({
-                id: a.attachment_id,
-                file_name: a.file_name,
-                file_size: a.file_size,
-                content_type: a.content_type,
-                version: a.version || 1,
-                uploaded_by: a.uploaded_by || "",
-                uploaded_at: a.uploaded_at,
-                task_id: a.task_id || undefined,
-                client_visible: a.client_visible || false,
-                storage_path: a.storage_path,
-              }));
-            }
-
-            // Process comments
-            let comments: ProjectComment[] = [];
-            if (commentsResponse.ok) {
-              const commentsData = await commentsResponse.json();
-              comments = (commentsData.comments || []).map((c: any) => ({
-                id: c.comment_id,
-                body: c.body,
-                created_by: c.created_by || "",
-                created_at: c.created_at,
-              }));
-            }
-
-            const completed = taskList.filter((t: Task) => t.status === "completed").length;
-            const progress = taskList.length
-              ? Math.round((completed / taskList.length) * 100)
-              : 0;
-
-            return {
-              id: project.project_id,
-              name: project.project_name || project.name,
-              description: project.description || "",
-              status: project.status,
-              priority: project.priority,
-              start_date: project.start_date || "",
-              end_date: project.end_date || "",
-              assigned_employees: members,
-              progress,
-              budget: Number(project.budget || 0),
-              client: project.client_name || "",
-              tasks: taskList,
-              service_type: project.project_type || project.type || undefined,
-              company_number: project.business_number || undefined,
-              company_email: project.company_email || undefined,
-              company_address: project.company_address || undefined,
-              about_company: project.about_company || undefined,
-              social_links: project.social_media_links
-                ? (typeof project.social_media_links === 'string' 
-                    ? project.social_media_links.split(",") 
-                    : project.social_media_links)
-                : [],
-              public_contacts: {
-                phone: project.public_business_number || undefined,
-                email: project.public_company_email || undefined,
-                address: project.public_address || undefined,
-              },
-              media_links: project.media_links 
-                ? (typeof project.media_links === 'string'
-                    ? project.media_links.split(",")
-                    : project.media_links)
-                : [],
-              bank_details: project.bank_details
-                ? (typeof project.bank_details === 'string'
-                    ? (() => {
-                        try {
-                          return JSON.parse(project.bank_details);
-                        } catch {
-                          return { details: project.bank_details };
-                        }
-                      })()
-                    : project.bank_details)
-                : {},
-              service_specific: project.step2_data || project.service_specific || {},
-              attachments,
-              comments,
-              payment_integration_needs: project.payment_integration_needs || [],
-            } as Project;
-          } catch (projectError) {
-            console.error(`Error enriching project ${project.project_id}:`, projectError);
-            // Return basic project data even if enrichment fails
-            return {
-              id: project.project_id,
-              name: project.project_name || project.name,
-              description: project.description || "",
-              status: project.status,
-              priority: project.priority,
-              start_date: project.start_date || "",
-              end_date: project.end_date || "",
-              assigned_employees: [],
-              progress: 0,
-              budget: Number(project.budget || 0),
-              client: project.client_name || "",
-              tasks: [],
-              attachments: [],
-              comments: [],
-              social_links: [],
-              media_links: [],
-              bank_details: {},
-              service_specific: {},
-              payment_integration_needs: [],
-            } as Project;
+          if (!tasksError && tasksData) {
+            allTasks = tasksData.map((t: any) => ({
+              id: t.task_id,
+              title: t.title,
+              description: t.description || "",
+              status: t.status,
+              assignee: t.assignee_id || "",
+              due_date: t.due_date || "",
+              priority: t.priority,
+              project_id: t.project_id,
+            }));
           }
-        })
-      );
+        } catch (tasksError) {
+          console.error("Error fetching tasks:", tasksError);
+          // Continue without tasks - projects will show 0% progress
+        }
+      }
+
+      // Map tasks to projects
+      const tasksByProjectId = new Map<string, Task[]>();
+      allTasks.forEach((task) => {
+        if (!tasksByProjectId.has(task.project_id)) {
+          tasksByProjectId.set(task.project_id, []);
+        }
+        tasksByProjectId.get(task.project_id)!.push(task);
+      });
+
+      // Only fetch tasks for progress calculation - attachments/comments/members will be lazy loaded
+      const enrichedProjects = projectsData.map((project: any) => {
+        try {
+          // Get tasks for this project from the pre-fetched data
+          const taskList: Task[] = tasksByProjectId.get(project.project_id) || [];
+
+          // Initialize empty arrays - will be loaded on demand
+          const members: string[] = [];
+          const attachments: ProjectAttachment[] = [];
+          const comments: ProjectComment[] = [];
+
+          const completed = taskList.filter((t: Task) => t.status === "completed").length;
+          const progress = taskList.length
+            ? Math.round((completed / taskList.length) * 100)
+            : 0;
+
+          return {
+            id: project.project_id,
+            name: project.project_name || project.name,
+            description: project.description || "",
+            status: project.status,
+            priority: project.priority,
+            start_date: project.start_date || "",
+            end_date: project.end_date || "",
+            assigned_employees: members,
+            progress,
+            budget: Number(project.budget || 0),
+            client: project.client_name || "",
+            tasks: taskList,
+            service_type: project.project_type || project.type || undefined,
+            company_number: project.business_number || undefined,
+            company_email: project.company_email || undefined,
+            company_address: project.company_address || undefined,
+            about_company: project.about_company || undefined,
+            social_links: project.social_media_links
+              ? (typeof project.social_media_links === 'string' 
+                  ? project.social_media_links.split(",") 
+                  : project.social_media_links)
+              : [],
+            public_contacts: {
+              phone: project.public_business_number || undefined,
+              email: project.public_company_email || undefined,
+              address: project.public_address || undefined,
+            },
+            media_links: project.media_links 
+              ? (typeof project.media_links === 'string'
+                  ? project.media_links.split(",")
+                  : project.media_links)
+              : [],
+            bank_details: project.bank_details
+              ? (typeof project.bank_details === 'string'
+                  ? (() => {
+                      try {
+                        return JSON.parse(project.bank_details);
+                      } catch {
+                        return { details: project.bank_details };
+                      }
+                    })()
+                  : project.bank_details)
+              : {},
+            service_specific: project.step2_data || project.service_specific || {},
+            attachments,
+            comments,
+            payment_integration_needs: project.payment_integration_needs || [],
+          } as Project;
+        } catch (projectError) {
+          console.error(`Error enriching project ${project.project_id}:`, projectError);
+          // Return basic project data even if enrichment fails
+          return {
+            id: project.project_id,
+            name: project.project_name || project.name,
+            description: project.description || "",
+            status: project.status,
+            priority: project.priority,
+            start_date: project.start_date || "",
+            end_date: project.end_date || "",
+            assigned_employees: [],
+            progress: 0,
+            budget: Number(project.budget || 0),
+            client: project.client_name || "",
+            tasks: [],
+            attachments: [],
+            comments: [],
+            social_links: [],
+            media_links: [],
+            bank_details: {},
+            service_specific: {},
+            payment_integration_needs: [],
+          } as Project;
+        }
+      });
+      
+      // Reset loaded data tracking when projects are refetched
+      setLoadedProjectData(new Set());
       
       console.log(`✅ Successfully loaded ${enrichedProjects.length} projects from API`);
       setProjects(enrichedProjects);
@@ -1051,6 +1277,27 @@ export function UnifiedProjectManagement() {
       supabase.removeChannel(channelEmployees);
     };
   }, []);
+
+  // Lazy load data when project detail tabs are clicked
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    // Load data based on active tab
+    if (projectDetailTab === "attachments") {
+      loadProjectAttachments(selectedProject.id);
+    } else if (projectDetailTab === "comments") {
+      loadProjectComments(selectedProject.id);
+    } else if (projectDetailTab === "team") {
+      loadProjectMembers(selectedProject.id);
+    }
+  }, [projectDetailTab, selectedProject?.id]);
+
+  // Reset project detail tab when project changes
+  useEffect(() => {
+    if (selectedProject) {
+      setProjectDetailTab("overview");
+    }
+  }, [selectedProject?.id]);
 
   const filteredProjects = projects.filter((project) => {
     const matchesText =
@@ -1784,7 +2031,7 @@ export function UnifiedProjectManagement() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-5 overflow-y-auto">
-                <Tabs defaultValue="overview" className="w-full">
+                <Tabs value={projectDetailTab} onValueChange={setProjectDetailTab} className="w-full">
                   <TabsList className="w-full flex flex-wrap gap-1 sm:gap-2">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="company">Company</TabsTrigger>
@@ -2209,6 +2456,14 @@ export function UnifiedProjectManagement() {
 
                   <TabsContent value="attachments" className="pt-4">
                     <div className="space-y-4">
+                      {/* Loading State */}
+                      {loadingProjectData.attachments.has(selectedProject?.id || "") && (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          <span className="ml-2 text-sm text-muted-foreground">Loading attachments...</span>
+                        </div>
+                      )}
+                      
                       {/* Upload Section */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
@@ -2281,7 +2536,19 @@ export function UnifiedProjectManagement() {
                                     variant="ghost"
                                     size="sm"
                                     className="h-8 w-8 p-0"
-                                    onClick={() => window.open(a.storage_path, '_blank')}
+                                    onClick={async () => {
+                                      try {
+                                        const signedUrl = await createSignedUrlByPath(a.storage_path!);
+                                        window.open(signedUrl, '_blank', 'noreferrer');
+                                      } catch (error) {
+                                        console.error('Error opening file:', error);
+                                        toast({
+                                          title: "Could not open file",
+                                          description: error instanceof Error ? error.message : "File may be missing or access is restricted.",
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    }}
                                     title="View file"
                                   >
                                     <Eye className="h-4 w-4" />
@@ -2340,6 +2607,14 @@ export function UnifiedProjectManagement() {
 
                   <TabsContent value="comments" className="pt-4">
                     <div className="space-y-4">
+                      {/* Loading State */}
+                      {loadingProjectData.comments.has(selectedProject?.id || "") && (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          <span className="ml-2 text-sm text-muted-foreground">Loading comments...</span>
+                        </div>
+                      )}
+                      
                       {/* Add Comment Section */}
                       <div className="space-y-3">
                         <h4 className="text-sm font-medium">Project Comments</h4>
