@@ -80,7 +80,10 @@ export const POST = withAuth(
       const body = await request.json();
       const { title, description, status, priority, assignee_id, due_date } = body;
 
+      console.log("Creating task:", { projectId, title, assignee_id, hasTitle: !!title });
+
       if (!projectId || !title) {
+        console.error("Missing required fields:", { projectId, title });
         return NextResponse.json(
           { error: "Missing required fields: title" },
           { status: 400 }
@@ -88,6 +91,42 @@ export const POST = withAuth(
       }
 
       const supabase = createServerSupabaseClient();
+      const adminSupabase = createAdminSupabaseClient();
+
+      // Normalize assignee_id: convert empty string to null
+      const normalizedAssigneeId = assignee_id && assignee_id.trim() !== "" ? assignee_id : null;
+
+      // Verify assignee is a project member if assignee_id is provided
+      // Note: If project_id is null, we skip this check (tasks can exist without projects)
+      if (normalizedAssigneeId && projectId) {
+        console.log("Verifying assignee membership:", { projectId, assignee_id: normalizedAssigneeId });
+        const { data: membership, error: membershipError } = await adminSupabase
+          .from("project_members")
+          .select("user_id")
+          .eq("project_id", projectId)
+          .eq("user_id", normalizedAssigneeId)
+          .maybeSingle();
+
+        if (membershipError) {
+          console.error("Error verifying project membership:", membershipError);
+          return NextResponse.json(
+            { error: "Failed to verify assignee membership", details: membershipError.message },
+            { status: 500 }
+          );
+        }
+
+        if (!membership) {
+          console.error("Assignee not a project member:", { projectId, assignee_id: normalizedAssigneeId });
+          return NextResponse.json(
+            { 
+              error: "Invalid assignee", 
+              details: "The selected assignee is not a member of this project. Please assign the task to a project team member."
+            },
+            { status: 400 }
+          );
+        }
+        console.log("Assignee verified as project member");
+      }
 
       const { data: task, error } = await supabase
         .from("tasks")
@@ -97,11 +136,11 @@ export const POST = withAuth(
           description: description || "",
           status: status || "todo",
           priority: priority || "medium",
-          assignee_id: assignee_id || null,
+          assignee_id: normalizedAssigneeId,
           due_date: due_date || null,
           created_by: user.id,
         })
-        .select()
+        .select("task_id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at")
         .single();
 
       if (error) {
@@ -109,13 +148,26 @@ export const POST = withAuth(
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
-      // Log activity
-      await supabase.from("project_activities").insert({
-        project_id: projectId,
-        activity_type: "task_created",
-        description: `Task created: ${title}`,
-        performed_by: user.id,
-      });
+      if (!task) {
+        console.error("Task created but no data returned");
+        return NextResponse.json({ error: "Task created but failed to retrieve data" }, { status: 500 });
+      }
+
+      console.log("Task created successfully:", { taskId: task.task_id, task });
+
+      // Log activity (non-blocking - don't fail the request if this fails)
+      (async () => {
+        const { error: activityError } = await supabase.from("project_activities").insert({
+          project_id: projectId,
+          activity_type: "task_created",
+          description: `Task created: ${title}`,
+          performed_by: user.id,
+        });
+        if (activityError) {
+          console.error("Failed to log activity (non-critical):", activityError);
+          // Don't throw - activity logging is not critical
+        }
+      })();
 
       return NextResponse.json({ task }, { status: 201 });
     } catch (err) {
@@ -149,6 +201,36 @@ export const PUT = withAuth(
       }
 
       const supabase = createServerSupabaseClient();
+      const adminSupabase = createAdminSupabaseClient();
+
+      // Verify assignee is a project member if assignee_id is being updated
+      // Note: If project_id is null, we skip this check (tasks can exist without projects)
+      if (body.assignee_id !== undefined && body.assignee_id !== null && projectId) {
+        const { data: membership, error: membershipError } = await adminSupabase
+          .from("project_members")
+          .select("user_id")
+          .eq("project_id", projectId)
+          .eq("user_id", body.assignee_id)
+          .maybeSingle();
+
+        if (membershipError) {
+          console.error("Error verifying project membership:", membershipError);
+          return NextResponse.json(
+            { error: "Failed to verify assignee membership", details: membershipError.message },
+            { status: 500 }
+          );
+        }
+
+        if (!membership) {
+          return NextResponse.json(
+            { 
+              error: "Invalid assignee", 
+              details: "The selected assignee is not a member of this project. Please assign the task to a project team member."
+            },
+            { status: 400 }
+          );
+        }
+      }
 
       // Build update object
       const updateData: any = {};
@@ -165,7 +247,7 @@ export const PUT = withAuth(
         .update(updateData)
         .eq("task_id", taskId)
         .eq("project_id", projectId)
-        .select()
+        .select("task_id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at")
         .single();
 
       if (error) {
@@ -173,18 +255,24 @@ export const PUT = withAuth(
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
-      // Log activity
+      // Log activity (non-blocking - don't fail the request if this fails)
       let activityDescription = "Task updated";
       if (body.status) {
         activityDescription = `Task status changed to: ${body.status}`;
       }
 
-      await supabase.from("project_activities").insert({
-        project_id: projectId,
-        activity_type: "task_updated",
-        description: activityDescription,
-        performed_by: user.id,
-      });
+      (async () => {
+        const { error: activityError } = await supabase.from("project_activities").insert({
+          project_id: projectId,
+          activity_type: "task_updated",
+          description: activityDescription,
+          performed_by: user.id,
+        });
+        if (activityError) {
+          console.error("Failed to log activity (non-critical):", activityError);
+          // Don't throw - activity logging is not critical
+        }
+      })();
 
       return NextResponse.json({ task });
     } catch (err) {
@@ -236,13 +324,19 @@ export const DELETE = withAuth(
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
-      // Log activity
-      await supabase.from("project_activities").insert({
-        project_id: projectId,
-        activity_type: "task_deleted",
-        description: `Task deleted: ${task?.title || "Unknown"}`,
-        performed_by: user.id,
-      });
+      // Log activity (non-blocking - don't fail the request if this fails)
+      (async () => {
+        const { error: activityError } = await supabase.from("project_activities").insert({
+          project_id: projectId,
+          activity_type: "task_deleted",
+          description: `Task deleted: ${task?.title || "Unknown"}`,
+          performed_by: user.id,
+        });
+        if (activityError) {
+          console.error("Failed to log activity (non-critical):", activityError);
+          // Don't throw - activity logging is not critical
+        }
+      })();
 
       return NextResponse.json({ success: true });
     } catch (err) {

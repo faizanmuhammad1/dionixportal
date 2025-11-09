@@ -209,6 +209,9 @@ export function TaskBoard() {
     tags: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Project members state for filtering assignees
+  const [projectMembersMap, setProjectMembersMap] = useState<Map<string, string[]>>(new Map());
 
   // Review functionality state
   // Removed modal review state; using inline panel
@@ -260,15 +263,38 @@ export function TaskBoard() {
     try {
       setLoading(true);
       
-      // Fetch tasks with related data
-      const { data: tasksData, error: tasksError } = await supabase
-        .from("tasks")
-        .select(`
-          *,
-          projects!tasks_project_id_fkey (project_id, project_name, status),
-          profiles!tasks_assignee_id_fkey (id, first_name, last_name, email)
-        `)
-        .order("created_at", { ascending: false });
+      // Fetch tasks via API (handles RLS and related data)
+      let tasksData: any[] = [];
+      let tasksError = null;
+      try {
+        console.log("[FRONTEND] Fetching tasks from /api/tasks...");
+        const tasksResponse = await fetch("/api/tasks", { credentials: "same-origin" });
+        console.log("[FRONTEND] Tasks API response status:", tasksResponse.status, tasksResponse.statusText);
+        console.log("[FRONTEND] Response headers:", Object.fromEntries(tasksResponse.headers.entries()));
+        
+        if (tasksResponse.ok) {
+          const tasksResult = await tasksResponse.json();
+          console.log("[FRONTEND] Tasks API response body:", tasksResult);
+          console.log("[FRONTEND] Response has tasks property:", 'tasks' in tasksResult);
+          console.log("[FRONTEND] Tasks property type:", typeof tasksResult.tasks);
+          console.log("[FRONTEND] Tasks property is array:", Array.isArray(tasksResult.tasks));
+          
+          tasksData = tasksResult.tasks || [];
+          console.log("[FRONTEND] Tasks fetched from API:", tasksData.length, "tasks");
+          console.log("[FRONTEND] Tasks data:", tasksData);
+          
+          if (tasksData.length === 0) {
+            console.warn("[FRONTEND] API returned empty tasks array. Full response:", JSON.stringify(tasksResult, null, 2));
+          }
+        } else {
+          const errorText = await tasksResponse.text();
+          console.error("[FRONTEND] Tasks API error:", tasksResponse.status, errorText);
+          tasksError = { message: `Failed to fetch tasks: ${tasksResponse.status} ${errorText}` };
+        }
+      } catch (err) {
+        tasksError = err;
+        console.error("Error fetching tasks:", err);
+      }
 
       // Fetch projects
       const { data: projectsData, error: projectsError } = await supabase
@@ -294,7 +320,7 @@ export function TaskBoard() {
       if (projectsError) console.error("Projects error:", projectsError);
       if (employeesError) console.error("Employees error:", employeesError);
 
-      // Map tasks to expected format
+      // Tasks are already mapped by the API
       const mappedTasks = (tasksData || []).map((t: any) => ({
         id: t.id || t.task_id,
         title: t.title,
@@ -302,12 +328,10 @@ export function TaskBoard() {
         status: t.status as Task["status"],
         priority: t.priority as Task["priority"],
         assignee_id: t.assignee_id || undefined,
-        assignee_name: t.profiles 
-          ? `${t.profiles.first_name || ""} ${t.profiles.last_name || ""}`.trim()
-          : undefined,
-        assignee_email: t.profiles?.email || undefined,
+        assignee_name: t.assignee_name,
+        assignee_email: t.assignee_email,
         project_id: t.project_id || undefined,
-        project_name: t.projects?.project_name || undefined,
+        project_name: t.project_name,
         due_date: t.due_date || undefined,
         created_at: t.created_at,
         updated_at: t.updated_at,
@@ -332,6 +356,7 @@ export function TaskBoard() {
         email: e.email || "",
       }));
 
+      console.log("Mapped tasks:", mappedTasks.length, mappedTasks);
       setTasks(mappedTasks);
       setProjects(mappedProjects);
       setEmployees(mappedEmployees);
@@ -362,7 +387,7 @@ export function TaskBoard() {
     setTaskDialogOpen(true);
   };
 
-  const handleEditTask = (task: Task) => {
+  const handleEditTask = async (task: Task) => {
     setEditingTask(task);
     setTaskForm({
       title: task.title,
@@ -375,6 +400,10 @@ export function TaskBoard() {
       estimated_hours: task.estimated_hours?.toString() || "",
       tags: (task.tags || []).join(","),
     });
+    // Load project members if task has a project
+    if (task.project_id) {
+      await loadProjectMembers(task.project_id);
+    }
     setTaskDialogOpen(true);
   };
 
@@ -390,65 +419,135 @@ export function TaskBoard() {
         .map((t) => t.trim())
         .filter(Boolean);
 
+      const projectId = taskForm.project_id && taskForm.project_id !== "no-project" ? taskForm.project_id : null;
+      
       if (editingTask) {
-        // Update task in database
-        const updatePayload = {
-          title: taskForm.title.trim(),
-          description: taskForm.description.trim(),
-          priority: taskForm.priority,
-          assignee_id: taskForm.assignee_id || null,
-          project_id: taskForm.project_id || null,
-          due_date: taskForm.due_date || null,
-          estimated_hours: taskForm.estimated_hours
-            ? Number(taskForm.estimated_hours)
-            : null,
-          tags: parsedTags,
-          updated_at: new Date().toISOString(),
-        };
-        
-        const { error } = await supabase
-          .from("tasks")
-          .update(updatePayload)
-          .eq("id", editingTask.id);
-        
-        if (error) {
-          console.error("Error updating task:", error);
-          toast({ title: "Failed to update task", variant: "destructive" });
-          setIsSubmitting(false);
-          return;
+        // If task has a project, use API route for backend verification
+        if (projectId && editingTask.project_id) {
+          const updatePayload = {
+            title: taskForm.title.trim(),
+            description: taskForm.description.trim(),
+            priority: taskForm.priority,
+            assignee_id: taskForm.assignee_id || null,
+            due_date: taskForm.due_date || null,
+            status: taskForm.status,
+          };
+          
+          const response = await fetch(`/api/projects/${projectId}/tasks?task_id=${editingTask.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(updatePayload),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            toast({ 
+              title: "Failed to update task", 
+              description: errorData.details || errorData.error || "Unknown error",
+              variant: "destructive" 
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        } else {
+          // For tasks without projects, use direct Supabase (no project membership check needed)
+          const updatePayload = {
+            title: taskForm.title.trim(),
+            description: taskForm.description.trim(),
+            priority: taskForm.priority,
+            assignee_id: taskForm.assignee_id || null,
+            project_id: projectId,
+            due_date: taskForm.due_date || null,
+            estimated_hours: taskForm.estimated_hours
+              ? Number(taskForm.estimated_hours)
+              : null,
+            tags: parsedTags,
+            updated_at: new Date().toISOString(),
+          };
+          
+          const { error } = await supabase
+            .from("tasks")
+            .update(updatePayload)
+            .eq("task_id", editingTask.id);
+          
+          if (error) {
+            console.error("Error updating task:", error);
+            toast({ title: "Failed to update task", variant: "destructive" });
+            setIsSubmitting(false);
+            return;
+          }
         }
         
         // Reload data to get fresh state
         await loadData();
         toast({ title: "Task updated successfully" });
       } else {
-        // Create new task in database
-        const newTaskData = {
-          title: taskForm.title.trim(),
-          description: taskForm.description.trim(),
-          status: "todo",
-          priority: taskForm.priority,
-          assignee_id: taskForm.assignee_id || null,
-          project_id: taskForm.project_id || null,
-          due_date: taskForm.due_date || null,
-          estimated_hours: taskForm.estimated_hours
-            ? Number(taskForm.estimated_hours)
-            : null,
-          tags: parsedTags,
-          created_by: currentUser?.id || null,
-          actual_hours: 0,
-          progress: 0,
-        };
-        
-        const { error } = await supabase
-          .from("tasks")
-          .insert(newTaskData);
-        
-        if (error) {
-          console.error("Error creating task:", error);
-          toast({ title: "Failed to create task", variant: "destructive" });
-          setIsSubmitting(false);
-          return;
+        // Create new task
+        if (projectId) {
+          // Use API route for tasks with projects (backend verification)
+          // Normalize assignee_id: convert empty string or "unassigned" to null
+          const normalizedAssigneeId = taskForm.assignee_id && 
+            taskForm.assignee_id.trim() !== "" && 
+            taskForm.assignee_id !== "unassigned" 
+            ? taskForm.assignee_id 
+            : null;
+          
+          const newTaskData = {
+            title: taskForm.title.trim(),
+            description: taskForm.description.trim(),
+            status: taskForm.status || "todo",
+            priority: taskForm.priority,
+            assignee_id: normalizedAssigneeId,
+            due_date: taskForm.due_date || null,
+          };
+          
+          const response = await fetch(`/api/projects/${projectId}/tasks`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(newTaskData),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            toast({ 
+              title: "Failed to create task", 
+              description: errorData.details || errorData.error || "Unknown error",
+              variant: "destructive" 
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        } else {
+          // For tasks without projects, use direct Supabase
+          const newTaskData = {
+            title: taskForm.title.trim(),
+            description: taskForm.description.trim(),
+            status: "todo",
+            priority: taskForm.priority,
+            assignee_id: taskForm.assignee_id || null,
+            project_id: null,
+            due_date: taskForm.due_date || null,
+            estimated_hours: taskForm.estimated_hours
+              ? Number(taskForm.estimated_hours)
+              : null,
+            tags: parsedTags,
+            created_by: currentUser?.id || null,
+            actual_hours: 0,
+            progress: 0,
+          };
+          
+          const { error } = await supabase
+            .from("tasks")
+            .insert(newTaskData);
+          
+          if (error) {
+            console.error("Error creating task:", error);
+            toast({ title: "Failed to create task", variant: "destructive" });
+            setIsSubmitting(false);
+            return;
+          }
         }
         
         // Reload data to get fresh state
@@ -464,9 +563,81 @@ export function TaskBoard() {
     }
   };
 
+  // Load project members for filtering assignees
+  const loadProjectMembers = async (projectId: string) => {
+    if (projectMembersMap.has(projectId)) {
+      return; // Already loaded
+    }
+    
+    try {
+      const response = await fetch(`/api/projects/${projectId}/members`, {
+        credentials: "same-origin",
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const memberIds = (data.members || []).map((m: any) => m.user_id);
+        setProjectMembersMap(prev => new Map(prev).set(projectId, memberIds));
+      }
+    } catch (error) {
+      console.error("Error loading project members:", error);
+    }
+  };
+
+  // Quick reassign task
+  const handleQuickReassign = async (taskId: string, newAssigneeId: string | null) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      // Use API route if task has a project (for backend verification)
+      if (task.project_id) {
+        const response = await fetch(`/api/projects/${task.project_id}/tasks?task_id=${taskId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ assignee_id: newAssigneeId }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          toast({ 
+            title: "Failed to reassign task", 
+            description: errorData.details || errorData.error || "Unknown error",
+            variant: "destructive" 
+          });
+          return;
+        }
+      } else {
+        // For tasks without projects, use direct Supabase
+        const { error } = await supabase
+          .from("tasks")
+          .update({ assignee_id: newAssigneeId, updated_at: new Date().toISOString() })
+          .eq("task_id", taskId);
+
+        if (error) {
+          console.error("Error reassigning task:", error);
+          toast({ title: "Failed to reassign task", variant: "destructive" });
+          return;
+        }
+      }
+
+      await loadData();
+      toast({ 
+        title: "Task reassigned", 
+        description: newAssigneeId 
+          ? `Assigned to ${getAssigneeName(newAssigneeId)}`
+          : "Task unassigned"
+      });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Reassignment failed", variant: "destructive" });
+    }
+  };
+
   const handleDeleteTask = async (taskId: string) => {
     try {
-      const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+      const { error } = await supabase.from("tasks").delete().eq("task_id", taskId);
       if (error) {
         console.error("Error deleting task:", error);
         toast({ title: "Delete failed", variant: "destructive" });
@@ -488,7 +659,7 @@ export function TaskBoard() {
       const { error } = await supabase
         .from("tasks")
         .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq("id", taskId);
+        .eq("task_id", taskId);
       
       if (error) {
         console.error("Error updating status:", error);
@@ -701,9 +872,10 @@ export function TaskBoard() {
               <DropdownMenuItem onClick={() => handleEditTask(task)}>
                 <Edit className="mr-2 h-4 w-4" /> Edit
               </DropdownMenuItem>
-              {task.status === "review" && (
+              {(task.status === "review" || (currentUser?.role === "employee" && task.assignee_id === currentUser?.id)) && (
                 <DropdownMenuItem onClick={() => handleOpenReview(task)}>
-                  <Eye className="mr-2 h-4 w-4" /> Review
+                  <Eye className="mr-2 h-4 w-4" /> 
+                  {task.status === "review" ? "Review" : "Add Review Data"}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
@@ -745,21 +917,47 @@ export function TaskBoard() {
             <span>{formatDue(task.due_date)}</span>
           </div>
           <div className="flex items-center gap-2 col-span-2">
-            <div className="flex items-center gap-1">
-              <Avatar className="h-5 w-5">
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <Avatar className="h-5 w-5 shrink-0">
                 <AvatarImage src="" />
                 <AvatarFallback className="text-[10px]">
                   {(getAssigneeName(task.assignee_id) || "U").charAt(0)}
                 </AvatarFallback>
               </Avatar>
-              <span
-                className="text-xs font-medium truncate max-w-[120px]"
-                title={getAssigneeName(task.assignee_id)}
+              <Select
+                value={task.assignee_id || "unassigned"}
+                onValueChange={(value) => handleQuickReassign(task.id, value === "unassigned" ? null : value)}
               >
-                {task.assignee_id
-                  ? getAssigneeName(task.assignee_id)
-                  : "Unassigned"}
-              </span>
+                <SelectTrigger className="h-6 px-2 text-xs font-medium border-none shadow-none hover:bg-muted/50 focus:ring-0">
+                  <SelectValue>
+                    <span className="truncate max-w-[100px]">
+                      {task.assignee_id
+                        ? getAssigneeName(task.assignee_id)
+                        : "Unassigned"}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {(() => {
+                    // Filter by project team members if task has a project
+                    let availableEmployees = employees;
+                    if (task.project_id) {
+                      const projectMemberIds = projectMembersMap.get(task.project_id) || [];
+                      if (projectMemberIds.length > 0) {
+                        availableEmployees = employees.filter(emp => 
+                          projectMemberIds.includes(emp.id)
+                        );
+                      }
+                    }
+                    return availableEmployees.map((emp) => (
+                      <SelectItem key={emp.id} value={emp.id}>
+                        {emp.name}
+                      </SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
             </div>
             <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
               <GitBranch className="h-3 w-3" />
@@ -883,6 +1081,8 @@ export function TaskBoard() {
               isSubmitting={isSubmittingReview}
               onSubmit={handleSubmitReview}
               onClose={handleCloseReview}
+              currentUserRole={currentUser?.role as "admin" | "manager" | "employee" | "client" | undefined}
+              onStatusChange={handleStatusChange}
             />
           </CardContent>
         </Card>
@@ -1122,9 +1322,9 @@ export function TaskBoard() {
               <div className="space-y-2">
                 <Label htmlFor="assignee">Assignee</Label>
                 <Select
-                  value={taskForm.assignee_id}
+                  value={taskForm.assignee_id || "unassigned"}
                   onValueChange={(value) =>
-                    setTaskForm((prev) => ({ ...prev, assignee_id: value }))
+                    setTaskForm((prev) => ({ ...prev, assignee_id: value === "unassigned" ? "" : value }))
                   }
                 >
                   <SelectTrigger>
@@ -1132,22 +1332,50 @@ export function TaskBoard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {employees.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.id}>
-                        {emp.name}
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      // Filter employees by project team members if project is selected
+                      let availableEmployees = employees;
+                      if (taskForm.project_id && taskForm.project_id !== "no-project") {
+                        const projectMemberIds = projectMembersMap.get(taskForm.project_id) || [];
+                        if (projectMemberIds.length > 0) {
+                          availableEmployees = employees.filter(emp => 
+                            projectMemberIds.includes(emp.id)
+                          );
+                        }
+                      }
+                      return availableEmployees.map((emp) => (
+                        <SelectItem key={emp.id} value={emp.id}>
+                          {emp.name}
+                        </SelectItem>
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
+                {taskForm.project_id && taskForm.project_id !== "no-project" && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing team members for selected project
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="project">Project</Label>
                 <Select
                   value={taskForm.project_id}
-                  onValueChange={(value) =>
-                    setTaskForm((prev) => ({ ...prev, project_id: value }))
-                  }
+                  onValueChange={async (value) => {
+                    setTaskForm((prev) => ({ ...prev, project_id: value }));
+                    // Load project members when project is selected
+                    if (value && value !== "no-project") {
+                      await loadProjectMembers(value);
+                      // Clear assignee if they're not a member of the new project
+                      if (taskForm.assignee_id) {
+                        const memberIds = projectMembersMap.get(value) || [];
+                        if (!memberIds.includes(taskForm.assignee_id)) {
+                          setTaskForm((prev) => ({ ...prev, assignee_id: "" }));
+                        }
+                      }
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select project" />

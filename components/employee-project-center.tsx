@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
 import { createClient } from "@/lib/supabase";
 import type { User } from "@/lib/auth";
+import TaskReviewPanel from "./task-review-panel";
 import { 
   Eye, 
   Calendar, 
@@ -113,6 +114,12 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
     members: false,
   });
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
+  
+  // Review panel state
+  const [selectedTaskForReview, setSelectedTaskForReview] = useState<any>(null);
+  const [taskReviews, setTaskReviews] = useState<any[]>([]);
+  const [reviewComment, setReviewComment] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -629,33 +636,173 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
   }, [projectDetailTab, viewMode, selectedProject]);
 
   const [updatingIds, setUpdatingIds] = useState<string[]>([]);
+  
+  const loadTaskReviews = async (taskId: string) => {
+    try {
+      const { data: reviews, error } = await supabase
+        .from("task_reviews")
+        .select(`
+          id, task_id, reviewer_id, comment, status, created_at,
+          profiles!inner(first_name, last_name)
+        `)
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: false });
+      
+      if (error) {
+        console.error("Error loading reviews:", error);
+        return;
+      }
+      
+      const formattedReviews = (reviews || []).map((r: any) => ({
+        id: r.id,
+        task_id: r.task_id,
+        reviewer_id: r.reviewer_id,
+        reviewer_name: `${r.profiles?.first_name || ""} ${r.profiles?.last_name || ""}`.trim() || "Unknown",
+        comment: r.comment,
+        attachments: [],
+        status: r.status,
+        created_at: r.created_at,
+      }));
+      
+      setTaskReviews(formattedReviews);
+    } catch (error) {
+      console.error("Error loading reviews:", error);
+    }
+  };
+  
+  const handleSubmitReview = async (status: "approved" | "rejected") => {
+    if (!selectedTaskForReview) return;
+    setIsSubmittingReview(true);
+    try {
+      const { error: reviewError } = await supabase
+        .from("task_reviews")
+        .insert({
+          task_id: selectedTaskForReview.task_id || selectedTaskForReview.id,
+          reviewer_id: user.id,
+          comment: reviewComment.trim() || `Task ${status === "approved" ? "approved" : "rejected"}`,
+          status,
+        });
+      
+      if (reviewError) {
+        console.error("Error creating review:", reviewError);
+      }
+      
+      const newStatus = status === "approved" ? "completed" : "in-progress";
+      await updateTaskStatus(selectedTaskForReview.task_id || selectedTaskForReview.id, newStatus);
+      
+      toast({ title: "Review submitted" });
+      setSelectedTaskForReview(null);
+      setReviewComment("");
+      loadProjectTasks(selectedProject.id);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Review failed", variant: "destructive" });
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+  
+  const handleStatusChange = async (taskId: string, newStatus: string) => {
+    try {
+      await updateTaskStatus(taskId, newStatus);
+      // Reload tasks after successful update
+      if (selectedProject?.id) {
+        loadProjectTasks(selectedProject.id);
+      }
+      // Also reload assigned tasks for the table view
+      const load = async () => {
+        try {
+          const res = await fetch(`/api/employees/${user.id}/projects`);
+          if (res.ok) {
+            const data = await res.json();
+            const tasks = data.projects.flatMap((p: any) => 
+              (p.tasks || []).map((t: any) => ({
+                id: t.task_id || t.id,
+                title: t.title,
+                project: p.project_name || p.name,
+                priority: t.priority,
+                dueDate: t.due_date,
+                status: t.status,
+              }))
+            );
+            setAssignedTasks(tasks);
+          }
+        } catch (error) {
+          console.error("Error reloading tasks:", error);
+        }
+      };
+      load();
+    } catch (error) {
+      // Re-throw error so handleSubmitForReview can catch it
+      throw error;
+    }
+  };
+  
   const updateTaskStatus = async (taskId: string, newStatus: string) => {
     setUpdatingIds((s) => [...s, taskId]);
     const prev = assignedTasks.find((t) => t.id === taskId)?.status;
+    
+    // Optimistic update
     setAssignedTasks((tasks) =>
       tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
     );
+    
     try {
+      // Try using API route first (better for RLS)
+      const task = assignedTasks.find((t) => t.id === taskId);
+      const project = assignedProjects.find((p) => p.name === task?.project);
+      
+      if (project?.id) {
+        // Use project tasks API route
+        const res = await fetch(`/api/projects/${project.id}/tasks?task_id=${taskId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || error.details || "Failed to update task status");
+        }
+        
+        toast({ title: "Task updated" });
+        setUpdatingIds((s) => s.filter((id) => id !== taskId));
+        return;
+      }
+      
+      // Fallback to direct Supabase (might fail due to RLS)
       const updates: any = { status: newStatus };
       if (newStatus === "completed")
         updates.completed_at = new Date().toISOString();
+      
       const { error } = await supabase
         .from("tasks")
         .update(updates)
         .eq("task_id", taskId);
-      if (error) throw error;
+      
+      if (error) {
+        throw new Error(error.message || "Failed to update task status");
+      }
+      
       toast({ title: "Task updated" });
     } catch (e: any) {
+      // Revert optimistic update
       setAssignedTasks((tasks) =>
         tasks.map((t) =>
           t.id === taskId ? { ...t, status: prev || t.status } : t
         )
       );
+      
+      const errorMessage = e?.message || e?.error || "Couldn't update task. You may not have permission to update this task.";
+      
       toast({
         title: "Update failed",
-        description: e?.message || "Couldn't update task",
+        description: errorMessage,
         variant: "destructive",
       });
+      
+      // Re-throw so handleStatusChange can catch it
+      throw e;
     } finally {
       setUpdatingIds((s) => s.filter((id) => id !== taskId));
     }
@@ -1272,18 +1419,36 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                               </div>
                             </div>
                             {task.assignee_id === user.id && task.status !== "completed" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const newStatus = task.status === "todo" ? "in-progress" : "completed";
-                                  updateTaskStatus(task.task_id || task.id, newStatus);
-                                  // Refresh tasks
-                                  loadProjectTasks(selectedProject.id);
-                                }}
-                              >
-                                {task.status === "todo" ? "Start" : "Complete"}
-                              </Button>
+                              <div className="flex gap-2">
+                                {task.status === "in-progress" && (
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => {
+                                      setSelectedTaskForReview({
+                                        ...task,
+                                        id: task.task_id || task.id,
+                                        task_id: task.task_id || task.id,
+                                      });
+                                      loadTaskReviews(task.task_id || task.id);
+                                    }}
+                                  >
+                                    Submit for Review
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const newStatus = task.status === "todo" ? "in-progress" : "completed";
+                                    updateTaskStatus(task.task_id || task.id, newStatus);
+                                    // Refresh tasks
+                                    loadProjectTasks(selectedProject.id);
+                                  }}
+                                >
+                                  {task.status === "todo" ? "Start" : "Complete"}
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </CardContent>
@@ -1298,6 +1463,48 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                 )}
               </CardContent>
             </Card>
+            
+            {/* Review Panel */}
+            {selectedTaskForReview && (
+              <Card className="border-2 border-blue-200 dark:border-blue-500/30 mt-4">
+                <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                  <div>
+                    <CardTitle className="text-xl flex items-center gap-2">
+                      Review: {selectedTaskForReview.title}
+                    </CardTitle>
+                    <CardDescription>
+                      Add review data and submit for admin review
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    setSelectedTaskForReview(null);
+                    setReviewComment("");
+                  }}>
+                    Close
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <TaskReviewPanel
+                    task={{
+                      ...selectedTaskForReview,
+                      id: selectedTaskForReview.task_id || selectedTaskForReview.id,
+                      task_id: selectedTaskForReview.task_id || selectedTaskForReview.id,
+                    }}
+                    reviews={taskReviews}
+                    reviewComment={reviewComment}
+                    onReviewCommentChange={setReviewComment}
+                    isSubmitting={isSubmittingReview}
+                    onSubmit={handleSubmitReview}
+                    onClose={() => {
+                      setSelectedTaskForReview(null);
+                      setReviewComment("");
+                    }}
+                    currentUserRole="employee"
+                    onStatusChange={handleStatusChange}
+                  />
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="comments" className="space-y-4">
@@ -1712,6 +1919,28 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
+                            {task.status === "in-progress" && (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                onClick={() => {
+                                  // Find the full task object from assignedTasks or projectTasks
+                                  const fullTask = assignedTasks.find((t) => t.id === task.id) || 
+                                    projectTasks.find((t: any) => (t.task_id || t.id) === task.id);
+                                  
+                                  setSelectedTaskForReview({
+                                    ...task,
+                                    ...fullTask,
+                                    id: task.id,
+                                    task_id: task.id,
+                                    title: task.title,
+                                  });
+                                  loadTaskReviews(task.id);
+                                }}
+                              >
+                                Submit for Review
+                              </Button>
+                            )}
                             {task.status !== "completed" && (
                               <Button
                                 size="sm"
@@ -1743,6 +1972,48 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
               </div>
             </CardContent>
           </Card>
+          
+          {/* Review Panel for Table View */}
+          {selectedTaskForReview && activeTab === "tasks" && (
+            <Card className="border-2 border-blue-200 dark:border-blue-500/30 mt-4">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                <div>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    Review: {selectedTaskForReview.title}
+                  </CardTitle>
+                  <CardDescription>
+                    Add review data and submit for admin review
+                  </CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => {
+                  setSelectedTaskForReview(null);
+                  setReviewComment("");
+                }}>
+                  Close
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <TaskReviewPanel
+                  task={{
+                    ...selectedTaskForReview,
+                    id: selectedTaskForReview.task_id || selectedTaskForReview.id,
+                    task_id: selectedTaskForReview.task_id || selectedTaskForReview.id,
+                  }}
+                  reviews={taskReviews}
+                  reviewComment={reviewComment}
+                  onReviewCommentChange={setReviewComment}
+                  isSubmitting={isSubmittingReview}
+                  onSubmit={handleSubmitReview}
+                  onClose={() => {
+                    setSelectedTaskForReview(null);
+                    setReviewComment("");
+                  }}
+                  currentUserRole="employee"
+                  onStatusChange={handleStatusChange}
+                />
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="projects">
