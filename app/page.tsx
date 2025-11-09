@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { DashboardOverview } from "@/components/dashboard-overview";
@@ -20,35 +21,103 @@ import { getCurrentUser, signOut, type User } from "@/lib/auth";
 import { useSession } from "@/hooks/use-session";
 import { ProtectedRoute } from "@/components/protected-route";
 
-export default function HomePage() {
+type ViewType =
+  | "dashboard"
+  | "contact-center"
+  | "email-center"
+  | "project-center"
+  | "team-directory"
+  | "career-hub"
+  | "activity-log"
+  | "support"
+  | "time-tracking"
+  | "attendance"
+  | "clients"
+  | "invoicing"
+  | "analytics"
+  | "documents"
+  | "knowledge"
+  | "notifications"
+  | "data"
+  | "my-time"
+  | "performance"
+  | "my-documents"
+  | "employee-support"
+  | "client-submissions"
+  | "task-management"
+  | "settings";
+
+function HomePageContent() {
   const { user, loading, signOut, refreshSession } = useSession();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [loadingTimeout, setLoadingTimeout] = useState(false);
-  const [currentView, setCurrentView] = useState<
-    | "dashboard"
-    | "contact-center"
-    | "email-center"
-    | "project-center"
-    | "team-directory"
-    | "career-hub"
-    | "activity-log"
-    | "support"
-    | "time-tracking"
-    | "attendance"
-    | "clients"
-    | "invoicing"
-    | "analytics"
-    | "documents"
-    | "knowledge"
-    | "notifications"
-    | "data"
-    | "my-time"
-    | "performance"
-    | "my-documents"
-    | "employee-support"
-    | "client-submissions"
-    | "task-management"
-    | "settings"
-  >("dashboard");
+  
+  const validViews: ViewType[] = [
+    "dashboard",
+    "contact-center",
+    "email-center",
+    "project-center",
+    "team-directory",
+    "career-hub",
+    "activity-log",
+    "support",
+    "time-tracking",
+    "attendance",
+    "clients",
+    "invoicing",
+    "analytics",
+    "documents",
+    "knowledge",
+    "notifications",
+    "data",
+    "my-time",
+    "performance",
+    "my-documents",
+    "employee-support",
+    "client-submissions",
+    "task-management",
+    "settings",
+  ];
+
+  // Get view from URL or default to dashboard
+  const getViewFromUrl = (): ViewType => {
+    try {
+      const view = searchParams.get('view');
+      return (view && validViews.includes(view as ViewType)) ? (view as ViewType) : "dashboard";
+    } catch (error) {
+      console.error("Error reading view from URL:", error);
+      return "dashboard";
+    }
+  };
+
+  const [currentView, setCurrentView] = useState<ViewType>(() => {
+    // Initialize from URL on mount
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const view = params.get('view');
+        return (view && validViews.includes(view as ViewType)) ? (view as ViewType) : "dashboard";
+      } catch (error) {
+        console.error("Error initializing view from URL:", error);
+        return "dashboard";
+      }
+    }
+    return "dashboard";
+  });
+
+  // Update view when URL changes
+  useEffect(() => {
+    try {
+      const view = searchParams.get('view');
+      const newView = (view && validViews.includes(view as ViewType)) ? (view as ViewType) : "dashboard";
+      setCurrentView(newView);
+    } catch (error) {
+      console.error("Error updating view from URL:", error);
+      setCurrentView("dashboard");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const [projects, setProjects] = useState([
     {
@@ -178,8 +247,10 @@ export default function HomePage() {
     }
   };
 
-  const handleNavigation = (view: typeof currentView) => {
+  const handleNavigation = (view: ViewType) => {
     setCurrentView(view);
+    // Update URL using Next.js router
+    router.push(`/?view=${view}`);
   };
 
   // Add timeout mechanism to prevent infinite loading
@@ -359,5 +430,20 @@ export default function HomePage() {
 
       {currentView === "settings" && <UserProfile user={user} />}
     </DashboardLayout>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <HomePageContent />
+    </Suspense>
   );
 }

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -46,8 +47,8 @@ interface DashboardLayoutProps {
   user: User;
   children: React.ReactNode;
   onLogout: () => void;
-  onNavigate: (view: string) => void;
-  currentView: string;
+  onNavigate?: (view: string) => void;
+  currentView?: string;
 }
 
 export function DashboardLayout({
@@ -57,6 +58,11 @@ export function DashboardLayout({
   onNavigate,
   currentView,
 }: DashboardLayoutProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  // Note: useSearchParams requires Suspense - DashboardLayout should be used within Suspense
+  // For now, we'll use window.location as a fallback
+  const searchParams = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarHovered, setSidebarHovered] = useState(false);
@@ -64,13 +70,37 @@ export function DashboardLayout({
   const [notifCount, setNotifCount] = useState(0);
   const supabase = createClient();
 
+  // Get current view from URL or props - safely get from URL if available
+  const activeView = (() => {
+    if (currentView) return currentView;
+    try {
+      // Try searchParams first (if available from Suspense context)
+      if (searchParams) {
+        const view = searchParams.get('view');
+        if (view) return view;
+      }
+      // Fallback to window.location
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const viewFromUrl = params.get('view');
+        if (viewFromUrl) {
+          return viewFromUrl;
+        }
+      }
+    } catch (e) {
+      // Fallback to dashboard
+      console.error("Error reading view from URL:", e);
+    }
+    return 'dashboard';
+  })();
+
   const navigation = [
     // Core Dashboard
     {
       name: "Overview",
-      href: "dashboard",
+      href: "/?view=dashboard",
       icon: LayoutDashboard,
-      current: currentView === "dashboard",
+      current: activeView === "dashboard",
     },
 
     ...(user.role === "admin"
@@ -78,124 +108,124 @@ export function DashboardLayout({
           // Communication Hub
           {
             name: "Email Center",
-            href: "email-center",
+            href: "/?view=email-center",
             icon: Mail,
-            current: currentView === "email-center",
+            current: activeView === "email-center",
           },
           {
             name: "Contact Directory",
-            href: "contact-center",
+            href: "/?view=contact-center",
             icon: MessageSquare,
-            current: currentView === "contact-center",
+            current: activeView === "contact-center",
           },
           {
             name: "Support Center",
-            href: "support",
+            href: "/?view=support",
             icon: Headphones,
-            current: currentView === "support",
+            current: activeView === "support",
             comingSoon: true,
           },
 
           // Project Hub
           {
             name: "Project Center",
-            href: "project-center",
+            href: "/?view=project-center",
             icon: FolderOpen,
-            current: currentView === "project-center",
+            current: activeView === "project-center",
           },
           {
             name: "Client Submissions",
-            href: "client-submissions",
+            href: "/?view=client-submissions",
             icon: FileText,
-            current: currentView === "client-submissions",
+            current: activeView === "client-submissions",
           },
           {
             name: "Task Board",
-            href: "task-management",
+            href: "/?view=task-management",
             icon: CheckSquare,
-            current: currentView === "task-management",
+            current: activeView === "task-management",
           },
           {
             name: "Time Tracker",
-            href: "time-tracking",
+            href: "/?view=time-tracking",
             icon: Clock,
-            current: currentView === "time-tracking",
+            current: activeView === "time-tracking",
             comingSoon: true,
           },
 
           // Team Management
           {
             name: "Career Portal",
-            href: "career-hub",
+            href: "/?view=career-hub",
             icon: Briefcase,
-            current: currentView === "career-hub",
+            current: activeView === "career-hub",
           },
           {
             name: "Team Directory",
-            href: "team-directory",
+            href: "/?view=team-directory",
             icon: Users,
-            current: currentView === "team-directory",
+            current: activeView === "team-directory",
           },
           {
             name: "Attendance Hub",
-            href: "attendance",
+            href: "/?view=attendance",
             icon: UserCheck,
-            current: currentView === "attendance",
+            current: activeView === "attendance",
             comingSoon: true,
           },
 
           // Business Operations
           {
             name: "Client Portal",
-            href: "clients",
+            href: "/?view=clients",
             icon: Building2,
-            current: currentView === "clients",
+            current: activeView === "clients",
             comingSoon: true,
           },
           {
             name: "Finance Center",
-            href: "invoicing",
+            href: "/?view=invoicing",
             icon: DollarSign,
-            current: currentView === "invoicing",
+            current: activeView === "invoicing",
             comingSoon: true,
           },
           {
             name: "Analytics Hub",
-            href: "analytics",
+            href: "/?view=analytics",
             icon: BarChart3,
-            current: currentView === "analytics",
+            current: activeView === "analytics",
             comingSoon: true,
           },
 
           // Content Management
           {
             name: "Document Library",
-            href: "documents",
+            href: "/?view=documents",
             icon: FileText,
-            current: currentView === "documents",
+            current: activeView === "documents",
             comingSoon: true,
           },
           {
             name: "Knowledge Hub",
-            href: "knowledge",
+            href: "/?view=knowledge",
             icon: Archive,
-            current: currentView === "knowledge",
+            current: activeView === "knowledge",
             comingSoon: true,
           },
 
           // System Settings
           {
             name: "Notifications",
-            href: "notifications",
+            href: "/?view=notifications",
             icon: Bell,
-            current: currentView === "notifications",
+            current: activeView === "notifications",
             comingSoon: true,
           },
           {
             name: "Data Center",
-            href: "data",
+            href: "/?view=data",
             icon: Database,
-            current: currentView === "data",
+            current: activeView === "data",
             comingSoon: true,
           },
         ]
@@ -203,36 +233,36 @@ export function DashboardLayout({
           // Employee Dashboard
           {
             name: "Project Center",
-            href: "project-center",
+            href: "/?view=project-center",
             icon: FolderOpen,
-            current: currentView === "project-center",
+            current: activeView === "project-center",
           },
           {
             name: "Time Tracker",
-            href: "my-time",
+            href: "/?view=my-time",
             icon: Clock,
-            current: currentView === "my-time",
+            current: activeView === "my-time",
             comingSoon: true,
           },
           {
             name: "Performance",
-            href: "performance",
+            href: "/?view=performance",
             icon: Target,
-            current: currentView === "performance",
+            current: activeView === "performance",
             comingSoon: true,
           },
           {
             name: "My Documents",
-            href: "my-documents",
+            href: "/?view=my-documents",
             icon: FileText,
-            current: currentView === "my-documents",
+            current: activeView === "my-documents",
             comingSoon: true,
           },
           {
             name: "Help Desk",
-            href: "employee-support",
+            href: "/?view=employee-support",
             icon: Headphones,
-            current: currentView === "employee-support",
+            current: activeView === "employee-support",
             comingSoon: true,
           },
         ]),
@@ -240,9 +270,9 @@ export function DashboardLayout({
     // Settings (always last)
     {
       name: "Settings",
-      href: "settings",
+      href: "/?view=settings",
       icon: Settings,
-      current: currentView === "settings",
+      current: activeView === "settings",
       comingSoon: true,
     },
   ];
@@ -251,8 +281,30 @@ export function DashboardLayout({
   const comingSoonNav = navigation.filter((item) => item.comingSoon);
 
   const handleNavClick = (href: string) => {
-    onNavigate(href);
-    setSidebarOpen(false); // Close mobile sidebar on navigation
+    try {
+      // Use router for navigation
+      router.push(href);
+      // Also call onNavigate if provided for backward compatibility
+      if (onNavigate) {
+        try {
+          const view = new URL(href, typeof window !== 'undefined' ? window.location.origin : 'http://localhost').searchParams.get('view') || href.replace('/?view=', '').replace('?view=', '');
+          onNavigate(view);
+        } catch (e) {
+          // Fallback: extract view from href string
+          const match = href.match(/[?&]view=([^&]+)/);
+          if (match) {
+            onNavigate(match[1]);
+          }
+        }
+      }
+      setSidebarOpen(false); // Close mobile sidebar on navigation
+    } catch (error) {
+      console.error("Navigation error:", error);
+      // Fallback to window.location if router fails
+      if (typeof window !== 'undefined') {
+        window.location.href = href;
+      }
+    }
   };
 
   useEffect(() => {
@@ -548,7 +600,7 @@ export function DashboardLayout({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => onNavigate("notifications")}
+                onClick={() => onNavigate?.("notifications") || router.push("/?view=notifications")}
                 className="relative"
               >
                 <Bell className="h-5 w-5" />
