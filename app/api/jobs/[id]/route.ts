@@ -1,75 +1,137 @@
-import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { NextRequest, NextResponse } from "next/server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server";
+import { withAuth, withCors } from "@/lib/api-middleware";
 
-function withCors(res: NextResponse) {
-  res.headers.set("Access-Control-Allow-Origin", "*");
-  res.headers.set("Access-Control-Allow-Methods", "GET, PUT, OPTIONS");
-  res.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
-  res.headers.set(
-    "Cache-Control",
-    "public, s-maxage=60, stale-while-revalidate=300"
-  );
-  return res;
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function OPTIONS() {
   return withCors(NextResponse.json({}, { status: 204 }));
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("id", params.id)
-      .single();
-    if (error) {
-      const res = NextResponse.json({ error: error.message }, { status: 404 });
-      return withCors(res);
-    }
-    return withCors(NextResponse.json({ job: data }));
-  } catch (e: any) {
-    const res = NextResponse.json(
-      { error: e?.message || "Unexpected error" },
-      { status: 500 }
-    );
-    return withCors(res);
-  }
-}
+/**
+ * GET /api/jobs/[id]
+ * Get a single job by ID
+ */
+export const GET = withAuth(
+  async ({ user, request }, routeParams) => {
+    try {
+      const jobId = routeParams?.params?.id;
+      if (!jobId) {
+        return withCors(NextResponse.json({ error: "Missing job id" }, { status: 400 }));
+      }
 
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const supabase = createServerSupabaseClient();
-    const body = await request.json();
-    
-    const { data, error } = await supabase
-      .from("jobs")
-      .update(body)
-      .eq("id", params.id)
-      .select()
-      .single();
+      const supabase = createServerSupabaseClient();
+      const { data, error } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("id", jobId)
+        .single();
       
-    if (error) {
-      const res = NextResponse.json({ error: error.message }, { status: 400 });
-      return withCors(res);
+      if (error) {
+        return withCors(NextResponse.json({ error: error.message }, { status: 404 }));
+      }
+      
+      return withCors(NextResponse.json({ job: data }));
+    } catch (e: any) {
+      return withCors(NextResponse.json(
+        { error: e?.message || "Unexpected error" },
+        { status: 500 }
+      ));
     }
-    
-    return withCors(NextResponse.json({ job: data }));
-  } catch (e: any) {
-    const res = NextResponse.json(
-      { error: e?.message || "Unexpected error" },
-      { status: 500 }
-    );
-    return withCors(res);
+  },
+  {
+    roles: ["admin", "manager", "employee"],
+    permissions: ["jobs:read"]
   }
-}
+);
+
+/**
+ * PUT /api/jobs/[id]
+ * Update a job opening
+ */
+export const PUT = withAuth(
+  async ({ user, request }, routeParams) => {
+    try {
+      const jobId = routeParams?.params?.id;
+      if (!jobId) {
+        return withCors(NextResponse.json({ error: "Missing job id" }, { status: 400 }));
+      }
+
+      const body = await request.json();
+      const adminSupabase = createAdminSupabaseClient();
+      
+      // Normalize locations array if provided
+      const updateData: any = { ...body };
+      if ("locations" in updateData) {
+        const locations: string[] | null | undefined = updateData.locations;
+        updateData.locations = Array.isArray(locations)
+          ? locations.map((x: string) => (x || "").trim()).filter(Boolean)
+          : null;
+      }
+      
+      const { data, error } = await adminSupabase
+        .from("jobs")
+        .update(updateData)
+        .eq("id", jobId)
+        .select()
+        .single();
+        
+      if (error) {
+        console.error("Error updating job:", error);
+        return withCors(NextResponse.json({ error: error.message }, { status: 400 }));
+      }
+      
+      return withCors(NextResponse.json({ job: data }));
+    } catch (e: any) {
+      console.error("Unexpected error updating job:", e);
+      return withCors(NextResponse.json(
+        { error: e?.message || "Unexpected error" },
+        { status: 500 }
+      ));
+    }
+  },
+  {
+    roles: ["admin", "manager"],
+    permissions: ["jobs:write"]
+  }
+);
+
+/**
+ * DELETE /api/jobs/[id]
+ * Delete a job opening
+ */
+export const DELETE = withAuth(
+  async ({ user, request }, routeParams) => {
+    try {
+      const jobId = routeParams?.params?.id;
+      if (!jobId) {
+        return withCors(NextResponse.json({ error: "Missing job id" }, { status: 400 }));
+      }
+
+      const adminSupabase = createAdminSupabaseClient();
+      
+      const { error } = await adminSupabase
+        .from("jobs")
+        .delete()
+        .eq("id", jobId);
+        
+      if (error) {
+        console.error("Error deleting job:", error);
+        return withCors(NextResponse.json({ error: error.message }, { status: 500 }));
+      }
+      
+      return withCors(NextResponse.json({ success: true }));
+    } catch (e: any) {
+      console.error("Unexpected error deleting job:", e);
+      return withCors(NextResponse.json(
+        { error: e?.message || "Unexpected error" },
+        { status: 500 }
+      ));
+    }
+  },
+  {
+    roles: ["admin", "manager"],
+    permissions: ["jobs:delete"]
+  }
+);

@@ -68,11 +68,6 @@ import {
 import {
   getJobs,
   getJobApplications,
-  createJob,
-  updateJob,
-  updateJobApplication,
-  deleteJob,
-  deleteJobApplication,
   type Job,
   type JobApplication as DBJobApplication,
 } from "@/lib/auth";
@@ -125,16 +120,20 @@ export function JobManagement() {
     is_active: true,
   });
 
-  // Load from Supabase
+  // Load from API routes
   useEffect(() => {
     (async () => {
       try {
         const [jobsRes, appsRes] = await Promise.all([
-          getJobs(),
-          getJobApplications(),
+          fetch("/api/jobs?includeInactive=true").then((r) => r.json()),
+          fetch("/api/job-applications").then((r) => r.json()),
         ]);
-        setJobs(jobsRes);
-        setApplications(appsRes);
+        
+        if (jobsRes.error) throw new Error(jobsRes.error);
+        if (appsRes.error) throw new Error(appsRes.error);
+        
+        setJobs(jobsRes.jobs || []);
+        setApplications(appsRes.applications || []);
       } catch (e: any) {
         toast({
           title: "Failed to load data",
@@ -184,7 +183,19 @@ export function JobManagement() {
     } as Omit<Job, "id" | "created_at">;
 
     try {
-      const created = await createJob(payload);
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create job");
+      }
+      
+      const created = data.job;
       setJobs([created, ...jobs]);
       toast({
         title: "Job created",
@@ -656,7 +667,16 @@ export function JobManagement() {
                               onClick={async () => {
                                 try {
                                   setDeletingJobId(job.id);
-                                  await deleteJob(job.id);
+                                  const res = await fetch(`/api/jobs/${job.id}`, {
+                                    method: "DELETE",
+                                  });
+                                  
+                                  const data = await res.json();
+                                  
+                                  if (!res.ok) {
+                                    throw new Error(data.error || "Failed to delete job");
+                                  }
+                                  
                                   setJobs((prev) =>
                                     prev.filter((j) => j.id !== job.id)
                                   );
@@ -984,9 +1004,16 @@ export function JobManagement() {
                                   onClick={async () => {
                                     try {
                                       setDeletingAppId(application.id);
-                                      await deleteJobApplication(
-                                        application.id
-                                      );
+                                      const res = await fetch(`/api/job-applications/${application.id}`, {
+                                        method: "DELETE",
+                                      });
+                                      
+                                      const data = await res.json();
+                                      
+                                      if (!res.ok) {
+                                        throw new Error(data.error || "Failed to delete application");
+                                      }
+                                      
                                       setApplications((prev) =>
                                         prev.filter(
                                           (a) => a.id !== application.id
@@ -1277,7 +1304,20 @@ function EditJobForm({
         is_active: form.is_active,
       };
       console.log("Updates payload:", updates);
-      const updated = await updateJob(job.id, updates);
+      
+      const res = await fetch(`/api/jobs/${job.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update job");
+      }
+      
+      const updated = data.job;
       console.log("Job updated successfully:", updated);
       toast({ title: "Job updated", description: `${updated.title} saved.` });
       onSaved(updated);
@@ -1462,7 +1502,19 @@ function UpdateApplicationStatusForm({
 
   const handleSave = async () => {
     try {
-      const updated = await updateJobApplication(application.id, { status });
+      const res = await fetch(`/api/job-applications/${application.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update application");
+      }
+      
+      const updated = data.application;
       toast({
         title: "Application updated",
         description: `${application.full_name} is now ${updated.status}.`,
