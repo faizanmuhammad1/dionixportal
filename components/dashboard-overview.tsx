@@ -44,19 +44,22 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
           const submissionsList = await getClientProjects()
           setClientProjects(submissionsList)
           
-          // Try to get employee count from employee_profiles table
+          // Get active employee count from API (excluding admins)
           try {
-            const { count: employeeCount, error: employeeError } = await supabase
-              .from("employee_profiles")
-              .select("id", { count: "exact", head: true })
-              .eq("status", "active")
-            
-            if (employeeError) {
-              console.warn("Employee profiles table error:", employeeError)
-              setActiveEmployees(0)
+            const response = await fetch("/api/employees", { credentials: "same-origin" })
+            if (response.ok) {
+              const employees = await response.json()
+              // Filter for active employees only, excluding admins by role
+              const activeCount = employees.filter((emp: any) => 
+                emp.status === "active" && 
+                emp.role !== "admin" && 
+                (emp.role === "manager" || emp.role === "employee")
+              ).length
+              console.log("Active employee count (excluding admins):", activeCount)
+              setActiveEmployees(activeCount)
             } else {
-              console.log("Active employee count from employee_profiles:", employeeCount)
-              setActiveEmployees(employeeCount || 0)
+              console.warn("Failed to fetch employees:", response.status)
+              setActiveEmployees(0)
             }
           } catch (employeeError) {
             console.warn("Could not fetch employee count:", employeeError)

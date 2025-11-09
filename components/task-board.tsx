@@ -230,7 +230,7 @@ export function TaskBoard() {
   const supabase = createClient();
 
   useEffect(() => {
-    loadData();
+    loadData(true); // Show loading on initial load only
     getCurrentUser().then(setCurrentUser);
 
     // Real-time subscriptions
@@ -239,17 +239,17 @@ export function TaskBoard() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "tasks" },
-        () => loadData()
+        () => loadData(false)
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "tasks" },
-        () => loadData()
+        () => loadData(false)
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "tasks" },
-        () => loadData()
+        () => loadData(false)
       )
       .subscribe();
 
@@ -259,9 +259,11 @@ export function TaskBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (showLoading = false) => {
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       
       // Fetch tasks via API (handles RLS and related data)
       let tasksData: any[] = [];
@@ -479,8 +481,8 @@ export function TaskBoard() {
           }
         }
         
-        // Reload data to get fresh state
-        await loadData();
+        // Reload data to get fresh state (silently, no loading skeleton)
+        await loadData(false);
         toast({ title: "Task updated successfully" });
       } else {
         // Create new task
@@ -550,8 +552,8 @@ export function TaskBoard() {
           }
         }
         
-        // Reload data to get fresh state
-        await loadData();
+        // Reload data to get fresh state (silently, no loading skeleton)
+        await loadData(false);
         toast({ title: "Task created successfully" });
       }
       setTaskDialogOpen(false);
@@ -622,7 +624,7 @@ export function TaskBoard() {
         }
       }
 
-      await loadData();
+      await loadData(false);
       toast({ 
         title: "Task reassigned", 
         description: newAssigneeId 
@@ -643,7 +645,7 @@ export function TaskBoard() {
         toast({ title: "Delete failed", variant: "destructive" });
         return;
       }
-      await loadData();
+      await loadData(false);
       toast({ title: "Task deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -655,6 +657,15 @@ export function TaskBoard() {
     taskId: string,
     newStatus: Task["status"]
   ) => {
+    // Optimistic update - update UI immediately
+    setTasks((prevTasks) =>
+      prevTasks.map((task) =>
+        task.id === taskId
+          ? { ...task, status: newStatus, updated_at: new Date().toISOString() }
+          : task
+      )
+    );
+
     try {
       const { error } = await supabase
         .from("tasks")
@@ -663,13 +674,18 @@ export function TaskBoard() {
       
       if (error) {
         console.error("Error updating status:", error);
+        // Revert optimistic update on error
+        await loadData(false);
         toast({ title: "Status update failed", variant: "destructive" });
         return;
       }
       
-      await loadData();
+      // Refresh data silently (no loading state)
+      await loadData(false);
     } catch (err) {
       console.error(err);
+      // Revert optimistic update on error
+      await loadData(false);
       toast({ title: "Status update failed", variant: "destructive" });
     }
   };
