@@ -61,7 +61,7 @@ export function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   // Note: useSearchParams requires Suspense - DashboardLayout should be used within Suspense
-  // For now, we'll use window.location as a fallback
+  // window.location as a fallback
   const searchParams = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -361,19 +361,29 @@ export function DashboardLayout({
         />
         <div className="fixed left-0 top-0 h-full w-64 bg-card border-r border-border shadow-lg flex flex-col">
           <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0 w-full">
-              <div className="relative flex-1 h-16">
-                <Image
-                  src="/dark-logo.png"
-                  alt="Dionix.ai"
-                  fill
-                  className="block dark:hidden object-contain"
-                />
-                <Image
-                  src="/main-logo.png"
-                  alt="Dionix.ai"
-                  fill
-                  className="hidden dark:block object-contain"
-                />
+              <div className="relative flex-1 h-16 min-h-[64px] w-full">
+                <div className="block dark:hidden h-full w-full">
+                  <Image
+                    src="/dark-logo.png"
+                    alt="Dionix.ai"
+                    fill
+                    priority
+                    unoptimized
+                    sizes="(max-width: 768px) 100vw, 256px"
+                    className="object-contain"
+                  />
+                </div>
+                <div className="hidden dark:block h-full w-full">
+                  <Image
+                    src="/main-logo.png"
+                    alt="Dionix.ai"
+                    fill
+                    priority
+                    unoptimized
+                    sizes="(max-width: 768px) 100vw, 256px"
+                    className="object-contain"
+                  />
+                </div>
               </div>
             <Button
               variant="ghost"
@@ -440,35 +450,55 @@ export function DashboardLayout({
         <div className="flex flex-col flex-grow bg-card border-r border-border shadow-sm h-screen">
           <div className="flex items-center justify-center min-h-20 px-4 py-4 border-b border-border flex-shrink-0 w-full">
             {(!sidebarCollapsed || sidebarHovered) && (
-              <div className="relative w-full h-16">
-                <Image
-                  src="/dark-logo.png"
-                  alt="Dionix.ai"
-                  fill
-                  className="block dark:hidden object-contain"
-                />
-                <Image
-                  src="/main-logo.png"
-                  alt="Dionix.ai"
-                  fill
-                  className="hidden dark:block object-contain"
-                />
+              <div className="relative w-full h-16 min-h-[64px]">
+                <div className="block dark:hidden h-full w-full relative">
+                  <Image
+                    src="/dark-logo.png"
+                    alt="Dionix.ai"
+                    fill
+                    priority
+                    unoptimized
+                    sizes="256px"
+                    className="object-contain"
+                  />
+                </div>
+                <div className="hidden dark:block h-full w-full relative">
+                  <Image
+                    src="/main-logo.png"
+                    alt="Dionix.ai"
+                    fill
+                    priority
+                    unoptimized
+                    sizes="256px"
+                    className="object-contain"
+                  />
+                </div>
               </div>
             )}
             {sidebarCollapsed && !sidebarHovered && (
-              <div className="relative w-full h-12">
-                <Image
-                  src="/dark-logo.png"
-                  alt="Dionix.ai"
-                  fill
-                  className="block dark:hidden object-contain"
-                />
-                <Image
-                  src="/main-logo.png"
-                  alt="Dionix.ai"
-                  fill
-                  className="hidden dark:block object-contain"
-                />
+              <div className="relative w-full h-12 min-h-[48px]">
+                <div className="block dark:hidden h-full w-full relative">
+                  <Image
+                    src="/dark-logo.png"
+                    alt="Dionix.ai"
+                    fill
+                    priority
+                    unoptimized
+                    sizes="64px"
+                    className="object-contain"
+                  />
+                </div>
+                <div className="hidden dark:block h-full w-full relative">
+                  <Image
+                    src="/main-logo.png"
+                    alt="Dionix.ai"
+                    fill
+                    priority
+                    unoptimized
+                    sizes="64px"
+                    className="object-contain"
+                  />
+                </div>
               </div>
             )}
           </div>
