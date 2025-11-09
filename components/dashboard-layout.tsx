@@ -308,32 +308,26 @@ export function DashboardLayout({
           onClick={() => setSidebarOpen(false)}
         />
         <div className="fixed left-0 top-0 h-full w-64 bg-card border-r border-border shadow-lg flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="relative w-6 h-6">
+          <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0 w-full">
+              <div className="relative flex-1 h-16">
                 <Image
-                  src="/images/darklogo.svg"
+                  src="/dark-logo.png"
                   alt="Dionix.ai"
-                  width={24}
-                  height={24}
-                  className="block dark:hidden"
+                  fill
+                  className="block dark:hidden object-contain"
                 />
                 <Image
-                  src="/images/logo.svg"
+                  src="/main-logo.png"
                   alt="Dionix.ai"
-                  width={24}
-                  height={24}
-                  className="hidden dark:block"
+                  fill
+                  className="hidden dark:block object-contain"
                 />
               </div>
-              <span className="text-lg font-semibold text-foreground">
-                dionix.ai
-              </span>
-            </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setSidebarOpen(false)}
+              className="ml-2"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -392,48 +386,37 @@ export function DashboardLayout({
         onMouseLeave={() => setSidebarHovered(false)}
       >
         <div className="flex flex-col flex-grow bg-card border-r border-border shadow-sm h-screen">
-          <div className="flex items-center h-16 px-4 border-b border-border flex-shrink-0">
+          <div className="flex items-center justify-center min-h-20 px-4 py-4 border-b border-border flex-shrink-0 w-full">
             {(!sidebarCollapsed || sidebarHovered) && (
-              <div className="flex items-center gap-2">
-                <div className="relative w-7 h-7">
-                  <Image
-                    src="/images/darklogo.svg"
-                    alt="Dionix.ai"
-                    width={28}
-                    height={28}
-                    className="block dark:hidden"
-                  />
-                  <Image
-                    src="/images/logo.svg"
-                    alt="Dionix.ai"
-                    width={28}
-                    height={28}
-                    className="hidden dark:block"
-                  />
-                </div>
-                <span className="text-lg font-semibold text-foreground">
-                  dionix.ai
-                </span>
+              <div className="relative w-full h-16">
+                <Image
+                  src="/dark-logo.png"
+                  alt="Dionix.ai"
+                  fill
+                  className="block dark:hidden object-contain"
+                />
+                <Image
+                  src="/main-logo.png"
+                  alt="Dionix.ai"
+                  fill
+                  className="hidden dark:block object-contain"
+                />
               </div>
             )}
             {sidebarCollapsed && !sidebarHovered && (
-              <div className="flex items-center justify-center w-full">
-                <div className="relative w-7 h-7">
-                  <Image
-                    src="/images/darklogo.svg"
-                    alt="Dionix.ai"
-                    width={28}
-                    height={28}
-                    className="block dark:hidden"
-                  />
-                  <Image
-                    src="/images/logo.svg"
-                    alt="Dionix.ai"
-                    width={28}
-                    height={28}
-                    className="hidden dark:block"
-                  />
-                </div>
+              <div className="relative w-full h-12">
+                <Image
+                  src="/dark-logo.png"
+                  alt="Dionix.ai"
+                  fill
+                  className="block dark:hidden object-contain"
+                />
+                <Image
+                  src="/main-logo.png"
+                  alt="Dionix.ai"
+                  fill
+                  className="hidden dark:block object-contain"
+                />
               </div>
             )}
           </div>
@@ -544,26 +527,19 @@ export function DashboardLayout({
 
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1 items-center lg:hidden">
-              <div className="flex items-center gap-2">
-                <div className="relative w-6 h-6">
-                  <Image
-                    src="/images/darklogo.svg"
-                    alt="Dionix.ai"
-                    width={24}
-                    height={24}
-                    className="block dark:hidden"
-                  />
-                  <Image
-                    src="/images/logo.svg"
-                    alt="Dionix.ai"
-                    width={24}
-                    height={24}
-                    className="hidden dark:block"
-                  />
-                </div>
-                <span className="text-lg font-semibold text-foreground">
-                  dionix.ai
-                </span>
+              <div className="relative w-full max-w-[140px] h-10">
+                <Image
+                  src="/dark-logo.png"
+                  alt="Dionix.ai"
+                  fill
+                  className="block dark:hidden object-contain"
+                />
+                <Image
+                  src="/main-logo.png"
+                  alt="Dionix.ai"
+                  fill
+                  className="hidden dark:block object-contain"
+                />
               </div>
             </div>
             <div className="hidden lg:flex lg:flex-1" />

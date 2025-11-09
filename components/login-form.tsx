@@ -56,22 +56,22 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       <Card className="w-full max-w-md shadow-2xl relative z-10 animate-scale-in border-2 backdrop-blur-sm bg-card/95">
         <CardHeader className="space-y-3 pb-6">
           {/* Logo */}
-          <div className="flex justify-center mb-2">
-            <div className="relative w-16 h-16 rounded-xl bg-primary/10 p-3 backdrop-blur-sm">
-              <div className="relative w-full h-full">
-                <Image
-                  src="/images/darklogo.svg"
-                  alt="Dionix.ai"
-                  fill
-                  className="object-contain block dark:hidden"
-                />
-                <Image
-                  src="/images/logo.svg"
-                  alt="Dionix.ai"
-                  fill
-                  className="object-contain hidden dark:block"
-                />
-              </div>
+          <div className="flex justify-center mb-4">
+            <div className="relative w-24 h-24">
+              <Image
+                src="/dark-logo.png"
+                alt="Dionix.ai"
+                width={96}
+                height={96}
+                className="block dark:hidden object-contain"
+              />
+              <Image
+                src="/main-logo.png"
+                alt="Dionix.ai"
+                width={96}
+                height={96}
+                className="hidden dark:block object-contain"
+              />
             </div>
           </div>
           
