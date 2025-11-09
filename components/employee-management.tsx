@@ -275,53 +275,58 @@ export function EmployeeManagement() {
                 Add Employee
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>{editingEmployee ? "Edit Employee" : "Create New Employee"}</DialogTitle>
-                <DialogDescription>
+                <DialogTitle className="text-2xl">{editingEmployee ? "Edit Employee" : "Create New Employee"}</DialogTitle>
+                <DialogDescription className="text-sm">
                   {editingEmployee 
                     ? "Update employee information and access permissions."
                     : "Add a new employee to the dionix.ai system. They will receive portal access credentials."
                   }
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="space-y-6 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name</Label>
+                    <Label htmlFor="firstName" className="text-sm font-medium">First Name</Label>
                     <Input
                       id="firstName"
                       value={newEmployee.firstName}
                       onChange={(e) => setNewEmployee({ ...newEmployee, firstName: e.target.value })}
+                      className="h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name</Label>
+                    <Label htmlFor="lastName" className="text-sm font-medium">Last Name</Label>
                     <Input
                       id="lastName"
                       value={newEmployee.lastName}
                       onChange={(e) => setNewEmployee({ ...newEmployee, lastName: e.target.value })}
+                      className="h-10"
                     />
                   </div>
                 </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email" className="text-sm font-medium">Email</Label>
                   <Input
                     id="email"
                     type="email"
                     value={newEmployee.email}
                     onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
                     disabled={!!editingEmployee}
+                    className="h-10"
                   />
                 </div>
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
+                    <Label htmlFor="department" className="text-sm font-medium">Department</Label>
                     <Select
                       value={newEmployee.department}
                       onValueChange={(value) => setNewEmployee({ ...newEmployee, department: value })}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue placeholder="Select department" />
                       </SelectTrigger>
                       <SelectContent>
@@ -335,12 +340,12 @@ export function EmployeeManagement() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="role">Role</Label>
+                    <Label htmlFor="role" className="text-sm font-medium">Role</Label>
                     <Select
                       value={newEmployee.role}
                       onValueChange={(value) => setNewEmployee({ ...newEmployee, role: value })}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -350,33 +355,39 @@ export function EmployeeManagement() {
                     </Select>
                   </div>
                 </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="position">Position</Label>
+                  <Label htmlFor="position" className="text-sm font-medium">Position</Label>
                   <Input
                     id="position"
                     value={newEmployee.position}
                     onChange={(e) => setNewEmployee({ ...newEmployee, position: e.target.value })}
                     placeholder="e.g. Frontend Developer"
+                    className="h-10"
                   />
                 </div>
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Phone (Optional)</Label>
+                    <Label htmlFor="phone" className="text-sm font-medium">
+                      Phone <span className="text-muted-foreground font-normal">(Optional)</span>
+                    </Label>
                     <Input
                       id="phone"
                       type="tel"
                       value={newEmployee.phone}
                       onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
                       placeholder="+1 (555) 000-0000"
+                      className="h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="employmentType">Employment Type</Label>
+                    <Label htmlFor="employmentType" className="text-sm font-medium">Employment Type</Label>
                     <Select
                       value={newEmployee.employmentType}
                       onValueChange={(value) => setNewEmployee({ ...newEmployee, employmentType: value })}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -388,40 +399,55 @@ export function EmployeeManagement() {
                     </Select>
                   </div>
                 </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="hireDate">Hire Date (Optional)</Label>
-                  <Input
-                    id="hireDate"
-                    type="date"
-                    value={newEmployee.hireDate}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, hireDate: e.target.value })}
-                  />
+                  <Label htmlFor="hireDate" className="text-sm font-medium">
+                    Hire Date <span className="text-muted-foreground font-normal">(Optional)</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="hireDate"
+                      type="date"
+                      value={newEmployee.hireDate}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, hireDate: e.target.value })}
+                      className="h-10 pr-10"
+                      placeholder="mm/dd/yyyy"
+                    />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  </div>
                 </div>
+                
                 {!editingEmployee && (
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password (Optional)</Label>
+                    <Label htmlFor="password" className="text-sm font-medium">
+                      Password <span className="text-muted-foreground font-normal">(Optional)</span>
+                    </Label>
                     <Input
                       id="password"
                       type="password"
                       value={newEmployee.password}
                       onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
                       placeholder="Leave empty to auto-generate"
+                      className="h-10"
                     />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Leave empty to auto-generate a secure password. The employee can log in immediately with this password.
                     </p>
                   </div>
                 )}
-                <Button onClick={handleCreateEmployee} className="w-full" disabled={isUpdating}>
-                  {isUpdating ? (
-                    <span className="flex items-center gap-2">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      {editingEmployee ? "Updating Employee..." : "Creating Employee..."}
-                    </span>
-                  ) : (
-                    editingEmployee ? "Update Employee" : "Create Employee"
-                  )}
-                </Button>
+                
+                <div className="pt-4 border-t">
+                  <Button onClick={handleCreateEmployee} className="w-full h-11" disabled={isUpdating}>
+                    {isUpdating ? (
+                      <span className="flex items-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        {editingEmployee ? "Updating Employee..." : "Creating Employee..."}
+                      </span>
+                    ) : (
+                      editingEmployee ? "Update Employee" : "Create Employee"
+                    )}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>

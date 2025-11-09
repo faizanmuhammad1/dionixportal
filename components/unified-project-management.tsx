@@ -12,6 +12,17 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 // table components removed (unused)
 import { Progress } from "@/components/ui/progress";
 import { projectService } from "@/lib/project-service";
@@ -195,6 +206,8 @@ export function UnifiedProjectManagement() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [currentStep, setCurrentStep] = useState(1);
+  const totalSteps = 7;
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [detailsOpen, setDetailsOpen] = useState(false); // now controls inline side panel visibility
@@ -988,45 +1001,34 @@ export function UnifiedProjectManagement() {
     }
   };
 
-  // Enhanced form validation
-  const validateForm = () => {
+  // Step-by-step form validation
+  const validateCurrentStep = () => {
     const errors: Record<string, string> = {};
 
-    // Step 1 validation
-    if (!formData.name.trim()) {
-      errors.name = "Project name is required";
-    }
-    if (!serviceType) {
-      errors.serviceType = "Project type is required";
-    }
-
-    // Step 3 validation
-    if (!companyNumber.trim()) {
-      errors.companyNumber = "Business phone number is required";
-    }
-    if (!companyEmail.trim()) {
-      errors.companyEmail = "Company email is required";
-    } else if (!/\S+@\S+\.\S+/.test(companyEmail)) {
-      errors.companyEmail = "Please enter a valid email address";
-    }
-    if (!companyAddress.trim()) {
-      errors.companyAddress = "Company address is required";
-    }
-    if (!aboutCompany.trim()) {
-      errors.aboutCompany = "About company is required";
-    }
-
-    // Step 4 validation
-    if (!publicContactPhone.trim()) {
-      errors.publicContactPhone = "Public business number is required";
-    }
-    if (!publicContactEmail.trim()) {
-      errors.publicContactEmail = "Public company email is required";
-    } else if (!/\S+@\S+\.\S+/.test(publicContactEmail)) {
-      errors.publicContactEmail = "Please enter a valid email address";
-    }
-    if (!publicContactAddress.trim()) {
-      errors.publicContactAddress = "Public company address is required";
+    if (currentStep === 1) {
+      // Step 1: Core Project Details
+      if (!formData.name.trim()) {
+        errors.name = "Project name is required";
+      }
+      if (!formData.project_type && !serviceType) {
+        errors.serviceType = "Project type is required";
+      }
+    } else if (currentStep === 3) {
+      // Step 3: Company & Contact Information
+      if (!companyNumber.trim()) {
+        errors.companyNumber = "Business phone number is required";
+      }
+      if (!companyEmail.trim()) {
+        errors.companyEmail = "Company email is required";
+      } else if (!/\S+@\S+\.\S+/.test(companyEmail)) {
+        errors.companyEmail = "Please enter a valid email address";
+      }
+      if (!companyAddress.trim()) {
+        errors.companyAddress = "Company address is required";
+      }
+      if (!aboutCompany.trim()) {
+        errors.aboutCompany = "About company is required";
+      }
     }
 
     setFormErrors(errors);
@@ -1205,7 +1207,7 @@ export function UnifiedProjectManagement() {
       
       console.log(`✅ Successfully loaded ${enrichedProjects.length} projects from API`);
       setProjects(enrichedProjects);
-      setTasks(enrichedProjects.flatMap((p) => p.tasks));
+      setTasks(enrichedProjects.flatMap((p: Project) => p.tasks));
     } catch (err) {
       console.error("❌ Unexpected error in refetchAllProjects:", err);
       toast({
@@ -1289,6 +1291,7 @@ export function UnifiedProjectManagement() {
     progress: number;
     budget: number;
     client: string;
+    project_type?: string;
   }>({
     name: "",
     description: "",
@@ -1300,6 +1303,7 @@ export function UnifiedProjectManagement() {
     progress: 0,
     budget: 0,
     client: "",
+    project_type: "web-development",
   });
 
   useEffect(() => {
@@ -1510,9 +1514,11 @@ export function UnifiedProjectManagement() {
       progress: 0,
       budget: 0,
       client: "",
+      project_type: "web-development",
     });
     setIsCreating(false);
     setEditingProject(null);
+    setCurrentStep(1);
     setWizardStep(0);
     setConfirmSubmit(false);
     setServiceType("");
@@ -1533,16 +1539,37 @@ export function UnifiedProjectManagement() {
     setUploadFiles([]);
   };
 
+  const nextStep = () => {
+    if (validateCurrentStep() && currentStep < totalSteps) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const previousStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
+
   const handleSubmit = async () => {
     if (isSubmitting || isProcessing) return; // Prevent multiple submissions
 
+    // If not on last step, validate and advance
+    if (currentStep < totalSteps) {
+      if (validateCurrentStep()) {
+        setCurrentStep(currentStep + 1);
+      }
+      return;
+    }
+
+    // On last step, submit the form
     setIsSubmitting(true);
     setIsProcessing(true);
     setProcessingStep("Validating form data...");
 
     try {
-      // Enhanced validation
-      if (!validateForm()) {
+      // Final validation
+      if (!validateCurrentStep()) {
         toast({
           title: "Validation Error",
           description: "Please fix the errors in the form",
@@ -1553,9 +1580,10 @@ export function UnifiedProjectManagement() {
         return;
       }
 
+      // Collect all step data for full 6-step form
       const step1Data = {
         project_name: formData.name,
-        project_type: serviceType,
+        project_type: formData.project_type || serviceType,
         description: formData.description,
         client_name: formData.client,
         budget: formData.budget,
@@ -1583,17 +1611,12 @@ export function UnifiedProjectManagement() {
 
       const step5Data = {
         media_links: mediaLinks.join(","),
-        uploaded_media: uploadFiles.map((f) => ({
-          name: f.name,
-          size: f.size,
-          type: f.type,
-        })),
-        bank_details: JSON.stringify({
+        bank_details: {
           account_name: bankAccountName,
           account_number: bankAccountNumber,
           iban: bankIban,
           swift: bankSwift,
-        }),
+        },
       };
 
       if (editingProject) {
@@ -1674,35 +1697,36 @@ export function UnifiedProjectManagement() {
           description: "The project list will refresh automatically."
         });
       } else {
-        // Create new project using project service
+        // Create new project - full 6-step form
         setProcessingStep("Creating project...");
 
         const projectData = {
           name: formData.name,
-          type: serviceType as any,
-          description: formData.description,
-          client: formData.client,
+          type: (formData.project_type || serviceType || "web-development") as any,
+          description: formData.description || undefined,
+          client_name: formData.client || undefined,
           budget: formData.budget,
-          start_date: formData.start_date,
-          end_date: formData.end_date,
+          start_date: formData.start_date || undefined,
+          end_date: formData.end_date || undefined,
           priority: formData.priority,
           status: formData.status,
-          company_number: companyNumber,
-          company_email: companyEmail,
-          company_address: companyAddress,
-          about_company: aboutCompany,
-          social_links: socialLinks,
+          // All steps data
+          company_number: companyNumber || "",
+          company_email: companyEmail || "",
+          company_address: companyAddress || "",
+          about_company: aboutCompany || "",
+          social_links: socialLinks.length > 0 ? socialLinks : [],
           public_contacts: {
-            phone: publicContactPhone,
-            email: publicContactEmail,
-            address: publicContactAddress,
+            phone: publicContactPhone || undefined,
+            email: publicContactEmail || undefined,
+            address: publicContactAddress || undefined,
           },
-          media_links: mediaLinks,
+          media_links: mediaLinks.length > 0 ? mediaLinks : [],
           bank_details: {
-            account_name: bankAccountName,
-            account_number: bankAccountNumber,
-            iban: bankIban,
-            swift: bankSwift,
+            account_name: bankAccountName || undefined,
+            account_number: bankAccountNumber || undefined,
+            iban: bankIban || undefined,
+            swift: bankSwift || undefined,
           },
           service_specific: serviceSpecific,
           payment_integration_needs: paymentIntegrationNeeds,
@@ -1714,30 +1738,11 @@ export function UnifiedProjectManagement() {
           throw new Error("Failed to create project");
         }
 
-        // Upload files if any
-        if (uploadFiles.length > 0) {
-          setProcessingStep("Uploading files...");
-          await handleFileUpload(uploadFiles, project.id);
-        }
-
-        // Add uploaded files as attachments
-        if (uploadedFiles.length > 0) {
-          setProcessingStep("Adding file attachments...");
-          for (const file of uploadedFiles) {
-            await projectService.addAttachment(project.id, {
-              file_name: file.name,
-              storage_path: file.url,
-              file_size: file.size,
-              content_type: "application/octet-stream",
-              client_visible: true,
-            });
-          }
-        }
+        // Manual intake - step one only, skip file uploads
 
         toast({
           title: "Project created successfully",
-          description:
-            "Your project has been created and files uploaded successfully",
+          description: "Your project has been created with basic information.",
         });
       }
 
@@ -1768,75 +1773,125 @@ export function UnifiedProjectManagement() {
     setUploadErrors([]);
     setUploadedFiles([]);
 
+    // Helper function to safely parse arrays (handle both arrays and comma-separated strings)
+    const parseArray = (value: any): string[] => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        // Try to parse as JSON first
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          // If not JSON, split by comma
+          return value.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+      }
+      return [];
+    };
+
+    // Helper function to get field value with fallbacks
+    const getField = (field: string, fallbacks: string[] = []): any => {
+      const serviceSpecificData = project.service_specific || {};
+      if (serviceSpecificData[field] !== undefined && serviceSpecificData[field] !== null && serviceSpecificData[field] !== '') {
+        return serviceSpecificData[field];
+      }
+      for (const fallback of fallbacks) {
+        if (serviceSpecificData[fallback] !== undefined && serviceSpecificData[fallback] !== null && serviceSpecificData[fallback] !== '') {
+          return serviceSpecificData[fallback];
+        }
+      }
+      return '';
+    };
+
     // Populate form data with new field structure
+    const projectType = project.service_type || project.type || "";
     setFormData({
-      name: project.name,
-      description: project.description,
-      status: project.status,
-      priority: project.priority,
-      start_date: project.start_date,
-      end_date: project.end_date,
-      budget: project.budget,
-      client: project.client,
+      name: project.name || "",
+      description: project.description || "",
+      status: project.status || "planning",
+      priority: project.priority || "medium",
+      start_date: project.start_date || "",
+      end_date: project.end_date || "",
+      budget: project.budget || 0,
+      client: project.client || "",
       assigned_employees: project.assigned_employees || [],
       progress: project.progress || 0,
+      project_type: projectType as any,
     });
 
     // Set service type and map to new field names
-    setServiceType(
-      (project.service_type || project.type || "") as typeof serviceType
-    );
+    // Normalize service type: convert "web-development" to "web", etc.
+    const normalizedServiceType = (() => {
+      if (projectType === "web-development" || projectType === "Web Development") return "web";
+      if (projectType === "branding-design" || projectType === "Branding Design") return "branding";
+      if (projectType === "digital-marketing" || projectType === "Digital Marketing") return "marketing";
+      if (projectType === "ai-solutions" || projectType === "AI Solutions") return "ai";
+      if (projectType === "custom-project" || projectType === "Custom Project" || projectType === "other") return "custom";
+      if (projectType === "web" || projectType === "branding" || projectType === "marketing" || projectType === "ai" || projectType === "custom") return projectType;
+      return "";
+    })();
+    setServiceType(normalizedServiceType as typeof serviceType);
 
-    // Company & Contact Information (Step 3)
+    // Company & Contact Information (Step 4)
     setCompanyNumber(project.company_number || "");
     setCompanyEmail(project.company_email || "");
     setCompanyAddress(project.company_address || "");
     setAboutCompany(project.about_company || "");
 
-    // Social Media & Public Contact Info (Step 4)
-    setSocialLinks(project.social_links || []);
+    // Social Media & Public Contact Info (Step 5)
+    // Handle social links - could be array or comma-separated string
+    const socialLinksArray = parseArray(project.social_links);
+    setSocialLinks(socialLinksArray.length > 0 ? socialLinksArray : []);
     setPublicContactPhone(project.public_contacts?.phone || "");
     setPublicContactEmail(project.public_contacts?.email || "");
     setPublicContactAddress(project.public_contacts?.address || "");
 
-    // Media & Banking Information (Step 5)
-    setMediaLinks(project.media_links || []);
+    // Media & Banking Information (Step 6)
+    // Handle media links - could be array or comma-separated string
+    const mediaLinksArray = parseArray(project.media_links);
+    setMediaLinks(mediaLinksArray.length > 0 ? mediaLinksArray : []);
     setBankAccountName(project.bank_details?.account_name || "");
     setBankAccountNumber(project.bank_details?.account_number || "");
     setBankIban(project.bank_details?.iban || "");
     setBankSwift(project.bank_details?.swift || "");
-    setPaymentIntegrationNeeds(project.payment_integration_needs || []);
+    setPaymentIntegrationNeeds(parseArray(project.payment_integration_needs));
 
-    // Service-specific data with new field names
+    // Service-specific data with comprehensive field mapping
     const serviceSpecificData = project.service_specific || {};
     setServiceSpecific({
-      // Web development fields
-      domainSuggestions: serviceSpecificData.domain_suggestions || "",
-      websiteReferences: serviceSpecificData.references || "",
-      featuresRequirements: serviceSpecificData.features || "",
+      // Web development fields - check all possible variations
+      domainSuggestions: getField('domainSuggestions', ['domain_suggestions', 'domain_suggestions_svc']) || "",
+      websiteReferences: getField('websiteReferences', ['website_references', 'references']) || "",
+      featuresRequirements: getField('featuresRequirements', ['features_requirements', 'features_requirements_svc', 'features']) || "",
+      budgetTimeline: getField('budgetTimeline', ['budget_timeline']) || "",
+      additional_requirements: getField('additional_requirements', ['additionalRequirements']) || "",
 
       // Branding fields
-      logoIdeasConcepts: serviceSpecificData.logo_ideas || "",
-      colorBrandTheme: serviceSpecificData.color_preferences || "",
-      designAssetsNeeded: serviceSpecificData.design_assets || [],
+      logoIdeasConcepts: getField('logoIdeasConcepts', ['logoIdeas', 'logo_ideas_concepts', 'logo_concepts', 'logo_ideas']) || "",
+      colorBrandTheme: getField('colorBrandTheme', ['brandTheme', 'color_brand_theme', 'color_preferences', 'brand_theme']) || "",
+      designAssetsNeeded: parseArray(getField('designAssetsNeeded', ['design_assets_needed', 'design_assets'])),
 
       // AI fields
-      aiSolutionType: serviceSpecificData.ai_solution_type || "",
-      businessChallenge: serviceSpecificData.business_challenge || "",
-      dataAvailability: serviceSpecificData.data_availability || "",
+      aiSolutionType: parseArray(getField('aiSolutionType', ['ai_solution_type'])),
+      businessChallengeUseCase: getField('businessChallengeUseCase', ['business_challenge_use_case', 'business_challenge']) || "",
+      dataAvailability: getField('dataAvailability', ['data_availability']) || "",
+      budgetRange: getField('budgetRange', ['budget_range']) || "",
 
       // Marketing fields
-      targetAudience: serviceSpecificData.target_audience || "",
-      marketingGoals: serviceSpecificData.marketing_goals || "",
-      marketingChannels: serviceSpecificData.channels || [],
+      targetAudienceIndustry: getField('targetAudienceIndustry', ['target_audience_industry', 'targetAudience', 'target_audience']) || "",
+      marketingGoals: getField('marketingGoals', ['marketing_goals']) || "",
+      channelsOfInterest: parseArray(getField('channelsOfInterest', ['channels_of_interest', 'channels', 'marketingChannels'])),
+      budgetRangeMonthly: getField('budgetRangeMonthly', ['monthly_budget_range']) || "",
 
       // Custom fields
-      serviceDescription: serviceSpecificData.service_description || "",
-      expectedOutcome: serviceSpecificData.expected_outcome || "",
+      serviceDescription: getField('serviceDescription', ['service_description']) || "",
+      expectedOutcome: getField('expectedOutcome', ['expected_outcome']) || "",
     });
 
     setIsCreating(true);
-    setWizardStep(0); // Start from Step 1 for editing
+    setCurrentStep(1); // Start from Step 1 for editing
+    setWizardStep(0);
   };
 
   const deleteProjectLocal = (id: string) => {
@@ -3668,8 +3723,8 @@ export function UnifiedProjectManagement() {
                       onClick={async () => {
                         if (selectedEmployeeForProject) {
                           const currentProjects = projects
-                            .filter(p => p.assigned_employees.includes(selectedEmployeeForProject.id))
-                            .map(p => p.id);
+                            .filter((p: Project) => p.assigned_employees.includes(selectedEmployeeForProject.id))
+                            .map((p: Project) => p.id);
                           
                           let newProjectIds;
                           if (isAssigned) {
@@ -3720,146 +3775,965 @@ export function UnifiedProjectManagement() {
           resetForm();
         }
       }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <DialogTitle className="text-2xl">
               {editingProject ? 'Edit Project' : 'Create New Project'}
             </DialogTitle>
+            <div className="flex items-center justify-between mt-2">
+              <Badge variant="outline" className="px-3 py-1 text-sm">
+                Step {currentStep} of {totalSteps}
+              </Badge>
+            </div>
           </DialogHeader>
+          
+            <div className="px-6 mb-6 space-y-4">
+              <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
+              <div className="flex items-center justify-between px-2">
+                {Array.from({ length: totalSteps }, (_, i) => (
+                  <div key={i} className="flex items-center flex-1">
+                    <div className="flex flex-col items-center flex-1">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                        i + 1 < currentStep 
+                          ? 'bg-primary text-primary-foreground shadow-sm' 
+                          : i + 1 === currentStep 
+                            ? 'bg-primary text-primary-foreground shadow-md ring-2 ring-primary ring-offset-2' 
+                            : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {i + 1 < currentStep ? (
+                          <CheckCircle className="h-5 w-5" />
+                        ) : (
+                          i + 1
+                        )}
+                      </div>
+                      <span className={`text-xs mt-2 text-center ${
+                        i + 1 <= currentStep ? 'text-foreground font-medium' : 'text-muted-foreground'
+                      }`}>
+                        {i === 0 && 'Details'}
+                        {i === 1 && 'Service'}
+                        {i === 2 && 'Specific'}
+                        {i === 3 && 'Company'}
+                        {i === 4 && 'Public'}
+                        {i === 5 && 'Media'}
+                        {i === 6 && 'Review'}
+                      </span>
+                    </div>
+                    {i < totalSteps - 1 && (
+                      <div className={`flex-1 h-0.5 mx-2 transition-colors ${
+                        i + 1 < currentStep ? 'bg-primary' : 'bg-muted'
+                      }`} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           
           <form onSubmit={(e) => {
             e.preventDefault();
             handleSubmit();
-          }} className="space-y-6 py-4">
-            {/* Basic Information */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-sm">Basic Information</h3>
-              
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="project-name">Project Name *</Label>
-                  <input
-                    id="project-name"
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    placeholder="Enter project name"
-                    required
-                  />
-                  {formErrors.name && (
-                    <p className="text-sm text-destructive">{formErrors.name}</p>
+          }} className="space-y-6 px-6 pb-6">
+            {/* Step 1: Core Project Details */}
+            {currentStep === 1 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-b">
+                  <CardTitle className="text-xl">Project Details</CardTitle>
+                  <CardDescription>Enter the basic information about your project</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  {/* Basic Information */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-base">Basic Information</h3>
+                    
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="project-name">Project Name *</Label>
+                        <Input
+                          id="project-name"
+                          type="text"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          placeholder="Enter project name"
+                          required
+                        />
+                        {formErrors.name && (
+                          <p className="text-sm text-destructive">{formErrors.name}</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="project-type">Project Type *</Label>
+                        <Select
+                          value={formData.project_type || "web-development"}
+                          onValueChange={(value) => setFormData({ ...formData, project_type: value as any })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select project type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="web-development">Web Development</SelectItem>
+                            <SelectItem value="branding-design">Branding Design</SelectItem>
+                            <SelectItem value="ai-solutions">AI Solutions</SelectItem>
+                            <SelectItem value="digital-marketing">Digital Marketing</SelectItem>
+                            <SelectItem value="custom-project">Custom Project</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {formErrors.serviceType && (
+                          <p className="text-sm text-destructive">{formErrors.serviceType}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="client-name">Client Name</Label>
+                        <Input
+                          id="client-name"
+                          type="text"
+                          value={formData.client}
+                          onChange={(e) => setFormData({ ...formData, client: e.target.value })}
+                          placeholder="Enter client name"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="budget">Budget ($)</Label>
+                        <Input
+                          id="budget"
+                          type="number"
+                          value={formData.budget}
+                          onChange={(e) => setFormData({ ...formData, budget: parseFloat(e.target.value) || 0 })}
+                          placeholder="0.00"
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea
+                        id="description"
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        placeholder="Enter project description"
+                        rows={4}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Status & Priority */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-base">Status & Priority</h3>
+                    
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="status">Status</Label>
+                        <Select
+                          value={formData.status}
+                          onValueChange={(value) => setFormData({ ...formData, status: value as Project["status"] })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="planning">Planning</SelectItem>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="on-hold">On Hold</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="priority">Priority</Label>
+                        <Select
+                          value={formData.priority}
+                          onValueChange={(value) => setFormData({ ...formData, priority: value as Project["priority"] })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="critical">Critical</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Dates */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-base">Timeline</h3>
+                    
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="start-date">Start Date</Label>
+                        <Input
+                          id="start-date"
+                          type="date"
+                          value={formData.start_date}
+                          onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="end-date">End Date</Label>
+                        <Input
+                          id="end-date"
+                          type="date"
+                          value={formData.end_date}
+                          onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step 2: Service Selection */}
+            {currentStep === 2 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-b">
+                  <CardTitle className="text-xl">Service Selection</CardTitle>
+                  <CardDescription>Choose the service you need</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">What service do you need? *</Label>
+                    <div className="grid gap-3">
+                      {[
+                        { value: "web-development", label: "Web Development", description: "Custom websites, web applications, and digital solutions" },
+                        { value: "branding-design", label: "Branding & Design", description: "Logo design, brand identity, and visual assets" },
+                        { value: "digital-marketing", label: "Digital Marketing", description: "SEO, social media, and online advertising" },
+                        { value: "ai-solutions", label: "AI Solutions", description: "AI integration, automation, and intelligent systems" },
+                        { value: "custom-project", label: "Other", description: "Custom services and specialized solutions" }
+                      ].map((service) => (
+                        <label
+                          key={service.value}
+                          className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            (formData.project_type === service.value || serviceType === service.value)
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="selectedService"
+                            value={service.value}
+                            checked={formData.project_type === service.value || serviceType === service.value}
+                            onChange={(e) => {
+                              setFormData({ ...formData, project_type: e.target.value as any });
+                              setServiceType(e.target.value as any);
+                            }}
+                            className="mt-1 mr-3"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium">{service.label}</div>
+                            <div className="text-sm text-muted-foreground mt-1">{service.description}</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    {formErrors.serviceType && (
+                      <p className="text-sm text-destructive">{formErrors.serviceType}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step 3: Service-Specific Information */}
+            {currentStep === 3 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-b">
+                  <CardTitle className="text-xl">Service-Specific Information</CardTitle>
+                  <CardDescription>
+                    Tell us more about your {formData.project_type?.replace('-', ' ') || (serviceType === "web" ? "web development" : serviceType === "branding" ? "branding design" : serviceType === "marketing" ? "digital marketing" : serviceType === "ai" ? "ai solutions" : serviceType === "custom" ? "custom project" : serviceType?.replace('-', ' ') || 'project')} needs
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  {/* Web Development Fields */}
+                  {(formData.project_type === "web-development" || serviceType === "web" || (serviceType as string) === "web-development") && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="domainSuggestions">Domain Suggestions</Label>
+                        <Textarea
+                          id="domainSuggestions"
+                          value={serviceSpecific.domainSuggestions || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, domainSuggestions: e.target.value })}
+                          placeholder="e.g., mycompany.com, mybusiness.net"
+                          rows={3}
+                        />
+                        <p className="text-xs text-muted-foreground">Do you have any domain preferences or suggestions?</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="websiteReferences">Website References</Label>
+                        <Textarea
+                          id="websiteReferences"
+                          value={serviceSpecific.websiteReferences || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, websiteReferences: e.target.value })}
+                          placeholder="Share links to websites you like..."
+                          rows={3}
+                        />
+                        <p className="text-xs text-muted-foreground">Share links to websites you like for inspiration</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="featuresRequirements">Features & Requirements *</Label>
+                        <Textarea
+                          id="featuresRequirements"
+                          value={serviceSpecific.featuresRequirements || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, featuresRequirements: e.target.value })}
+                          placeholder="Describe the features and functionality you need..."
+                          rows={4}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Be as specific as possible about what you want your website to do</p>
+                        {formErrors.featuresRequirements && (
+                          <p className="text-sm text-destructive">{formErrors.featuresRequirements}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="budgetTimeline">Budget & Timeline *</Label>
+                        <Textarea
+                          id="budgetTimeline"
+                          value={serviceSpecific.budgetTimeline || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, budgetTimeline: e.target.value })}
+                          placeholder="What's your budget range and when do you need it completed?"
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">This helps us provide accurate quotes and timelines</p>
+                        {formErrors.budgetTimeline && (
+                          <p className="text-sm text-destructive">{formErrors.budgetTimeline}</p>
+                        )}
+                      </div>
+                    </div>
                   )}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client-name">Client Name *</Label>
-                  <input
-                    id="client-name"
-                    type="text"
-                    value={formData.client}
-                    onChange={(e) => setFormData({ ...formData, client: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    placeholder="Enter client name"
-                    required
-                  />
-                </div>
-              </div>
+                  {/* Branding Design Fields */}
+                  {(formData.project_type === "branding-design" || serviceType === "branding" || (serviceType as string) === "branding-design") && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="logoIdeasConcepts">Logo Ideas & Concepts *</Label>
+                        <Textarea
+                          id="logoIdeasConcepts"
+                          value={serviceSpecific.logoIdeasConcepts || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, logoIdeasConcepts: e.target.value })}
+                          placeholder="Describe your vision for the logo..."
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Share any ideas, concepts, or inspiration for your logo</p>
+                        {formErrors.logoIdeasConcepts && (
+                          <p className="text-sm text-destructive">{formErrors.logoIdeasConcepts}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="colorBrandTheme">Color & Brand Theme *</Label>
+                        <Textarea
+                          id="colorBrandTheme"
+                          value={serviceSpecific.colorBrandTheme || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, colorBrandTheme: e.target.value })}
+                          placeholder="What colors and themes represent your brand?"
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Describe your brand's personality and preferred colors</p>
+                        {formErrors.colorBrandTheme && (
+                          <p className="text-sm text-destructive">{formErrors.colorBrandTheme}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Design Assets Needed</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['Logo Design', 'Business Cards', 'Letterhead', 'Social Media Graphics', 'Website Design', 'Print Materials', 'Brand Guidelines', 'Other'].map((option) => (
+                            <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(serviceSpecific.designAssetsNeeded || []).includes(option)}
+                                onChange={(e) => {
+                                  const current = serviceSpecific.designAssetsNeeded || [];
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    designAssetsNeeded: e.target.checked
+                                      ? [...current, option]
+                                      : current.filter((item: string) => item !== option)
+                                  });
+                                }}
+                                className="rounded"
+                              />
+                              <span className="text-sm">{option}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">Select all the design assets you need</p>
+                      </div>
+                    </div>
+                  )}
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="Enter project description"
-                  rows={4}
-                />
-              </div>
-            </div>
+                  {/* Digital Marketing Fields */}
+                  {(formData.project_type === "digital-marketing" || serviceType === "marketing" || (serviceType as string) === "digital-marketing") && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="targetAudienceIndustry">Target Audience & Industry *</Label>
+                        <Textarea
+                          id="targetAudienceIndustry"
+                          value={serviceSpecific.targetAudienceIndustry || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, targetAudienceIndustry: e.target.value })}
+                          placeholder="Who is your target audience and what industry are you in?"
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Help us understand your market and customers</p>
+                        {formErrors.targetAudienceIndustry && (
+                          <p className="text-sm text-destructive">{formErrors.targetAudienceIndustry}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="marketingGoals">Marketing Goals *</Label>
+                        <Textarea
+                          id="marketingGoals"
+                          value={serviceSpecific.marketingGoals || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, marketingGoals: e.target.value })}
+                          placeholder="What do you want to achieve with digital marketing?"
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Be specific about your marketing objectives</p>
+                        {formErrors.marketingGoals && (
+                          <p className="text-sm text-destructive">{formErrors.marketingGoals}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Channels of Interest</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['Google Ads', 'Facebook/Instagram Ads', 'LinkedIn Marketing', 'SEO Optimization', 'Email Marketing', 'Content Marketing', 'Influencer Marketing', 'Other'].map((option) => (
+                            <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(serviceSpecific.channelsOfInterest || []).includes(option)}
+                                onChange={(e) => {
+                                  const current = serviceSpecific.channelsOfInterest || [];
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    channelsOfInterest: e.target.checked
+                                      ? [...current, option]
+                                      : current.filter((item: string) => item !== option)
+                                  });
+                                }}
+                                className="rounded"
+                              />
+                              <span className="text-sm">{option}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">Which marketing channels interest you most?</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="budgetRangeMonthly">Monthly Marketing Budget</Label>
+                        <Select
+                          value={serviceSpecific.budgetRangeMonthly || ""}
+                          onValueChange={(value) => setServiceSpecific({ ...serviceSpecific, budgetRangeMonthly: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select budget range" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Under $1,000">Under $1,000</SelectItem>
+                            <SelectItem value="$1,000 - $5,000">$1,000 - $5,000</SelectItem>
+                            <SelectItem value="$5,000 - $10,000">$5,000 - $10,000</SelectItem>
+                            <SelectItem value="$10,000 - $25,000">$10,000 - $25,000</SelectItem>
+                            <SelectItem value="$25,000+">$25,000+</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">This helps us recommend the right strategies</p>
+                      </div>
+                    </div>
+                  )}
 
-            {/* Status & Priority */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-sm">Status & Priority</h3>
-              
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <select
-                    id="status"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as Project["status"] })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="planning">Planning</option>
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                    <option value="on-hold">On Hold</option>
-                  </select>
-                </div>
+                  {/* AI Solutions Fields */}
+                  {(formData.project_type === "ai-solutions" || serviceType === "ai" || (serviceType as string) === "ai-solutions") && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>AI Solution Types</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['Chatbots & Virtual Assistants', 'Predictive Analytics', 'Process Automation', 'Machine Learning Models', 'Natural Language Processing', 'Computer Vision', 'Recommendation Systems', 'Other'].map((option) => (
+                            <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(serviceSpecific.aiSolutionType || []).includes(option)}
+                                onChange={(e) => {
+                                  const current = serviceSpecific.aiSolutionType || [];
+                                  setServiceSpecific({
+                                    ...serviceSpecific,
+                                    aiSolutionType: e.target.checked
+                                      ? [...current, option]
+                                      : current.filter((item: string) => item !== option)
+                                  });
+                                }}
+                                className="rounded"
+                              />
+                              <span className="text-sm">{option}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">What type of AI solutions are you interested in?</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="businessChallengeUseCase">Business Challenge & Use Case *</Label>
+                        <Textarea
+                          id="businessChallengeUseCase"
+                          value={serviceSpecific.businessChallengeUseCase || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, businessChallengeUseCase: e.target.value })}
+                          placeholder="Describe the business problem you want to solve..."
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Help us understand how AI can solve your specific challenges</p>
+                        {formErrors.businessChallengeUseCase && (
+                          <p className="text-sm text-destructive">{formErrors.businessChallengeUseCase}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="dataAvailability">Data Availability *</Label>
+                        <Select
+                          value={serviceSpecific.dataAvailability || ""}
+                          onValueChange={(value) => setServiceSpecific({ ...serviceSpecific, dataAvailability: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select data availability" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="We have extensive data">We have extensive data</SelectItem>
+                            <SelectItem value="We have some data">We have some data</SelectItem>
+                            <SelectItem value="We have limited data">We have limited data</SelectItem>
+                            <SelectItem value="We need help collecting data">We need help collecting data</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">AI solutions require data - what's your current data situation?</p>
+                        {formErrors.dataAvailability && (
+                          <p className="text-sm text-destructive">{formErrors.dataAvailability}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="budgetRange">Budget Range</Label>
+                        <Select
+                          value={serviceSpecific.budgetRange || ""}
+                          onValueChange={(value) => setServiceSpecific({ ...serviceSpecific, budgetRange: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select budget range" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Under $10,000">Under $10,000</SelectItem>
+                            <SelectItem value="$10,000 - $50,000">$10,000 - $50,000</SelectItem>
+                            <SelectItem value="$50,000 - $100,000">$50,000 - $100,000</SelectItem>
+                            <SelectItem value="$100,000+">$100,000+</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">AI solutions vary in complexity and cost</p>
+                      </div>
+                    </div>
+                  )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="priority">Priority</Label>
-                  <select
-                    id="priority"
-                    value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as Project["priority"] })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
+                  {/* Custom/Other Fields */}
+                  {(formData.project_type === "custom-project" || (serviceType as string) === "custom-project" || (serviceType as string) === "other" || serviceType === "custom") && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="serviceDescription">Service Description *</Label>
+                        <Textarea
+                          id="serviceDescription"
+                          value={serviceSpecific.serviceDescription || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, serviceDescription: e.target.value })}
+                          placeholder="Describe the service you need..."
+                          rows={4}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Tell us about your specific requirements</p>
+                        {formErrors.serviceDescription && (
+                          <p className="text-sm text-destructive">{formErrors.serviceDescription}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="expectedOutcome">Expected Outcome *</Label>
+                        <Textarea
+                          id="expectedOutcome"
+                          value={serviceSpecific.expectedOutcome || ""}
+                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, expectedOutcome: e.target.value })}
+                          placeholder="What results are you hoping to achieve?"
+                          rows={3}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">Help us understand your goals and expectations</p>
+                        {formErrors.expectedOutcome && (
+                          <p className="text-sm text-destructive">{formErrors.expectedOutcome}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="budget">Budget ($)</Label>
-                  <input
-                    id="budget"
-                    type="number"
-                    value={formData.budget}
-                    onChange={(e) => setFormData({ ...formData, budget: parseFloat(e.target.value) || 0 })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Step 4: Company & Contact Information */}
+            {currentStep === 4 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border-b">
+                  <CardTitle className="text-xl">Company & Contact Information</CardTitle>
+                  <CardDescription>Tell us about your company</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="company-number">Business Phone Number *</Label>
+                    <Input
+                      id="company-number"
+                      type="text"
+                      value={companyNumber}
+                      onChange={(e) => setCompanyNumber(e.target.value)}
+                      placeholder="e.g., +1 (555) 123-4567"
+                      required
+                    />
+                    {formErrors.companyNumber && (
+                      <p className="text-sm text-destructive">{formErrors.companyNumber}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="company-email">Company Email *</Label>
+                    <Input
+                      id="company-email"
+                      type="email"
+                      value={companyEmail}
+                      onChange={(e) => setCompanyEmail(e.target.value)}
+                      placeholder="contact@yourcompany.com"
+                      required
+                    />
+                    {formErrors.companyEmail && (
+                      <p className="text-sm text-destructive">{formErrors.companyEmail}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="company-address">Company Address *</Label>
+                    <Textarea
+                      id="company-address"
+                      value={companyAddress}
+                      onChange={(e) => setCompanyAddress(e.target.value)}
+                      placeholder="Your business address..."
+                      rows={3}
+                      required
+                    />
+                    {formErrors.companyAddress && (
+                      <p className="text-sm text-destructive">{formErrors.companyAddress}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="about-company">About Your Company *</Label>
+                    <Textarea
+                      id="about-company"
+                      value={aboutCompany}
+                      onChange={(e) => setAboutCompany(e.target.value)}
+                      placeholder="Tell us about your company, what you do, and your mission..."
+                      rows={4}
+                      required
+                    />
+                    {formErrors.aboutCompany && (
+                      <p className="text-sm text-destructive">{formErrors.aboutCompany}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-            {/* Dates */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-sm">Timeline</h3>
-              
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="start-date">Start Date</Label>
-                  <input
-                    id="start-date"
-                    type="date"
-                    value={formData.start_date}
-                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                </div>
+            {/* Step 5: Social Media & Public Contact */}
+            {currentStep === 5 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 border-b">
+                  <CardTitle className="text-xl">Social Media & Public Contact Info</CardTitle>
+                  <CardDescription>Share your public business information</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="socialLinks">Social Media Links</Label>
+                    <Textarea
+                      id="socialLinks"
+                      value={socialLinks.join(", ")}
+                      onChange={(e) => setSocialLinks(e.target.value ? e.target.value.split(",").map(s => s.trim()) : [])}
+                      placeholder="Share your social media profiles..."
+                      rows={3}
+                    />
+                    <p className="text-xs text-muted-foreground">Include links to your social media profiles</p>
+                    <p className="text-xs text-muted-foreground/70">Example: https://facebook.com/yourcompany, https://instagram.com/yourcompany</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="public-phone">Public Business Number</Label>
+                    <Input
+                      id="public-phone"
+                      type="text"
+                      value={publicContactPhone}
+                      onChange={(e) => setPublicContactPhone(e.target.value)}
+                      placeholder="e.g., +1 (555) 123-4567"
+                    />
+                    <p className="text-xs text-muted-foreground">Phone number for customer inquiries</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="public-email">Public Company Email</Label>
+                    <Input
+                      id="public-email"
+                      type="email"
+                      value={publicContactEmail}
+                      onChange={(e) => setPublicContactEmail(e.target.value)}
+                      placeholder="info@yourcompany.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Email address for customer inquiries</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="public-address">Public Company Address</Label>
+                    <Textarea
+                      id="public-address"
+                      value={publicContactAddress}
+                      onChange={(e) => setPublicContactAddress(e.target.value)}
+                      placeholder="Your public business address..."
+                      rows={3}
+                    />
+                    <p className="text-xs text-muted-foreground">Address for customer visits or correspondence</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="end-date">End Date</Label>
-                  <input
-                    id="end-date"
-                    type="date"
-                    value={formData.end_date}
-                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Step 6: Media & Banking */}
+            {currentStep === 6 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-950/20 dark:to-cyan-950/20 border-b">
+                  <CardTitle className="text-xl">Media & Banking Information</CardTitle>
+                  <CardDescription>Share your media assets and payment preferences</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-8">
+                  {/* Media Assets Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-base">Media Assets</h4>
+                    <div className="space-y-2">
+                      <Label htmlFor="mediaLinks">Images / Video Links</Label>
+                      <Textarea
+                        id="mediaLinks"
+                        value={mediaLinks.join(", ")}
+                        onChange={(e) => setMediaLinks(e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [])}
+                        placeholder="Share links to your media content..."
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground">Include links to testimonials, portfolio images, videos, or any other media you'd like to showcase</p>
+                      <p className="text-xs text-muted-foreground/70">Example: https://youtube.com/watch?v=example, https://drive.google.com/portfolio-images</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="mediaFiles">Upload Images / Videos</Label>
+                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                        <input
+                          type="file"
+                          id="mediaFiles"
+                          multiple
+                          accept="image/*,video/*"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            setUploadFiles([...uploadFiles, ...files]);
+                          }}
+                          className="hidden"
+                        />
+                        <label htmlFor="mediaFiles" className="cursor-pointer">
+                          <div className="flex flex-col items-center">
+                            <FolderOpen className="h-8 w-8 mb-2 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground mb-2">Drop files here or click to upload</p>
+                            <Button type="button" variant="outline" size="sm">
+                              Choose Files
+                            </Button>
+                          </div>
+                        </label>
+                      </div>
+                      {uploadFiles.length > 0 && (
+                        <div className="space-y-2 mt-2">
+                          {uploadFiles.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
+                              <span>{file.name}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setUploadFiles(uploadFiles.filter((_, i) => i !== index))}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">Upload high-quality images and videos. Supported: JPG, PNG, GIF, MP4, MOV.</p>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Payment Integration Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-base">Payment Integration</h4>
+                    <div className="space-y-2">
+                      <Label>Payment Integration Needs</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Stripe Integration', 'PayPal Integration', 'Bank Transfer Setup', 'Subscription Billing', 'Invoice Generation', 'Refund Processing', 'Multi-currency Support', 'Payment Analytics'].map((option) => (
+                          <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={paymentIntegrationNeeds.includes(option)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setPaymentIntegrationNeeds([...paymentIntegrationNeeds, option]);
+                                } else {
+                                  setPaymentIntegrationNeeds(paymentIntegrationNeeds.filter(item => item !== option));
+                                }
+                              }}
+                              className="rounded"
+                            />
+                            <span className="text-sm">{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Select the payment features you need for your business. This helps us configure the right payment solutions.</p>
+                      <p className="text-xs text-muted-foreground/70">Choose all that apply - we'll set up the payment infrastructure you need</p>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Banking Information Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-base">Banking Information</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="bank-account-name">Account Name</Label>
+                        <Input
+                          id="bank-account-name"
+                          type="text"
+                          value={bankAccountName}
+                          onChange={(e) => setBankAccountName(e.target.value)}
+                          placeholder="e.g. John Doe Business Account"
+                        />
+                        <p className="text-xs text-muted-foreground">The legal name on the bank account</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bank-account-number">Account Number</Label>
+                        <Input
+                          id="bank-account-number"
+                          type="text"
+                          value={bankAccountNumber}
+                          onChange={(e) => setBankAccountNumber(e.target.value)}
+                          placeholder="e.g. 12345678"
+                        />
+                        <p className="text-xs text-muted-foreground">Your domestic bank account number</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bank-iban">IBAN</Label>
+                        <Input
+                          id="bank-iban"
+                          type="text"
+                          value={bankIban}
+                          onChange={(e) => setBankIban(e.target.value)}
+                          placeholder="e.g. GB29 NWBK 6016 1331 9268 19"
+                        />
+                        <p className="text-xs text-muted-foreground">International Bank Account Number for international transfers</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bank-swift">SWIFT / BIC</Label>
+                        <Input
+                          id="bank-swift"
+                          type="text"
+                          value={bankSwift}
+                          onChange={(e) => setBankSwift(e.target.value)}
+                          placeholder="e.g. ABCDGB2L"
+                        />
+                        <p className="text-xs text-muted-foreground">Bank SWIFT/BIC code for international transfers</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step 7: Review & Submit */}
+            {currentStep === 7 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-slate-950/20 dark:to-gray-950/20 border-b">
+                  <CardTitle className="text-xl">Review & Confirm</CardTitle>
+                  <CardDescription>Review your project details before submitting</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-base mb-3">Project Information</h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Name:</span>
+                          <p className="font-medium">{formData.name || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Type:</span>
+                          <p className="font-medium">{formData.project_type?.replace('-', ' ') || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Budget:</span>
+                          <p className="font-medium">${formData.budget || 0}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Priority:</span>
+                          <p className="font-medium capitalize">{formData.priority || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Status:</span>
+                          <p className="font-medium capitalize">{formData.status || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Client:</span>
+                          <p className="font-medium">{formData.client || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                      <h4 className="font-semibold text-base mb-3">Company Information</h4>
+                      <div className="text-sm space-y-2">
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Email:</span>
+                          <p className="font-medium">{companyEmail || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Phone:</span>
+                          <p className="font-medium">{companyNumber || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground">Address:</span>
+                          <p className="font-medium">{companyAddress || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      By submitting this form, you confirm that all information is accurate and complete.
+                    </AlertDescription>
+                  </Alert>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Form Actions */}
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-between gap-2 pt-6 border-t mt-6">
               <Button
                 type="button"
                 onClick={() => resetForm()}
@@ -3868,19 +4742,35 @@ export function UnifiedProjectManagement() {
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  editingProject ? 'Update Project' : 'Create Project'
+              <div className="flex gap-2">
+                {!editingProject && currentStep > 1 && (
+                  <Button
+                    type="button"
+                    onClick={previousStep}
+                    variant="outline"
+                    disabled={isSubmitting}
+                  >
+                    ← Previous
+                  </Button>
                 )}
-              </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {currentStep === totalSteps ? 'Creating...' : 'Saving...'}
+                    </>
+                  ) : editingProject ? (
+                    'Update Project'
+                  ) : currentStep === totalSteps ? (
+                    'Create Project'
+                  ) : (
+                    'Next →'
+                  )}
+                </Button>
+              </div>
             </div>
           </form>
         </DialogContent>

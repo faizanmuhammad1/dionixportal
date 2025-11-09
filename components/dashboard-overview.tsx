@@ -28,10 +28,77 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
   const isAdmin = user.role === "admin"
 
   useEffect(() => {
+    // Individual update functions for live metrics (defined inside useEffect to avoid dependency issues)
+    const updateFormSubmissions = async () => {
+      try {
+        const submissions = await getFormSubmissions()
+        setFormSubmissions(submissions)
+      } catch (error) {
+        console.error("Error updating form submissions:", error)
+      }
+    }
+
+    const updateJobApplications = async () => {
+      try {
+        const applications = await getJobApplications()
+        setJobApplications(applications)
+      } catch (error) {
+        console.error("Error updating job applications:", error)
+      }
+    }
+
+    const updateClientProjects = async () => {
+      try {
+        const submissionsList = await getClientProjects()
+        setClientProjects(submissionsList)
+      } catch (error) {
+        console.error("Error updating client projects:", error)
+      }
+    }
+
+    const updateActiveEmployees = async () => {
+      try {
+        const response = await fetch("/api/employees", { credentials: "same-origin" })
+        if (response.ok) {
+          const employees = await response.json()
+          const activeCount = employees.filter((emp: any) => 
+            emp.status === "active" && 
+            emp.role !== "admin" && 
+            (emp.role === "manager" || emp.role === "employee")
+          ).length
+          setActiveEmployees(activeCount)
+        }
+      } catch (error) {
+        console.error("Error updating active employees:", error)
+      }
+    }
+
+    const updateActiveProjects = async () => {
+      try {
+        const { count: projectCount } = await supabase
+          .from("projects")
+          .select("project_id", { count: "exact", head: true })
+        setActiveProjectsCount(projectCount || 0)
+      } catch (error) {
+        console.error("Error updating active projects:", error)
+      }
+    }
+
+    const updatePendingSubmissions = async () => {
+      try {
+        const { count: pendingCount } = await supabase
+          .from("submissions")
+          .select("submission_id", { count: "exact", head: true })
+          .eq("status", "pending")
+        setPendingSubmissionsCount(pendingCount || 0)
+      } catch (error) {
+        console.error("Error updating pending submissions:", error)
+      }
+    }
     async function fetchData() {
       if (isAdmin) {
         try {
-          // Fetch basic data first
+          // Fetch all data on initial load
           const [submissions, applications] = await Promise.all([
             getFormSubmissions(),
             getJobApplications(),
@@ -45,63 +112,13 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
           setClientProjects(submissionsList)
           
           // Get active employee count from API (excluding admins)
-          try {
-            const response = await fetch("/api/employees", { credentials: "same-origin" })
-            if (response.ok) {
-              const employees = await response.json()
-              // Filter for active employees only, excluding admins by role
-              const activeCount = employees.filter((emp: any) => 
-                emp.status === "active" && 
-                emp.role !== "admin" && 
-                (emp.role === "manager" || emp.role === "employee")
-              ).length
-              console.log("Active employee count (excluding admins):", activeCount)
-              setActiveEmployees(activeCount)
-            } else {
-              console.warn("Failed to fetch employees:", response.status)
-              setActiveEmployees(0)
-            }
-          } catch (employeeError) {
-            console.warn("Could not fetch employee count:", employeeError)
-            setActiveEmployees(0)
-          }
+          await updateActiveEmployees()
           
           // Get total projects count from projects table
-          try {
-            const { count: projectCount, error: projectError } = await supabase
-              .from("projects")
-              .select("project_id", { count: "exact", head: true })
-            
-            if (projectError) {
-              console.warn("Projects table error:", projectError)
-              setActiveProjectsCount(0)
-            } else {
-              console.log("Total projects count from projects table:", projectCount)
-              setActiveProjectsCount(projectCount || 0)
-            }
-          } catch (projectError) {
-            console.warn("Could not fetch projects count:", projectError)
-            setActiveProjectsCount(0)
-          }
+          await updateActiveProjects()
           
           // Get pending submissions count
-          try {
-            const { count: pendingCount, error: pendingError } = await supabase
-              .from("submissions")
-              .select("submission_id", { count: "exact", head: true })
-              .eq("status", "pending")
-            
-            if (pendingError) {
-              console.warn("Pending submissions count error:", pendingError)
-              setPendingSubmissionsCount(0)
-            } else {
-              console.log("Pending submissions count:", pendingCount)
-              setPendingSubmissionsCount(pendingCount || 0)
-            }
-          } catch (pendingError) {
-            console.warn("Could not fetch pending submissions count:", pendingError)
-            setPendingSubmissionsCount(0)
-          }
+          await updatePendingSubmissions()
         } catch (error) {
           console.error("Error fetching dashboard data:", error)
           // Set default values on error
@@ -117,29 +134,48 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
 
     if (!isAdmin) return
 
-    // Realtime subscriptions to keep KPIs live
+    // Live real-time subscriptions for each metric
     const channel = supabase
       .channel("dashboard-overview-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, fetchData)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "client_project_details" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_project_details" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "client_project_details" }, fetchData)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, fetchData)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "projects" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "projects" }, fetchData)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, fetchData)
+      // Form submissions updates
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, updateFormSubmissions)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, updateFormSubmissions)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, updateFormSubmissions)
+      // Client project submissions updates
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "client_project_details" }, () => {
+        updateClientProjects()
+        updatePendingSubmissions()
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_project_details" }, () => {
+        updateClientProjects()
+        updatePendingSubmissions()
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "client_project_details" }, () => {
+        updateClientProjects()
+        updatePendingSubmissions()
+      })
+      // Job applications updates
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, updateJobApplications)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, updateJobApplications)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, updateJobApplications)
+      // Active projects updates
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, updateActiveProjects)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "projects" }, updateActiveProjects)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "projects" }, updateActiveProjects)
+      // Active employees updates (profiles table)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, updateActiveEmployees)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, updateActiveEmployees)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, updateActiveEmployees)
+      // Submissions status updates
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "submissions" }, updatePendingSubmissions)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "submissions" }, updatePendingSubmissions)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "submissions" }, updatePendingSubmissions)
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin])
 
   const stats = {
