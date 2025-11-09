@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Mail, Edit, Trash2, Users, Search, UserPlus } from "lucide-react"
+import { Mail, Edit, Trash2, Users, Search, UserPlus, Calendar } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface Employee {
