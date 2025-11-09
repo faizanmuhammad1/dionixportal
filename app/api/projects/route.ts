@@ -76,7 +76,10 @@ export const GET = withAuth(
       throw error;
     }
     
-      return withCors(NextResponse.json({ projects: projects || [] }));
+      const response = withCors(NextResponse.json({ projects: projects || [] }));
+      // Add cache headers for GET requests
+      response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+      return response;
     } catch (error) {
       console.error('Get projects error:', error);
       return withCors(NextResponse.json(

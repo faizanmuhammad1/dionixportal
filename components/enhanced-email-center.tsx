@@ -17,6 +17,8 @@ import dynamic from "next/dynamic"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase"
 import { sanitizeEmailContent } from "@/lib/sanitize"
+import { useEmails, useMarkEmailAsRead, type Email } from "@/hooks/use-emails"
+import { useQueryClient } from "@tanstack/react-query"
 
 interface Email {
   id: string
@@ -35,33 +37,67 @@ interface Email {
 
 export function EnhancedEmailCenter() {
   const EMAIL_CENTER_DISABLED = (process.env.NEXT_PUBLIC_EMAIL_CENTER_DISABLED || "").toLowerCase() === "true"
-  const [emails, setEmails] = useState<Email[]>([])
+  const { toast } = useToast()
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+  const markAsReadMutation = useMarkEmailAsRead()
+  const topRef = useRef<HTMLDivElement | null>(null)
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: fetchedEmails = [], isLoading: loadingInbox, error: inboxError, refetch: refetchEmails } = useEmails()
+  
+  // Local state for UI interactions (search, selected email, etc.)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
   const [replyOpen, setReplyOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("inbox")
-  const [loadingInbox, setLoadingInbox] = useState(false)
-  const [inboxError, setInboxError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [composeTo, setComposeTo] = useState("")
   const [composeSubject, setComposeSubject] = useState("")
   const [composeText, setComposeText] = useState("")
-  const { toast } = useToast()
-  const topRef = useRef<HTMLDivElement | null>(null)
-  const isLoadingRef = useRef(false)
-  const isPollingRef = useRef(false)
-  const supabase = createClient()
 
   const CACHE_KEY = "dionix.email.inbox.cache.v1"
-  const STALE_MS = 2 * 60 * 1000 // 2 minutes
+  
+  // Merge fetched emails with localStorage cached read/starred states
+  const [emails, setEmails] = useState<Email[]>([])
+  
+  useEffect(() => {
+    if (EMAIL_CENTER_DISABLED || !fetchedEmails.length) return
+    
+    // Load cached read/starred states from localStorage
+    let cachedState: Record<string, { isRead: boolean; isStarred: boolean }> = {}
+    try {
+      const raw = localStorage.getItem(CACHE_KEY)
+      if (raw) {
+        const cached = JSON.parse(raw) as { ts: number; data: Email[] }
+        if (cached && Array.isArray(cached.data)) {
+          cachedState = Object.fromEntries(
+            cached.data.map((e) => [e.id, { isRead: !!e.isRead, isStarred: !!e.isStarred }])
+          )
+        }
+      }
+    } catch {}
+    
+    // Merge fetched emails with cached states
+    const merged = fetchedEmails.map((email) => {
+      const cached = cachedState[email.id]
+      return cached ? { ...email, ...cached } : email
+    })
+    
+    setEmails(merged)
+    // Update localStorage with merged data
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: merged }))
+    } catch {}
+  }, [fetchedEmails, EMAIL_CENTER_DISABLED])
 
   const onSelectEmail = (email: Email) => {
     setSelectedEmail(email)
     markAsRead(email.id)
-    // Sync seen flag to Hostinger mailbox
-    fetch("/api/email/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: email.id }), credentials: "same-origin" }).catch(() => {})
+    // Sync seen flag to Hostinger mailbox using React Query mutation
+    markAsReadMutation.mutate(email.id)
     // Smooth scroll to top where the preview is rendered
     if (typeof window !== "undefined") {
       ;(topRef.current?.scrollIntoView ? topRef.current.scrollIntoView({ behavior: "smooth", block: "start" }) : window.scrollTo({ top: 0, behavior: "smooth" }))
@@ -75,167 +111,32 @@ export function EnhancedEmailCenter() {
   )
   const quillFormats = useMemo(() => ["bold", "italic", "underline", "list", "bullet", "link"], [])
 
-  const loadInbox = async (force = false) => {
-    if (EMAIL_CENTER_DISABLED) return
-    if (isLoadingRef.current) return
-    setInboxError(null)
+  // React Query handles data fetching - no need for loadInbox function
 
-    // Fast-path: cached
-    if (!force) {
-      try {
-        const raw = localStorage.getItem(CACHE_KEY)
-        if (raw) {
-          const cached = JSON.parse(raw) as { ts: number; data: Email[] }
-          if (cached && Date.now() - cached.ts < STALE_MS && Array.isArray(cached.data)) {
-            setEmails(cached.data)
-            return
-          }
-        }
-      } catch {}
-    }
-
-    setLoadingInbox(true)
-    isLoadingRef.current = true
-    try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 15000)
-      const res = await fetch("/api/email/inbox", { signal: controller.signal, credentials: "same-origin" })
-      clearTimeout(timer)
-      if (!res.ok) throw new Error((await res.json()).error || "Failed to fetch inbox")
-      const data = await res.json()
-      const list = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
-      const mapped: Email[] = (Array.isArray(list) ? list : []).map((m: any) => ({
-        id: m.id,
-        from: m.from,
-        to: m.to,
-        subject: m.subject,
-        content: m.content,
-        preview: m.preview,
-        timestamp: m.timestamp,
-        isRead: false,
-        isStarred: false,
-        priority: "normal",
-        category: "Inbox",
-        attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
-      }))
-      setEmails((prev) => {
-        const idSet = new Set(prev.map((e) => e.id))
-        // Load cached state to preserve read/star flags across sessions
-        let cachedState: Record<string, { isRead: boolean; isStarred: boolean }> = {}
-        try {
-          const raw = localStorage.getItem(CACHE_KEY)
-          if (raw) {
-            const cached = JSON.parse(raw) as { ts: number; data: Email[] }
-            if (cached && Array.isArray(cached.data)) {
-              cachedState = Object.fromEntries(
-                cached.data.map((e) => [e.id, { isRead: !!e.isRead, isStarred: !!e.isStarred }]),
-              )
-            }
-          }
-        } catch {}
-
-        const newOnly = mapped
-          .filter((m) => !idSet.has(m.id))
-          .map((m) => {
-            const flags = cachedState[m.id]
-            return flags ? { ...m, ...flags } : m
-          })
-        const merged = [...newOnly, ...prev]
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: merged })) } catch {}
-        return merged
-      })
-    } catch (e: any) {
-      setInboxError(e?.message || "Unable to load inbox")
-    } finally {
-      isLoadingRef.current = false
-      setLoadingInbox(false)
-    }
-  }
-
-  useEffect(() => {
-    if (EMAIL_CENTER_DISABLED) return
-    loadInbox()
-  }, [])
-
-  // Subscribe to realtime broadcast push for new emails
+  // Subscribe to realtime broadcast push for new emails - invalidate React Query cache
   useEffect(() => {
     if (EMAIL_CENTER_DISABLED) return
     const channel = supabase
       .channel("emails-inbox")
-      .on("broadcast", { event: "new-email" }, (payload: any) => {
-        const m = payload?.payload
-        if (!m || !m.id) return
-        setEmails((prev) => {
-          if (prev.some((e) => e.id === m.id)) return prev
-          const newEmail: Email = {
-            id: String(m.id),
-            from: m.from || "",
-            to: m.to || "",
-            subject: m.subject || "(no subject)",
-            content: m.content || "",
-            preview: m.preview || (m.content ? String(m.content).slice(0, 120) : ""),
-            timestamp: m.timestamp || new Date().toISOString(),
-            isRead: false,
-            isStarred: false,
-            priority: "normal" as const,
-            category: "Inbox",
-          }
-          const next: Email[] = [newEmail, ...prev]
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: next })) } catch {}
-          return next
-        })
+      .on("broadcast", { event: "new-email" }, () => {
+        // Invalidate React Query cache to refetch emails
+        queryClient.invalidateQueries({ queryKey: ["emails"] })
       })
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [EMAIL_CENTER_DISABLED, queryClient, supabase])
 
-  // Background polling: append only new emails silently, keep read/star states
+  // Background polling: refetch emails every 60 seconds using React Query
   useEffect(() => {
     if (EMAIL_CENTER_DISABLED) return
-    const poll = async () => {
-      if (isPollingRef.current) return
-      isPollingRef.current = true
-      try {
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 12000)
-        const res = await fetch("/api/email/inbox", { signal: controller.signal, credentials: "same-origin" })
-        clearTimeout(timer)
-        if (!res.ok) return
-        const data = await res.json()
-        const list = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
-        const mapped: Email[] = (Array.isArray(list) ? list : []).map((m: any) => ({
-          id: m.id,
-          from: m.from,
-          to: m.to,
-          subject: m.subject,
-          content: m.content,
-          preview: m.preview,
-          timestamp: m.timestamp,
-          isRead: false,
-          isStarred: false,
-          priority: "normal",
-          category: "Inbox",
-          attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
-        }))
-        setEmails((prev) => {
-          const idSet = new Set(prev.map((e) => e.id))
-          const newOnly = mapped.filter((m) => !idSet.has(m.id))
-          if (newOnly.length === 0) return prev
-          const merged = [...newOnly, ...prev]
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: merged })) } catch {}
-          return merged
-        })
-      } catch {}
-      finally {
-        isPollingRef.current = false
-      }
-    }
-    const interval = setInterval(poll, 60000)
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["emails"] })
+    }, 60000)
     return () => clearInterval(interval)
-  }, [])
+  }, [EMAIL_CENTER_DISABLED, queryClient])
 
   const filteredEmails = emails.filter(
     (email) =>
@@ -288,7 +189,7 @@ export function EnhancedEmailCenter() {
           ) : (
             <Badge variant="secondary">{unreadCount} Unread</Badge>
           )}
-          <Button variant="outline" size="sm" onClick={() => loadInbox(true)} disabled={loadingInbox || EMAIL_CENTER_DISABLED}>
+          <Button variant="outline" size="sm" onClick={() => refetchEmails()} disabled={loadingInbox || EMAIL_CENTER_DISABLED}>
             <RefreshCcw className={`h-4 w-4 mr-2 ${loadingInbox ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -408,7 +309,9 @@ export function EnhancedEmailCenter() {
             </CardHeader>
             <CardContent>
               {inboxError && (
-                <div className="text-sm text-destructive mb-3">{inboxError}</div>
+                <div className="text-sm text-destructive mb-3">
+                  {inboxError instanceof Error ? inboxError.message : "Failed to load emails"}
+                </div>
               )}
               <Table>
                 <TableHeader>

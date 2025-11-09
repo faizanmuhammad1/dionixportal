@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useProjects } from "@/hooks/use-projects";
+import { useEmployees } from "@/hooks/use-employees";
+import { useTasks } from "@/hooks/use-tasks";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -56,10 +60,7 @@ import {
   FolderOpen,
   Mail,
 } from "lucide-react";
-import {
-  saveProjects as storeSaveProjects,
-  type Project as StoreProject,
-} from "@/lib/project-store";
+// Removed project-store import - React Query handles state management
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { uploadProjectFile, createSignedUrlByPath } from "@/lib/storage";
@@ -196,11 +197,63 @@ interface Employee {
 }
 
 export function UnifiedProjectManagement() {
+  const queryClient = useQueryClient();
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: projectsData = [], isLoading: loadingProjects, error: projectsError } = useProjects();
+  const { data: employeesData = [], isLoading: loadingEmployees, error: employeesError } = useEmployees();
+  const { data: tasksData = [], isLoading: loadingTasks, error: tasksError } = useTasks();
+  
+  // Transform React Query data to match component's expected format
+  const employees = (employeesData || []) as Employee[];
+  const tasks = (tasksData || []) as Task[];
+  
+  // Enrich projects with tasks and calculate progress
+  const projects = (projectsData || []).map((project: any) => {
+    if (!project) return null;
+    
+    const projectTasks = tasks.filter((t: Task) => t.project_id === project.id || t.project_id === project.project_id);
+    const completed = projectTasks.filter((t: Task) => t.status === "completed").length;
+    const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
+    
+    return {
+      ...project,
+      id: project.id || project.project_id,
+      name: project.name || project.project_name || "",
+      client: project.client || project.client_name || "",
+      description: project.description || "",
+      status: project.status || "planning",
+      priority: project.priority || "medium",
+      start_date: project.start_date || "",
+      end_date: project.end_date || "",
+      budget: Number(project.budget || 0),
+      tasks: projectTasks,
+      progress,
+      assigned_employees: project.assigned_employees || [],
+      attachments: project.attachments || [],
+      comments: project.comments || [],
+      service_type: project.service_type || project.project_type || project.type,
+      company_number: project.company_number || project.business_number,
+      company_email: project.company_email,
+      company_address: project.company_address,
+      about_company: project.about_company,
+      social_links: project.social_links || (project.social_media_links ? (typeof project.social_media_links === 'string' ? project.social_media_links.split(",") : project.social_media_links) : []),
+      public_contacts: project.public_contacts || {
+        phone: project.public_business_number,
+        email: project.public_company_email,
+        address: project.public_address,
+      },
+      media_links: project.media_links || (typeof project.media_links === 'string' ? project.media_links.split(",") : []),
+      bank_details: project.bank_details || {},
+      service_specific: project.service_specific || project.step2_data || {},
+      payment_integration_needs: project.payment_integration_needs || [],
+    } as Project;
+  }).filter((p): p is Project => p !== null);
+  
+  const loading = loadingProjects || loadingEmployees || loadingTasks;
+  
   const [activeTab, setActiveTab] = useState("overview");
   // Removed unused comment & attachment state
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
   // Removed unused submissions state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -209,7 +262,6 @@ export function UnifiedProjectManagement() {
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 7;
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
   const [detailsOpen, setDetailsOpen] = useState(false); // now controls inline side panel visibility
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
@@ -287,6 +339,31 @@ export function UnifiedProjectManagement() {
 
   const supabase = createClient();
   const { toast } = useToast();
+  
+  // Show error toasts if queries fail
+  useEffect(() => {
+    if (projectsError) {
+      toast({
+        title: "Error",
+        description: projectsError instanceof Error ? projectsError.message : "Failed to load projects",
+        variant: "destructive",
+      });
+    }
+    if (employeesError) {
+      toast({
+        title: "Error",
+        description: employeesError instanceof Error ? employeesError.message : "Failed to load employees",
+        variant: "destructive",
+      });
+    }
+    if (tasksError) {
+      toast({
+        title: "Error",
+        description: tasksError instanceof Error ? tasksError.message : "Failed to load tasks",
+        variant: "destructive",
+      });
+    }
+  }, [projectsError, employeesError, tasksError, toast]);
 
   // Assignment management functions
   const handleOpenAssignment = async (project: Project) => {
@@ -693,15 +770,13 @@ export function UnifiedProjectManagement() {
           storage_path: a.storage_path,
         }));
 
-        // Update the project in state
-        setProjects(prev => prev.map(p => 
-          p.id === projectId ? { ...p, attachments } : p
-        ));
-
         // Update selected project if it's the one being loaded
+        // Note: Projects are now managed by React Query, so we update the selected project directly
         if (selectedProject?.id === projectId) {
           setSelectedProject(prev => prev ? { ...prev, attachments } : null);
         }
+        // Invalidate React Query cache to refetch projects with updated attachments
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
 
         setLoadedProjectData(prev => new Set(prev).add(cacheKey));
       }
@@ -758,15 +833,13 @@ export function UnifiedProjectManagement() {
           created_at: c.created_at,
         }));
 
-        // Update the project in state
-        setProjects(prev => prev.map(p => 
-          p.id === projectId ? { ...p, comments } : p
-        ));
-
         // Update selected project if it's the one being loaded
+        // Note: Projects are now managed by React Query, so we update the selected project directly
         if (selectedProject?.id === projectId) {
           setSelectedProject(prev => prev ? { ...prev, comments } : null);
         }
+        // Invalidate React Query cache to refetch projects with updated comments
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
 
         setLoadedProjectData(prev => new Set(prev).add(cacheKey));
       }
@@ -806,15 +879,13 @@ export function UnifiedProjectManagement() {
         const data = await response.json();
         const members = (data.members || []).map((m: any) => m.user_id);
 
-        // Update the project in state
-        setProjects(prev => prev.map(p => 
-          p.id === projectId ? { ...p, assigned_employees: members } : p
-        ));
-
         // Update selected project if it's the one being loaded
+        // Note: Projects are now managed by React Query, so we update the selected project directly
         if (selectedProject?.id === projectId) {
           setSelectedProject(prev => prev ? { ...prev, assigned_employees: members } : null);
         }
+        // Invalidate React Query cache to refetch projects with updated members
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
 
         setLoadedProjectData(prev => new Set(prev).add(cacheKey));
       }
@@ -861,8 +932,8 @@ export function UnifiedProjectManagement() {
         description: result.message || `Employee assigned to ${projectIds.length} project(s)`,
       });
 
-      // Refresh project data
-      await refetchAllProjects();
+      // Invalidate React Query cache to refresh project data
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       setEmployeeProjectModalOpen(false);
       setSelectedEmployeeForProject(null);
     } catch (error: any) {
@@ -1035,250 +1106,10 @@ export function UnifiedProjectManagement() {
     return Object.keys(errors).length === 0;
   };
 
-  async function refetchAllProjects() {
-    try {
-      console.log("📁 Fetching projects from API...");
-      
-      // Use API endpoint instead of direct Supabase query
-      const response = await fetch("/api/projects", {
-        credentials: "same-origin",
-      });
+  // React Query handles project fetching - no need for refetchAllProjects function
+  // Projects and tasks are automatically fetched and cached by React Query
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error fetching projects:", response.status, response.statusText, errorText);
-        
-        toast({
-          title: "Error loading projects",
-          description: `Failed to load projects: ${response.statusText}`,
-          variant: "destructive",
-        });
-        
-        setProjects([]);
-        setTasks([]);
-        return;
-      }
-
-      const responseData = await response.json();
-      const projectsData = responseData.projects || [];
-      
-      if (!projectsData || projectsData.length === 0) {
-        console.log("No projects found");
-        setProjects([]);
-        setTasks([]);
-        return;
-      }
-
-      // Fetch all tasks for all projects in ONE query instead of one per project
-      const projectIds = projectsData.map((p: any) => p.project_id);
-      let allTasks: Task[] = [];
-      
-      if (projectIds.length > 0) {
-        try {
-          // Fetch all tasks for these projects in a single query
-          const supabase = createClient();
-          const { data: tasksData, error: tasksError } = await supabase
-            .from("tasks")
-            .select("*")
-            .in("project_id", projectIds)
-            .order("created_at", { ascending: false });
-
-          if (!tasksError && tasksData) {
-            allTasks = tasksData.map((t: any) => ({
-              id: t.task_id,
-              title: t.title,
-              description: t.description || "",
-              status: t.status,
-              assignee: t.assignee_id || "",
-              due_date: t.due_date || "",
-              priority: t.priority,
-              project_id: t.project_id,
-            }));
-          }
-        } catch (tasksError) {
-          console.error("Error fetching tasks:", tasksError);
-          // Continue without tasks - projects will show 0% progress
-        }
-      }
-
-      // Map tasks to projects
-      const tasksByProjectId = new Map<string, Task[]>();
-      allTasks.forEach((task) => {
-        if (!tasksByProjectId.has(task.project_id)) {
-          tasksByProjectId.set(task.project_id, []);
-        }
-        tasksByProjectId.get(task.project_id)!.push(task);
-      });
-
-      // Only fetch tasks for progress calculation - attachments/comments/members will be lazy loaded
-      const enrichedProjects = projectsData.map((project: any) => {
-        try {
-          // Get tasks for this project from the pre-fetched data
-          const taskList: Task[] = tasksByProjectId.get(project.project_id) || [];
-
-          // Initialize empty arrays - will be loaded on demand
-          const members: string[] = [];
-          const attachments: ProjectAttachment[] = [];
-          const comments: ProjectComment[] = [];
-
-          const completed = taskList.filter((t: Task) => t.status === "completed").length;
-          const progress = taskList.length
-            ? Math.round((completed / taskList.length) * 100)
-            : 0;
-
-          return {
-            id: project.project_id,
-            name: project.project_name || project.name,
-            description: project.description || "",
-            status: project.status,
-            priority: project.priority,
-            start_date: project.start_date || "",
-            end_date: project.end_date || "",
-            assigned_employees: members,
-            progress,
-            budget: Number(project.budget || 0),
-            client: project.client_name || "",
-            tasks: taskList,
-            service_type: project.project_type || project.type || undefined,
-            company_number: project.business_number || undefined,
-            company_email: project.company_email || undefined,
-            company_address: project.company_address || undefined,
-            about_company: project.about_company || undefined,
-            social_links: project.social_media_links
-              ? (typeof project.social_media_links === 'string' 
-                  ? project.social_media_links.split(",") 
-                  : project.social_media_links)
-              : [],
-            public_contacts: {
-              phone: project.public_business_number || undefined,
-              email: project.public_company_email || undefined,
-              address: project.public_address || undefined,
-            },
-            media_links: project.media_links 
-              ? (typeof project.media_links === 'string'
-                  ? project.media_links.split(",")
-                  : project.media_links)
-              : [],
-            bank_details: project.bank_details
-              ? (typeof project.bank_details === 'string'
-                  ? (() => {
-                      try {
-                        return JSON.parse(project.bank_details);
-                      } catch {
-                        return { details: project.bank_details };
-                      }
-                    })()
-                  : project.bank_details)
-              : {},
-            service_specific: project.step2_data || project.service_specific || {},
-            attachments,
-            comments,
-            payment_integration_needs: project.payment_integration_needs || [],
-          } as Project;
-        } catch (projectError) {
-          console.error(`Error enriching project ${project.project_id}:`, projectError);
-          // Return basic project data even if enrichment fails
-          return {
-            id: project.project_id,
-            name: project.project_name || project.name,
-            description: project.description || "",
-            status: project.status,
-            priority: project.priority,
-            start_date: project.start_date || "",
-            end_date: project.end_date || "",
-            assigned_employees: [],
-            progress: 0,
-            budget: Number(project.budget || 0),
-            client: project.client_name || "",
-            tasks: [],
-            attachments: [],
-            comments: [],
-            social_links: [],
-            media_links: [],
-            bank_details: {},
-            service_specific: {},
-            payment_integration_needs: [],
-          } as Project;
-        }
-      });
-      
-      // Reset loaded data tracking when projects are refetched
-      setLoadedProjectData(new Set());
-      
-      console.log(`✅ Successfully loaded ${enrichedProjects.length} projects from API`);
-      setProjects(enrichedProjects);
-      setTasks(enrichedProjects.flatMap((p: Project) => p.tasks));
-    } catch (err) {
-      console.error("❌ Unexpected error in refetchAllProjects:", err);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred while loading projects",
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function fetchEmployees() {
-    try {
-      // Use API endpoint to get employees with email (server-side can access auth.users)
-      const response = await fetch("/api/employees", {
-        credentials: "same-origin",
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error fetching employees:", response.status, response.statusText, errorText);
-        
-        // Only show error toast for non-permission errors
-        if (response.status !== 401 && response.status !== 403) {
-          toast({
-            title: "Error loading team members",
-            description: `Failed to load team members: ${response.statusText}`,
-            variant: "destructive",
-          });
-        } else {
-          console.log("Skipping employee fetch - insufficient permissions (expected for non-admin users)");
-        }
-        
-        setEmployees([]);
-        return;
-      }
-
-      const data = await response.json();
-      
-      if (!data || (Array.isArray(data) && data.length === 0)) {
-        console.log("No employees found in the system");
-        setEmployees([]);
-        return;
-      }
-
-      const mappedEmployees = (data || []).map((emp: any) => ({
-        id: emp.id,
-        name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.full_name || "Unknown",
-        email: emp.email || "",
-        role: emp.role || "employee",
-        first_name: emp.first_name || "",
-        last_name: emp.last_name || "",
-        department: emp.department || "",
-        position: emp.position || "",
-        status: emp.status || "active",
-        phone: emp.phone || "",
-        hire_date: emp.hire_date || "",
-        employment_type: emp.employment_type || "full-time",
-      }));
-
-      console.log(`Successfully loaded ${mappedEmployees.length} employees`);
-      setEmployees(mappedEmployees);
-    } catch (error) {
-      console.error("Unexpected error in fetchEmployees:", error);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred while loading team members",
-        variant: "destructive",
-      });
-      setEmployees([]);
-    }
-  }
+  // React Query handles employee fetching - no need for fetchEmployees function
 
   const [formData, setFormData] = useState<{
     name: string;
@@ -1307,7 +1138,7 @@ export function UnifiedProjectManagement() {
   });
 
   useEffect(() => {
-    // initial fetch
+    // Initial user fetch
     (async () => {
       console.log("🚀 Initializing Project Management...");
       let fetchedUser: User | null = null;
@@ -1320,12 +1151,6 @@ export function UnifiedProjectManagement() {
         console.error("❌ Failed to get current user:", err);
       }
       
-      console.log("📋 Fetching employees...");
-      await fetchEmployees();
-      
-      console.log("📁 Fetching projects...");
-      await refetchAllProjects();
-      
       // Default employees to My Projects tab for quicker access
       setActiveTab((prev) =>
         prev === "overview" &&
@@ -1335,58 +1160,61 @@ export function UnifiedProjectManagement() {
       );
       
       console.log("✅ Initialization complete");
-      setLoading(false);
+      // React Query handles data fetching - no need to set loading state
     })();
 
-    // realtime subscriptions
+    // Real-time subscriptions to invalidate React Query cache when data changes
     const channel = supabase
       .channel("projects-realtime")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "projects" },
         () => {
-          console.log("🔄 Project INSERT detected, refetching...");
-          refetchAllProjects();
+          console.log("🔄 Project INSERT detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
         }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "projects" },
         () => {
-          console.log("🔄 Project UPDATE detected, refetching...");
-          refetchAllProjects();
+          console.log("🔄 Project UPDATE detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
         }
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "projects" },
         () => {
-          console.log("🔄 Project DELETE detected, refetching...");
-          refetchAllProjects();
+          console.log("🔄 Project DELETE detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
         }
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "tasks" },
         () => {
-          console.log("🔄 Task INSERT detected, refetching...");
-          refetchAllProjects();
+          console.log("🔄 Task INSERT detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
         }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "tasks" },
         () => {
-          console.log("🔄 Task UPDATE detected, refetching...");
-          refetchAllProjects();
+          console.log("🔄 Task UPDATE detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
         }
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "tasks" },
         () => {
-          console.log("🔄 Task DELETE detected, refetching...");
-          refetchAllProjects();
+          console.log("🔄 Task DELETE detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
         }
       )
       .subscribe();
@@ -1397,16 +1225,16 @@ export function UnifiedProjectManagement() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "profiles" },
         () => {
-          console.log("🔄 Profile INSERT detected, refetching employees...");
-          fetchEmployees();
+          console.log("🔄 Profile INSERT detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["employees"] });
         }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
         () => {
-          console.log("🔄 Profile UPDATE detected, refetching employees...");
-          fetchEmployees();
+          console.log("🔄 Profile UPDATE detected, invalidating cache...");
+          queryClient.invalidateQueries({ queryKey: ["employees"] });
         }
       )
       .subscribe();
@@ -1415,7 +1243,7 @@ export function UnifiedProjectManagement() {
       supabase.removeChannel(channel);
       supabase.removeChannel(channelEmployees);
     };
-  }, []);
+  }, [queryClient, supabase]);
 
   // Lazy load data when project detail tabs are clicked
   useEffect(() => {
@@ -1439,12 +1267,20 @@ export function UnifiedProjectManagement() {
   }, [selectedProject?.id]);
 
   const filteredProjects = projects.filter((project) => {
+    if (!project) return false;
+    
+    const projectName = project.name || "";
+    const projectClient = project.client || "";
+    const projectDescription = project.description || "";
+    const searchLower = searchTerm.toLowerCase();
+    
     const matchesText =
-      project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.description.toLowerCase().includes(searchTerm.toLowerCase());
+      projectName.toLowerCase().includes(searchLower) ||
+      projectClient.toLowerCase().includes(searchLower) ||
+      projectDescription.toLowerCase().includes(searchLower);
+      
     if (currentUser && currentUser.role === "employee") {
-      const isAssigned = project.assigned_employees.includes(currentUser.id);
+      const isAssigned = (project.assigned_employees || []).includes(currentUser.id);
       return matchesText && isAssigned;
     }
     return matchesText;
@@ -1746,7 +1582,8 @@ export function UnifiedProjectManagement() {
         });
       }
 
-      await refetchAllProjects();
+      // Invalidate React Query cache to refetch projects
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       resetForm();
     } catch (error) {
       console.error("Error saving project:", error);
@@ -1894,12 +1731,8 @@ export function UnifiedProjectManagement() {
     setWizardStep(0);
   };
 
-  const deleteProjectLocal = (id: string) => {
-    const nextProjects = projects.filter((p) => p.id !== id);
-    setProjects(nextProjects);
-    setTasks(tasks.filter((t) => t.project_id !== id));
-    storeSaveProjects(nextProjects as unknown as StoreProject[]);
-  };
+  // React Query handles project deletion - no need for local deletion function
+  // The deleteProjectApi function already invalidates the cache
 
   const getEmployeeName = (id: string) => {
     return employees.find((e) => e.id === id)?.name || "Unknown";
@@ -3268,7 +3101,7 @@ export function UnifiedProjectManagement() {
               );
               const projectCount = employeeProjects.length;
               
-              const initials = employee.name
+              const initials = (employee.name || "Unknown")
                 .split(' ')
                 .map(n => n.charAt(0))
                 .join('')
@@ -3286,7 +3119,7 @@ export function UnifiedProjectManagement() {
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-lg font-semibold truncate">
-                          {employee.name}
+                          {employee.name || "Unknown"}
                         </CardTitle>
                         <CardDescription className="text-sm text-muted-foreground">
                           <div className="space-y-0.5">
@@ -3372,8 +3205,8 @@ export function UnifiedProjectManagement() {
                       onClick={() => {
                         setSelectedEmployeeForProject({
                           id: employee.id,
-                          name: employee.name,
-                          email: employee.email,
+                          name: employee.name || "Unknown",
+                          email: employee.email || "",
                         });
                         setEmployeeProjectModalOpen(true);
                       }}
@@ -3418,6 +3251,8 @@ export function UnifiedProjectManagement() {
                   setIsDeleting(true);
                   try {
                     await deleteProjectApi(deleteTarget.id);
+                    // Invalidate React Query cache after deletion
+                    queryClient.invalidateQueries({ queryKey: ["projects"] });
                     toast({
                       title: "Project deleted",
                       description: "The project has been deleted successfully",
@@ -3430,8 +3265,7 @@ export function UnifiedProjectManagement() {
                     }
                     
                     setDeleteOpen(false);
-                    // Refetch all projects from the backend to stay in sync
-                    await refetchAllProjects();
+                    // React Query will automatically refetch projects after cache invalidation
                   } catch (error) {
                     setDeleteError(
                       error instanceof Error ? error.message : "Unknown error"
@@ -3526,7 +3360,7 @@ export function UnifiedProjectManagement() {
                     className="flex items-center justify-between rounded-md bg-muted p-3"
                   >
                     <div>
-                      <p className="text-sm font-medium">{employee.name}</p>
+                      <p className="text-sm font-medium">{employee.name || "Unknown"}</p>
                       <p className="text-xs text-muted-foreground">
                         {employee.email}
                       </p>

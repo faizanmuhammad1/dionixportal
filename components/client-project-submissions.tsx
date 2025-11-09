@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSubmissions, useApproveSubmission, useRejectSubmission, useDeleteSubmission } from "@/hooks/use-submissions";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@/lib/types/project";
 import {
   Card,
@@ -495,9 +497,15 @@ interface Submission {
 }
 
 export function ClientProjectSubmissions() {
+  const queryClient = useQueryClient();
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: submissions = [], isLoading: loading, error: submissionsError } = useSubmissions();
+  const approveSubmission = useApproveSubmission();
+  const rejectSubmission = useRejectSubmission();
+  const deleteSubmission = useDeleteSubmission();
+  
   const [viewData, setViewData] = useState<NormalizedViewData | null>(null);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
   // removed viewLoading (not used in streamlined inline panel)
   const [showRawFields, setShowRawFields] = useState(false);
   // --- New modernization state (phase 1: filters & layout) ---
@@ -517,8 +525,8 @@ export function ClientProjectSubmissions() {
     null
   );
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isApproving, setIsApproving] = useState(false);
-  const [isRejecting, setIsRejecting] = useState(false);
+  const isApproving = approveSubmission.isPending;
+  const isRejecting = rejectSubmission.isPending;
   // Removed unused currentUser state
   const { toast } = useToast();
   const [projectName, setProjectName] = useState("");
@@ -616,24 +624,35 @@ export function ClientProjectSubmissions() {
     [submissions]
   );
 
-  const refresh = async () => {
-    setLoading(true);
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("submissions")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) setSubmissions(data as Submission[]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Show error toast if submissions query fails
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (submissionsError) {
+      toast({
+        title: "Error",
+        description: submissionsError instanceof Error ? submissionsError.message : "Failed to load submissions",
+        variant: "destructive",
+      });
+    }
+  }, [submissionsError, toast]);
+  
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("client-submissions-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "submissions" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["submissions"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   // openView defined later (avoid duplicate)
 
@@ -648,29 +667,19 @@ export function ClientProjectSubmissions() {
   const confirmApprove = async () => {
     if (!activeSubmissionId) return;
     
-    setIsApproving(true);
     try {
-      const response = await fetch("/api/submissions/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          submission_id: activeSubmissionId,
-          step1_data: {
-            project_name: projectName,
-            description,
-            budget: budget ? Number(budget) : null,
-            start_date: startDate || null,
-            end_date: endDate || null,
-            status: projectStatus,
-            priority: projectPriority,
-          },
-        }),
+      const result = await approveSubmission.mutateAsync({
+        submissionId: activeSubmissionId,
+        step1Data: {
+          project_name: projectName,
+          description,
+          budget: budget ? Number(budget) : null,
+          start_date: startDate || null,
+          end_date: endDate || null,
+          status: projectStatus,
+          priority: projectPriority,
+        },
       });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: "Failed to approve submission" }));
-        throw new Error(error.error || "Failed to approve submission");
-      }
-      const result = await response.json();
       
       // Close the inline view if the approved submission is currently being viewed
       if (selectedSubmission?.submission_id === activeSubmissionId) {
@@ -684,15 +693,12 @@ export function ClientProjectSubmissions() {
       });
       setApproveOpen(false);
       setActiveSubmissionId(null);
-      await refresh();
     } catch (e: unknown) {
       toast({
         title: "Approve failed",
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
-    } finally {
-      setIsApproving(false);
     }
   };
 
@@ -710,22 +716,8 @@ export function ClientProjectSubmissions() {
   const confirmReject = async () => {
     if (!activeSubmissionId) return;
     
-    setIsRejecting(true);
     try {
-      const response = await fetch("/api/submissions/reject", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          submission_id: activeSubmissionId,
-          reason: rejectionReason,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to reject submission");
-      }
+      await rejectSubmission.mutateAsync(activeSubmissionId);
 
       // Close the inline view if the rejected submission is currently being viewed
       if (selectedSubmission?.submission_id === activeSubmissionId) {
@@ -739,15 +731,12 @@ export function ClientProjectSubmissions() {
       });
       setRejectOpen(false);
       setActiveSubmissionId(null);
-      await refresh();
     } catch (e: unknown) {
       toast({
         title: "Reject failed",
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
-    } finally {
-      setIsRejecting(false);
     }
   };
 
@@ -756,14 +745,7 @@ export function ClientProjectSubmissions() {
 
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/submissions/${activeSubmissionId}`, {
-        method: "DELETE",
-        credentials: "same-origin",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete submission");
-      }
+      await deleteSubmission.mutateAsync(activeSubmissionId);
 
       // Close the inline view if the deleted submission is currently being viewed
       if (selectedSubmission?.submission_id === activeSubmissionId) {
@@ -778,7 +760,6 @@ export function ClientProjectSubmissions() {
       
       setDeleteOpen(false);
       setActiveSubmissionId(null);
-      await refresh();
     } catch (e: unknown) {
       toast({
         title: "Delete failed",
@@ -1060,7 +1041,8 @@ export function ClientProjectSubmissions() {
       });
       setEditOpen(false);
       setActiveSubmissionId(null);
-      await refresh();
+      // React Query will automatically refetch submissions after cache invalidation
+      queryClient.invalidateQueries({ queryKey: ["submissions"] });
     } catch (e: unknown) {
       console.error("Error updating submission:", e);
       toast({

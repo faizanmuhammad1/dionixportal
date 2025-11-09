@@ -131,7 +131,10 @@ export const GET = withAuth(
           (emp.email || "").toLowerCase() !== "admin@dionix.ai"
         )
 
-      return withCors(NextResponse.json(employees))
+      const response = withCors(NextResponse.json(employees));
+      // Add cache headers for GET requests
+      response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+      return response;
     } catch (e: any) {
       console.error("Employee API Error:", e)
       

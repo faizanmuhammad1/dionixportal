@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MessageSquare, Clock, AlertCircle, Mail, FolderOpen, Briefcase, Plus, Eye, ArrowRight } from "lucide-react"
-import type { User, FormSubmission, ClientProject, JobApplication } from "@/lib/auth"
-import { getFormSubmissions, getClientProjects, getJobApplications } from "@/lib/auth"
+import type { User } from "@/lib/auth"
+import { useDashboardData } from "@/hooks/use-dashboard"
+import { useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase"
 
 interface DashboardOverviewProps {
@@ -16,167 +17,90 @@ interface DashboardOverviewProps {
 }
 
 export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) {
-  const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([])
-  const [clientProjects, setClientProjects] = useState<ClientProject[]>([])
-  const [activeProjectsCount, setActiveProjectsCount] = useState<number>(0)
-  const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
-  const [activeEmployees, setActiveEmployees] = useState<number>(0)
-  const [pendingSubmissionsCount, setPendingSubmissionsCount] = useState<number>(0)
-  const [loading, setLoading] = useState(true)
   const supabase = createClient()
-
+  const queryClient = useQueryClient()
   const isAdmin = user.role === "admin"
 
+  // Use React Query for data fetching - only fetches once, caches data
+  const {
+    formSubmissions,
+    clientProjects,
+    jobApplications,
+    activeEmployees,
+    activeProjects: activeProjectsCount,
+    pendingSubmissions: pendingSubmissionsCount,
+    isLoading: loading,
+  } = useDashboardData()
+
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
   useEffect(() => {
-    // Individual update functions for live metrics (defined inside useEffect to avoid dependency issues)
-    const updateFormSubmissions = async () => {
-      try {
-        const submissions = await getFormSubmissions()
-        setFormSubmissions(submissions)
-      } catch (error) {
-        console.error("Error updating form submissions:", error)
-      }
-    }
-
-    const updateJobApplications = async () => {
-      try {
-        const applications = await getJobApplications()
-        setJobApplications(applications)
-      } catch (error) {
-        console.error("Error updating job applications:", error)
-      }
-    }
-
-    const updateClientProjects = async () => {
-      try {
-        const submissionsList = await getClientProjects()
-        setClientProjects(submissionsList)
-      } catch (error) {
-        console.error("Error updating client projects:", error)
-      }
-    }
-
-    const updateActiveEmployees = async () => {
-      try {
-        const response = await fetch("/api/employees", { credentials: "same-origin" })
-        if (response.ok) {
-          const employees = await response.json()
-          const activeCount = employees.filter((emp: any) => 
-            emp.status === "active" && 
-            emp.role !== "admin" && 
-            (emp.role === "manager" || emp.role === "employee")
-          ).length
-          setActiveEmployees(activeCount)
-        }
-      } catch (error) {
-        console.error("Error updating active employees:", error)
-      }
-    }
-
-    const updateActiveProjects = async () => {
-      try {
-        const { count: projectCount } = await supabase
-          .from("projects")
-          .select("project_id", { count: "exact", head: true })
-        setActiveProjectsCount(projectCount || 0)
-      } catch (error) {
-        console.error("Error updating active projects:", error)
-      }
-    }
-
-    const updatePendingSubmissions = async () => {
-      try {
-        const { count: pendingCount } = await supabase
-          .from("submissions")
-          .select("submission_id", { count: "exact", head: true })
-          .eq("status", "pending")
-        setPendingSubmissionsCount(pendingCount || 0)
-      } catch (error) {
-        console.error("Error updating pending submissions:", error)
-      }
-    }
-    async function fetchData() {
-      if (isAdmin) {
-        try {
-          // Fetch all data on initial load
-          const [submissions, applications] = await Promise.all([
-            getFormSubmissions(),
-            getJobApplications(),
-          ])
-          
-          setFormSubmissions(submissions)
-          setJobApplications(applications)
-          
-          // Load recent client project submissions for activity stream
-          const submissionsList = await getClientProjects()
-          setClientProjects(submissionsList)
-          
-          // Get active employee count from API (excluding admins)
-          await updateActiveEmployees()
-          
-          // Get total projects count from projects table
-          await updateActiveProjects()
-          
-          // Get pending submissions count
-          await updatePendingSubmissions()
-        } catch (error) {
-          console.error("Error fetching dashboard data:", error)
-          // Set default values on error
-          setActiveEmployees(0)
-          setActiveProjectsCount(0)
-          setPendingSubmissionsCount(0)
-        }
-      }
-      setLoading(false)
-    }
-
-    fetchData()
-
     if (!isAdmin) return
 
-    // Live real-time subscriptions for each metric
+    // Live real-time subscriptions - invalidate React Query cache instead of manually updating state
     const channel = supabase
       .channel("dashboard-overview-realtime")
       // Form submissions updates
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, updateFormSubmissions)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, updateFormSubmissions)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, updateFormSubmissions)
-      // Client project submissions updates
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "client_project_details" }, () => {
-        updateClientProjects()
-        updatePendingSubmissions()
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] })
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_project_details" }, () => {
-        updateClientProjects()
-        updatePendingSubmissions()
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] })
       })
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "client_project_details" }, () => {
-        updateClientProjects()
-        updatePendingSubmissions()
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] })
+      })
+      // Client project submissions updates (using submissions table)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["client-projects"] })
+        queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["client-projects"] })
+        queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["client-projects"] })
+        queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] })
       })
       // Job applications updates
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, updateJobApplications)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, updateJobApplications)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, updateJobApplications)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["job-applications"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["job-applications"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["job-applications"] })
+      })
       // Active projects updates
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, updateActiveProjects)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "projects" }, updateActiveProjects)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "projects" }, updateActiveProjects)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["active-projects-count"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "projects" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["active-projects-count"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "projects" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["active-projects-count"] })
+      })
       // Active employees updates (profiles table)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, updateActiveEmployees)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, updateActiveEmployees)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, updateActiveEmployees)
-      // Submissions status updates
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "submissions" }, updatePendingSubmissions)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "submissions" }, updatePendingSubmissions)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "submissions" }, updatePendingSubmissions)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["active-employees-count"] })
+        queryClient.invalidateQueries({ queryKey: ["employees"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["active-employees-count"] })
+        queryClient.invalidateQueries({ queryKey: ["employees"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["active-employees-count"] })
+        queryClient.invalidateQueries({ queryKey: ["employees"] })
+      })
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin])
+  }, [isAdmin, queryClient, supabase])
 
   const stats = {
     totalSubmissions: formSubmissions.length,

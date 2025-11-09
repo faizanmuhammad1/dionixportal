@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from "@/hooks/use-employees"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -48,15 +49,12 @@ interface Employee {
 
 export function EmployeeManagement() {
   const { toast } = useToast()
-  const [employees, setEmployees] = useState<Employee[]>([])
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
-  const [isUpdating, setIsUpdating] = useState(false)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [newEmployee, setNewEmployee] = useState({
     email: "",
     firstName: "",
@@ -70,38 +68,30 @@ export function EmployeeManagement() {
     password: "",
   })
 
-  useEffect(() => {
-    fetchEmployees()
-  }, [])
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: employees = [], isLoading, error } = useEmployees()
+  const createEmployee = useCreateEmployee()
+  const updateEmployee = useUpdateEmployee()
+  const deleteEmployee = useDeleteEmployee()
 
-  const fetchEmployees = async () => {
-    try {
-      setIsLoading(true)
-      const res = await fetch("/api/employees", { cache: "no-store", credentials: "same-origin" })
-      
-      if (!res.ok) {
-        const errorData = await res.json()
-        console.error("Failed to fetch employees:", errorData)
-        return
-      }
-      const data = await res.json()
-      setEmployees(data)
-    } catch (error) {
-      console.error("Error fetching employees:", error)
-    } finally {
-      setIsLoading(false)
+  // Show error toast if query fails
+  useEffect(() => {
+    if (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to load employees",
+        variant: "destructive",
+      })
     }
-  }
+  }, [error, toast])
 
   const handleCreateEmployee = async () => {
     try {
-      setIsUpdating(true)
       if (editingEmployee) {
         // Update existing employee - send both camelCase and snake_case for compatibility
-        const res = await fetch(`/api/employees/${editingEmployee.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        await updateEmployee.mutateAsync({
+          employeeId: editingEmployee.id,
+          employeeData: {
             role: newEmployee.role,
             first_name: newEmployee.firstName,
             firstName: newEmployee.firstName, // also send camelCase
@@ -114,42 +104,29 @@ export function EmployeeManagement() {
             hireDate: newEmployee.hireDate || null, // also send camelCase
             employment_type: newEmployee.employmentType,
             employmentType: newEmployee.employmentType, // also send camelCase
-          }),
-          credentials: "same-origin",
+          },
         })
-        if (!res.ok) {
-          const errorData = await res.json()
-          throw new Error(errorData.error || "Failed to update employee")
-        }
+        
         toast({
           title: "Success",
           description: "Employee updated successfully!",
           variant: "default",
         })
       } else {
-        // Create new employee directly
-        const res = await fetch("/api/employees", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: newEmployee.email,
-            firstName: newEmployee.firstName,
-            lastName: newEmployee.lastName,
-            role: newEmployee.role,
-            department: newEmployee.department,
-            position: newEmployee.position,
-            phone: newEmployee.phone,
-            hireDate: newEmployee.hireDate || null,
-            employmentType: newEmployee.employmentType,
-            password: newEmployee.password || undefined,
-          }),
-          credentials: "same-origin",
+        // Create new employee
+        const result = await createEmployee.mutateAsync({
+          email: newEmployee.email,
+          firstName: newEmployee.firstName,
+          lastName: newEmployee.lastName,
+          role: newEmployee.role,
+          department: newEmployee.department,
+          position: newEmployee.position,
+          phone: newEmployee.phone,
+          hireDate: newEmployee.hireDate || null,
+          employmentType: newEmployee.employmentType,
+          password: newEmployee.password || undefined,
         })
-        if (!res.ok) {
-          const errorData = await res.json()
-          throw new Error(errorData.error || "Failed to create employee")
-        }
-        const result = await res.json()
+        
         const successMessage = result.message || "Employee created successfully!"
         
         toast({
@@ -157,11 +134,9 @@ export function EmployeeManagement() {
           description: successMessage + (result.note ? ` ${result.note}` : ''),
           variant: "default",
         })
-        
-        // Refresh employee list to show newly created employee immediately
-        await fetchEmployees()
       }
 
+      // Reset form and close dialog
       setNewEmployee({ 
         email: "", 
         firstName: "", 
@@ -176,6 +151,7 @@ export function EmployeeManagement() {
       })
       setEditingEmployee(null)
       setIsCreateDialogOpen(false)
+      // React Query will automatically refetch employees after mutation
     } catch (error: any) {
       console.error("Error saving employee:", error.message)
       toast({
@@ -183,8 +159,6 @@ export function EmployeeManagement() {
         description: error.message || "Failed to save employee",
         variant: "destructive",
       })
-    } finally {
-      setIsUpdating(false)
     }
   }
 
@@ -200,23 +174,15 @@ export function EmployeeManagement() {
     
     try {
       setDeactivatingId(employeeToDelete.id)
-      const res = await fetch(`/api/employees/${employeeToDelete.id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-      })
       
-      if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || "Failed to deactivate employee")
-      }
+      await deleteEmployee.mutateAsync(employeeToDelete.id)
       
       toast({
         title: "Success",
         description: "Employee deactivated successfully!",
         variant: "default",
       })
-      fetchEmployees()
+      // React Query will automatically refetch employees after mutation
     } catch (error: any) {
       console.error("Error deactivating employee:", error)
       toast({
@@ -265,7 +231,6 @@ export function EmployeeManagement() {
             setIsCreateDialogOpen(open)
             if (!open) {
               setEditingEmployee(null)
-              setIsUpdating(false)
               setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", department: "", position: "", phone: "", hireDate: "", employmentType: "full-time" })
             }
           }}>
@@ -437,8 +402,8 @@ export function EmployeeManagement() {
                 )}
                 
                 <div className="pt-4 border-t">
-                  <Button onClick={handleCreateEmployee} className="w-full h-11" disabled={isUpdating}>
-                    {isUpdating ? (
+                  <Button onClick={handleCreateEmployee} className="w-full h-11" disabled={createEmployee.isPending || updateEmployee.isPending}>
+                    {createEmployee.isPending || updateEmployee.isPending ? (
                       <span className="flex items-center gap-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                         {editingEmployee ? "Updating Employee..." : "Creating Employee..."}

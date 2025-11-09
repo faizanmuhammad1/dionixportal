@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useJobs, useCreateJob, useUpdateJob, useDeleteJob } from "@/hooks/use-jobs";
+import { useJobApplications, useUpdateJobApplication, useDeleteJobApplication } from "@/hooks/use-job-applications";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -77,8 +79,18 @@ import {
 export function JobManagement() {
   const { toast } = useToast();
   const supabase = createClient();
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [applications, setApplications] = useState<DBJobApplication[]>([]);
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: jobs = [], isLoading: jobsLoading, error: jobsError } = useJobs(true);
+  const { data: applications = [], isLoading: applicationsLoading, error: applicationsError } = useJobApplications();
+  const createJob = useCreateJob();
+  const updateJob = useUpdateJob();
+  const deleteJob = useDeleteJob();
+  const updateJobApplication = useUpdateJobApplication();
+  const deleteJobApplication = useDeleteJobApplication();
+  
+  const loading = jobsLoading || applicationsLoading;
+  
   const [searchTerm, setSearchTerm] = useState("");
   // Removed filters for job openings per request
   const [appFilterPosition, setAppFilterPosition] = useState("");
@@ -87,15 +99,31 @@ export function JobManagement() {
   const [appFilterStatus, setAppFilterStatus] = useState("any");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [loading, setLoading] = useState(true);
   const [applicationDialogOpen, setApplicationDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [selectedApplication, setSelectedApplication] =
     useState<DBJobApplication | null>(null);
-  const [creating, setCreating] = useState(false);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [deletingAppId, setDeletingAppId] = useState<string | null>(null);
+  
+  // Show error toasts if queries fail
+  useEffect(() => {
+    if (jobsError) {
+      toast({
+        title: "Error",
+        description: jobsError instanceof Error ? jobsError.message : "Failed to load jobs",
+        variant: "destructive" as any,
+      });
+    }
+    if (applicationsError) {
+      toast({
+        title: "Error",
+        description: applicationsError instanceof Error ? applicationsError.message : "Failed to load applications",
+        variant: "destructive" as any,
+      });
+    }
+  }, [jobsError, applicationsError, toast]);
 
   const formatSalaryText = (input?: string | null) => {
     if (!input) return "N/A";
@@ -120,31 +148,7 @@ export function JobManagement() {
     is_active: true,
   });
 
-  // Load from API routes
-  useEffect(() => {
-    (async () => {
-      try {
-        const [jobsRes, appsRes] = await Promise.all([
-          fetch("/api/jobs?includeInactive=true").then((r) => r.json()),
-          fetch("/api/job-applications").then((r) => r.json()),
-        ]);
-        
-        if (jobsRes.error) throw new Error(jobsRes.error);
-        if (appsRes.error) throw new Error(appsRes.error);
-        
-        setJobs(jobsRes.jobs || []);
-        setApplications(appsRes.applications || []);
-      } catch (e: any) {
-        toast({
-          title: "Failed to load data",
-          description: e?.message || "Try again later.",
-          variant: "destructive" as any,
-        });
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // Data is now loaded via React Query hooks above - no useEffect needed!
 
   const handleCreateJob = async () => {
     if (!newJob.title.trim()) {
@@ -163,7 +167,6 @@ export function JobManagement() {
       });
       return;
     }
-    setCreating(true);
     const parseList = (s: string) =>
       s
         .split(/\n|,/)
@@ -183,20 +186,9 @@ export function JobManagement() {
     } as Omit<Job, "id" | "created_at">;
 
     try {
-      const res = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create job");
-      }
-      
+      const data = await createJob.mutateAsync(payload);
       const created = data.job;
-      setJobs([created, ...jobs]);
+      
       toast({
         title: "Job created",
         description: `${created.title} is now live.`,
@@ -213,14 +205,13 @@ export function JobManagement() {
         is_active: true,
       });
       setIsCreateDialogOpen(false);
+      // React Query will automatically refetch jobs after mutation
     } catch (e: any) {
       toast({
         title: "Failed to create job",
         description: e?.message || "Try again later.",
         variant: "destructive" as any,
       });
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -408,8 +399,8 @@ export function JobManagement() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleCreateJob} disabled={creating}>
-                {creating ? (
+              <Button onClick={handleCreateJob} disabled={createJob.isPending}>
+                {createJob.isPending ? (
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Creating...
                   </span>
@@ -628,11 +619,7 @@ export function JobManagement() {
                               job={editingJob}
                               onSaved={(updated) => {
                                 console.log("onSaved callback called with:", updated);
-                                setJobs((prev) =>
-                                  prev.map((j) =>
-                                    j.id === updated.id ? updated : j
-                                  )
-                                );
+                                // React Query will automatically update the cache
                                 console.log("Closing edit dialog");
                                 setEditDialogOpen(false);
                                 setEditingJob(null);
@@ -667,20 +654,9 @@ export function JobManagement() {
                               onClick={async () => {
                                 try {
                                   setDeletingJobId(job.id);
-                                  const res = await fetch(`/api/jobs/${job.id}`, {
-                                    method: "DELETE",
-                                  });
-                                  
-                                  const data = await res.json();
-                                  
-                                  if (!res.ok) {
-                                    throw new Error(data.error || "Failed to delete job");
-                                  }
-                                  
-                                  setJobs((prev) =>
-                                    prev.filter((j) => j.id !== job.id)
-                                  );
+                                  await deleteJob.mutateAsync(job.id);
                                   toast({ title: "Job deleted" });
+                                  // React Query will automatically refetch jobs after mutation
                                 } catch (e: any) {
                                   toast({
                                     title: "Failed to delete job",
@@ -969,11 +945,7 @@ export function JobManagement() {
                               <UpdateApplicationStatusForm
                                 application={application}
                                 onSaved={(updated) => {
-                                  setApplications((prev) =>
-                                    prev.map((a) =>
-                                      a.id === updated.id ? updated : a
-                                    )
-                                  );
+                                  // React Query will automatically update the cache
                                 }}
                               />
                             </DialogContent>
@@ -1004,22 +976,9 @@ export function JobManagement() {
                                   onClick={async () => {
                                     try {
                                       setDeletingAppId(application.id);
-                                      const res = await fetch(`/api/job-applications/${application.id}`, {
-                                        method: "DELETE",
-                                      });
-                                      
-                                      const data = await res.json();
-                                      
-                                      if (!res.ok) {
-                                        throw new Error(data.error || "Failed to delete application");
-                                      }
-                                      
-                                      setApplications((prev) =>
-                                        prev.filter(
-                                          (a) => a.id !== application.id
-                                        )
-                                      );
+                                      await deleteJobApplication.mutateAsync(application.id);
                                       toast({ title: "Application deleted" });
+                                      // React Query will automatically refetch applications after mutation
                                     } catch (e: any) {
                                       toast({
                                         title: "Failed to delete application",
@@ -1264,6 +1223,7 @@ function EditJobForm({
   onSaved: (j: Job) => void;
 }) {
   const { toast } = useToast();
+  const updateJob = useUpdateJob();
   const [form, setForm] = useState({
     title: job.title || "",
     department: job.department || "",
@@ -1275,8 +1235,6 @@ function EditJobForm({
     skills: (job.skills || []).join(", "),
     is_active: Boolean(job.is_active),
   });
-  const [saving, setSaving] = useState(false);
-
   const parseList = (s: string) =>
     s
       .split(/\n|,\s*/)
@@ -1285,7 +1243,6 @@ function EditJobForm({
 
   const handleSave = async () => {
     try {
-      setSaving(true);
       console.log("Starting job update for:", job.id);
       const updates: any = {
         title: form.title || undefined,
@@ -1305,22 +1262,16 @@ function EditJobForm({
       };
       console.log("Updates payload:", updates);
       
-      const res = await fetch(`/api/jobs/${job.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
+      const data = await updateJob.mutateAsync({
+        jobId: job.id,
+        jobData: updates,
       });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update job");
-      }
       
       const updated = data.job;
       console.log("Job updated successfully:", updated);
       toast({ title: "Job updated", description: `${updated.title} saved.` });
       onSaved(updated);
+      // React Query will automatically refetch jobs after mutation
     } catch (e: any) {
       console.error("Error updating job:", e);
       toast({
@@ -1328,8 +1279,6 @@ function EditJobForm({
         description: e?.message || "Try again later.",
         variant: "destructive" as any,
       });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -1409,8 +1358,8 @@ function EditJobForm({
         <Label htmlFor={`edit-active-${job.id}`}>Active</Label>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={handleSave} disabled={saving}>
-          {saving ? (
+        <Button variant="outline" onClick={handleSave} disabled={updateJob.isPending}>
+          {updateJob.isPending ? (
             <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Saving...
             </span>
@@ -1498,28 +1447,23 @@ function UpdateApplicationStatusForm({
   onSaved: (a: DBJobApplication) => void;
 }) {
   const { toast } = useToast();
+  const updateJobApplication = useUpdateJobApplication();
   const [status, setStatus] = useState(application.status);
 
   const handleSave = async () => {
     try {
-      const res = await fetch(`/api/job-applications/${application.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+      const data = await updateJobApplication.mutateAsync({
+        applicationId: application.id,
+        applicationData: { status },
       });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update application");
-      }
       
       const updated = data.application;
       toast({
         title: "Application updated",
-        description: `${application.full_name} is now ${updated.status}.`,
+        description: `${application.full_name || application.applicant_name} is now ${updated.status}.`,
       });
       onSaved(updated);
+      // React Query will automatically refetch applications after mutation
     } catch (e: any) {
       toast({
         title: "Failed to update application",
@@ -1547,8 +1491,14 @@ function UpdateApplicationStatusForm({
         </Select>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={handleSave}>
-          Save
+        <Button variant="outline" onClick={handleSave} disabled={updateJobApplication.isPending}>
+          {updateJobApplication.isPending ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+            </span>
+          ) : (
+            "Save"
+          )}
         </Button>
       </div>
     </div>

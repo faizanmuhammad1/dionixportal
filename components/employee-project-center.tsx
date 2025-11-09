@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useEmployeeProjects, useProjectDetails, useProjectTasks, useProjectComments, useProjectAttachments, useProjectMembers } from "@/hooks/use-projects";
+import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -63,84 +65,68 @@ interface EmployeeProjectCenterProps {
 export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
   const supabase = createClient();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: employeeProjects = [], isLoading: loadingProjects, error: projectsError } = useEmployeeProjects(user.id);
+  
+  // Show error toast if projects query fails
+  useEffect(() => {
+    if (projectsError) {
+      toast({
+        title: "Error",
+        description: projectsError instanceof Error ? projectsError.message : "Failed to load your projects and tasks",
+        variant: "destructive",
+      });
+    }
+  }, [projectsError, toast]);
+  
   const [activeTab, setActiveTab] = useState<string>("tasks");
-  const [assignedTasks, setAssignedTasks] = useState<
-    Array<{
-      id: string;
-      title: string;
-      project: string;
-      priority: string;
-      dueDate: string;
-      status: string;
-    }>
-  >([]);
-  const [assignedProjects, setAssignedProjects] = useState<
-    Array<{
-      id: string;
-      name: string;
-      client: string;
-      status: string;
-      progress: number;
-      dueDate: string;
-      description?: string;
-      startDate?: string;
-      priority?: string;
-      budget?: number;
-    }>
-  >([]);
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [viewMode, setViewMode] = useState<"list" | "detail">("list");
   const [projectDetailTab, setProjectDetailTab] = useState("overview");
-  const [projectDetails, setProjectDetails] = useState<any>(null);
-  const [projectTasks, setProjectTasks] = useState<any[]>([]);
-  const [projectComments, setProjectComments] = useState<any[]>([]);
-  const [projectAttachments, setProjectAttachments] = useState<any[]>([]);
-  const [projectMembers, setProjectMembers] = useState<any[]>([]);
-  const [loadingDetails, setLoadingDetails] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [isAddingComment, setIsAddingComment] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [loadingProjectData, setLoadingProjectData] = useState<{
-    tasks: boolean;
-    comments: boolean;
-    attachments: boolean;
-    members: boolean;
-  }>({
-    tasks: false,
-    comments: false,
-    attachments: false,
-    members: false,
-  });
-  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
   
   // Review panel state
   const [selectedTaskForReview, setSelectedTaskForReview] = useState<any>(null);
   const [taskReviews, setTaskReviews] = useState<any[]>([]);
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-
+  
+  // Use React Query hooks for project details
+  const { data: projectDetails = null, isLoading: loadingDetails } = useProjectDetails(selectedProject?.id || null);
+  const { data: projectTasks = [], isLoading: loadingTasks } = useProjectTasks(selectedProject?.id || null);
+  const { data: projectComments = [], isLoading: loadingComments } = useProjectComments(selectedProject?.id || null);
+  const { data: projectAttachments = [], isLoading: loadingAttachments } = useProjectAttachments(selectedProject?.id || null);
+  const { data: projectMembers = [], isLoading: loadingMembers } = useProjectMembers(selectedProject?.id || null);
+  
+  const loading = loadingProjects;
+  const loadingProjectData = {
+    tasks: loadingTasks,
+    comments: loadingComments,
+    attachments: loadingAttachments,
+    members: loadingMembers,
+  };
+  
+  // Process employee projects data to extract assigned projects and tasks
+  const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
+  const [assignedTasks, setAssignedTasks] = useState<any[]>([]);
+  
+  // Load tasks for all projects to calculate progress and get assigned tasks
   useEffect(() => {
-    let mounted = true;
-
-    const load = async () => {
+    if (!employeeProjects.length) {
+      setAssignedProjects([]);
+      setAssignedTasks([]);
+      return;
+    }
+    
+    const loadTasks = async () => {
       try {
-        // Use API endpoint to get assigned projects
-        const response = await fetch(`/api/employees/${user.id}/projects`, {
-          credentials: "same-origin",
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch assigned projects");
-        }
-
-        const data = await response.json();
-        const projects = data.projects || [];
-
-        // Fetch tasks and additional details for each project
-        const projectsWithDetails = await Promise.all(
-          projects.map(async (project: any) => {
+        const projectsWithTasks = await Promise.all(
+          employeeProjects.map(async (project: any) => {
             const { data: tasksData, error: tasksError } = await supabase
               .from("tasks")
               .select("task_id, title, status, priority, due_date, assignee_id")
@@ -153,7 +139,7 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
 
             // Fetch full project details
             const { data: projectDetails, error: projectError } = await supabase
-          .from("projects")
+              .from("projects")
               .select("description, budget, priority")
               .eq("project_id", project.project_id)
               .single();
@@ -168,7 +154,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
           })
         );
 
-        const mappedProjects = projectsWithDetails.map((p: any) => {
+        // Update assigned projects with progress
+        const updatedProjects = projectsWithTasks.map((p: any) => {
           const total = (p.tasks || []).length;
           const done = (p.tasks || []).filter(
             (t: any) => t.status === "completed"
@@ -188,7 +175,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
           };
         });
 
-        const myTasks = projectsWithDetails
+        // Extract my tasks
+        const myTasks = projectsWithTasks
           .flatMap((p: any) =>
             (p.tasks || []).map((t: any) => ({ ...t, projectName: p.project_name }))
           )
@@ -201,232 +189,63 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
             dueDate: t.due_date || "",
             status: t.status,
           }));
-
-        if (!mounted) return;
-        setAssignedProjects(mappedProjects);
+        
+        setAssignedProjects(updatedProjects);
         setAssignedTasks(myTasks);
-      } catch (e) {
-        console.error("Error loading employee project center:", e);
-        toast({
-          title: "Error",
-          description: "Failed to load your projects and tasks",
-          variant: "destructive",
-        });
-      } finally {
-        if (mounted) setLoading(false);
+      } catch (error) {
+        console.error("Error loading tasks:", error);
       }
     };
+    
+    loadTasks();
+  }, [employeeProjects, user.id, supabase]);
 
-    load();
-
-    // Set up real-time subscriptions
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
+  useEffect(() => {
     const channel = supabase
       .channel("employee-project-center")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "project_members", filter: `user_id=eq.${user.id}` },
-        () => load()
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
+        }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
-        () => load()
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
+          if (selectedProject?.id) {
+            queryClient.invalidateQueries({ queryKey: ["project-tasks", selectedProject.id] });
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "projects" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
+          if (selectedProject?.id) {
+            queryClient.invalidateQueries({ queryKey: ["project-details", selectedProject.id] });
+          }
+        }
       )
       .subscribe();
 
     return () => {
-      mounted = false;
       supabase.removeChannel(channel);
     };
-  }, [user.id]);
+  }, [user.id, selectedProject?.id, queryClient, supabase]);
 
-  // Load full project details
-  const loadProjectDetails = async (projectId: string) => {
-    setLoadingDetails(true);
-    try {
-      const response = await fetch(`/api/projects/${projectId}`, {
-        credentials: "same-origin",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.error || `Failed to fetch project details (${response.status})`;
-        
-        if (response.status === 403) {
-          toast({
-            title: "Access Denied",
-            description: errorMessage,
-            variant: "destructive",
-          });
-        } else if (response.status === 404) {
-          toast({
-            title: "Project Not Found",
-            description: "The project you're looking for doesn't exist.",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Error",
-            description: errorMessage,
-            variant: "destructive",
-          });
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
-      const project = data.project;
-      
-      if (!project) {
-        throw new Error("Project data is empty");
-      }
-      
-      // Only calculate progress if not provided - don't fetch tasks here
-      // Progress will be calculated when tasks tab is loaded
-      if (!project.progress) {
-        project.progress = 0;
-      }
-      
-      console.log("Loaded project details:", {
-        project_id: project.project_id,
-        project_name: project.project_name,
-        has_description: !!project.description,
-        has_budget: !!project.budget,
-        has_dates: !!(project.start_date || project.end_date),
-        progress: project.progress,
-        has_step2_data: !!project.step2_data,
-        step2_data_type: typeof project.step2_data,
-        step2_data_value: project.step2_data,
-        step2_data_keys: project.step2_data && typeof project.step2_data === 'object' 
-          ? Object.keys(project.step2_data) 
-          : 'not an object',
-        has_service_specific: !!project.service_specific,
-        service_specific_type: typeof project.service_specific,
-        project_type: project.project_type,
-        service_type: project.service_type,
-        all_keys: Object.keys(project).filter(k => k.includes('step') || k.includes('service') || k.includes('type')),
-      });
-      
-      setProjectDetails(project);
-    } catch (error) {
-      console.error("Error loading project details:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load project details",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingDetails(false);
-    }
-  };
-
-  // Load project tasks
-  const loadProjectTasks = async (projectId: string) => {
-    // Skip if already loaded
-    if (loadedTabs.has(`tasks-${projectId}`)) {
-      return;
-    }
-    
-    setLoadingProjectData(prev => ({ ...prev, tasks: true }));
-    try {
-      const response = await fetch(`/api/projects/${projectId}/tasks`, {
-        credentials: "same-origin",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const tasks = data.tasks || [];
-        setProjectTasks(tasks);
-        setLoadedTabs(prev => new Set(prev).add(`tasks-${projectId}`));
-        
-        // Update progress in project details if loaded
-        if (projectDetails && projectDetails.project_id === projectId) {
-          const total = tasks.length;
-          const completed = tasks.filter((t: any) => t.status === "completed").length;
-          const progress = total ? Math.round((completed / total) * 100) : 0;
-          setProjectDetails((prev: any) => ({ ...prev, progress }));
-        }
-      }
-    } catch (error) {
-      console.error("Error loading tasks:", error);
-    } finally {
-      setLoadingProjectData(prev => ({ ...prev, tasks: false }));
-    }
-  };
-
-  // Load project comments
-  const loadProjectComments = async (projectId: string) => {
-    setLoadingProjectData(prev => ({ ...prev, comments: true }));
-    try {
-      const response = await fetch(`/api/projects/${projectId}/comments`, {
-        credentials: "same-origin",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setProjectComments(data.comments || []);
-      }
-    } catch (error) {
-      console.error("Error loading comments:", error);
-    } finally {
-      setLoadingProjectData(prev => ({ ...prev, comments: false }));
-    }
-  };
-
-  // Load project attachments
-  const loadProjectAttachments = async (projectId: string, forceRefresh: boolean = false) => {
-    // Skip if already loaded (unless force refresh)
-    if (!forceRefresh && loadedTabs.has(`attachments-${projectId}`)) {
-      return;
-    }
-    
-    setLoadingProjectData(prev => ({ ...prev, attachments: true }));
-    try {
-      const response = await fetch(`/api/projects/${projectId}/attachments`, {
-        credentials: "same-origin",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setProjectAttachments(data.attachments || []);
-        if (!forceRefresh) {
-          setLoadedTabs(prev => new Set(prev).add(`attachments-${projectId}`));
-        }
-      }
-    } catch (error) {
-      console.error("Error loading attachments:", error);
-    } finally {
-      setLoadingProjectData(prev => ({ ...prev, attachments: false }));
-    }
-  };
-
-  // Load project members
-  const loadProjectMembers = async (projectId: string) => {
-    setLoadingProjectData(prev => ({ ...prev, members: true }));
-    try {
-      const response = await fetch(`/api/projects/${projectId}/members`, {
-        credentials: "same-origin",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setProjectMembers(data.members || []);
-      }
-    } catch (error) {
-      console.error("Error loading members:", error);
-    } finally {
-      setLoadingProjectData(prev => ({ ...prev, members: false }));
-    }
-  };
+  // React Query handles all data fetching - no need for load functions
 
   // Handle viewing project details
-  const handleViewProjectDetails = async (project: any) => {
+  const handleViewProjectDetails = (project: any) => {
     setSelectedProject(project);
     setViewMode("detail");
     setProjectDetailTab("overview");
-    
-    // Only load project details initially - other data will load when tabs are clicked
-    await loadProjectDetails(project.id);
+    // React Query will automatically fetch project details when selectedProject.id changes
   };
 
   // Handle going back to list
@@ -468,7 +287,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
       });
 
       setNewComment("");
-      await loadProjectComments(selectedProject.id);
+      // Invalidate React Query cache to refetch comments
+      queryClient.invalidateQueries({ queryKey: ["project-comments", selectedProject.id] });
     } catch (error) {
       console.error("Error adding comment:", error);
       toast({
@@ -504,7 +324,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
         description: "Comment deleted successfully",
       });
 
-      await loadProjectComments(selectedProject.id);
+      // Invalidate React Query cache to refetch comments
+      queryClient.invalidateQueries({ queryKey: ["project-comments", selectedProject.id] });
     } catch (error) {
       console.error("Error deleting comment:", error);
       toast({
@@ -559,7 +380,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
       });
       
       // Refresh attachments list
-      await loadProjectAttachments(selectedProject.id, true);
+      // Invalidate React Query cache to refetch attachments
+      queryClient.invalidateQueries({ queryKey: ["project-attachments", selectedProject.id] });
     } catch (error) {
       console.error("Error uploading file:", error);
       toast({
@@ -607,7 +429,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
         description: "Attachment deleted successfully",
       });
 
-      await loadProjectAttachments(selectedProject.id, true);
+      // Invalidate React Query cache to refetch attachments
+      queryClient.invalidateQueries({ queryKey: ["project-attachments", selectedProject.id] });
     } catch (error) {
       console.error("Error deleting attachment:", error);
       toast({
@@ -618,22 +441,8 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
     }
   };
 
-  // Load data when detail tab changes - only fetch when tab is clicked
-  useEffect(() => {
-    if (viewMode === "detail" && selectedProject) {
-      const projectId = selectedProject.id;
-      
-      if (projectDetailTab === "tasks") {
-        loadProjectTasks(projectId);
-      } else if (projectDetailTab === "comments") {
-        loadProjectComments(projectId);
-      } else if (projectDetailTab === "attachments") {
-        loadProjectAttachments(projectId);
-      } else if (projectDetailTab === "team") {
-        loadProjectMembers(projectId);
-      }
-    }
-  }, [projectDetailTab, viewMode, selectedProject]);
+  // React Query automatically fetches data when selectedProject.id changes
+  // No need for manual tab-based loading
 
   const [updatingIds, setUpdatingIds] = useState<string[]>([]);
   
@@ -707,7 +516,9 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
       await updateTaskStatus(taskId, newStatus);
       // Reload tasks after successful update
       if (selectedProject?.id) {
-        loadProjectTasks(selectedProject.id);
+        // Invalidate React Query cache to refetch tasks
+        queryClient.invalidateQueries({ queryKey: ["project-tasks", selectedProject.id] });
+        queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
       }
       // Also reload assigned tasks for the table view
       const load = async () => {
@@ -1443,7 +1254,9 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                                     const newStatus = task.status === "todo" ? "in-progress" : "completed";
                                     updateTaskStatus(task.task_id || task.id, newStatus);
                                     // Refresh tasks
-                                    loadProjectTasks(selectedProject.id);
+                                    // Invalidate React Query cache to refetch tasks
+        queryClient.invalidateQueries({ queryKey: ["project-tasks", selectedProject.id] });
+        queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
                                   }}
                                 >
                                   {task.status === "todo" ? "Start" : "Complete"}

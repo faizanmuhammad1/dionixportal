@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
+import { ReactQueryProvider } from "@/lib/react-query-provider"
 import { Suspense } from "react"
 
 const montserrat = Montserrat({
@@ -49,11 +50,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${montserrat.variable} ${inter.variable} ${firaCode.variable} antialiased`}>
         <Suspense fallback={null}>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            {children}
-            <Toaster />
-          </ThemeProvider>
-          <Analytics />
+          <ReactQueryProvider>
+            <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+              {children}
+              <Toaster />
+            </ThemeProvider>
+            <Analytics />
+          </ReactQueryProvider>
         </Suspense>
       </body>
     </html>

@@ -1,67 +1,65 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal, Eye, CheckCircle, Clock, AlertCircle } from "lucide-react"
-import {
-  getFormSubmissions,
-  getClientProjects,
-  getJobApplications,
-  type FormSubmission,
-  type ClientProject,
-  type JobApplication,
-} from "@/lib/auth"
+import { useFormSubmissions, useClientProjects } from "@/hooks/use-dashboard"
+import { useJobApplications } from "@/hooks/use-job-applications"
+import { useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase"
 
 export function ContactSubmissions() {
-  const [formSubmissions, setFormSubmissions] = useState<FormSubmission[]>([])
-  const [clientProjects, setClientProjects] = useState<ClientProject[]>([])
-  const [jobApplications, setJobApplications] = useState<JobApplication[]>([])
-  const [loading, setLoading] = useState(true)
   const supabase = createClient()
+  const queryClient = useQueryClient()
 
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: formSubmissions = [], isLoading: formSubmissionsLoading } = useFormSubmissions()
+  const { data: clientProjects = [], isLoading: clientProjectsLoading } = useClientProjects()
+  const { data: jobApplications = [], isLoading: jobApplicationsLoading } = useJobApplications()
+  
+  const loading = formSubmissionsLoading || clientProjectsLoading || jobApplicationsLoading
+
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const [submissions, projects, applications] = await Promise.all([
-          getFormSubmissions(),
-          getClientProjects(),
-          getJobApplications(),
-        ])
-        setFormSubmissions(submissions)
-        setClientProjects(projects)
-        setJobApplications(applications)
-      } catch (error) {
-        console.error("Error fetching submissions:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-
-    // Realtime: refresh when any relevant table changes
     const channel = supabase
       .channel("contact-submissions-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, fetchData)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "client_project_details" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_project_details" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "client_project_details" }, fetchData)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, fetchData)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, fetchData)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] })
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["client-projects"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["client-projects"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["client-projects"] })
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_applications" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["job-applications"] })
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "job_applications" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["job-applications"] })
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "job_applications" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["job-applications"] })
+      })
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [queryClient, supabase])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {

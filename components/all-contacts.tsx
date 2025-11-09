@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useFormSubmissions } from "@/hooks/use-dashboard";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -26,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { getFormSubmissions } from "@/lib/auth";
 import type { FormSubmission } from "@/lib/auth";
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,9 +46,12 @@ import {
 export function AllContacts() {
   const { toast } = useToast();
   const supabase = createClient();
-  const [contacts, setContacts] = useState<FormSubmission[]>([]);
+  const queryClient = useQueryClient();
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: contacts = [], isLoading: loading } = useFormSubmissions();
+  
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<FormSubmission | null>(null);
   const [open, setOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -103,19 +107,25 @@ export function AllContacts() {
     return String(val);
   };
 
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
   useEffect(() => {
-    async function fetchContacts() {
-      try {
-        const submissions = await getFormSubmissions();
-        setContacts(submissions);
-      } catch (error) {
-        console.error("Error fetching contacts:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchContacts();
-  }, []);
+    const channel = supabase
+      .channel("all-contacts-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "form_submissions" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["form-submissions"] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient, supabase]);
 
   const filteredContacts = contacts.filter(
     (contact) =>

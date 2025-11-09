@@ -178,7 +178,9 @@ export const GET = withAuth(
             };
           });
 
-          return withCors(NextResponse.json({ tasks: enrichedTasks }));
+          const response = withCors(NextResponse.json({ tasks: enrichedTasks }));
+          response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+          return response;
         }
       }
       // Admins and managers see all tasks (no additional filter needed)
@@ -316,6 +318,8 @@ export const GET = withAuth(
       });
       
       const response = withCors(NextResponse.json(responseData));
+      // Add cache headers for GET requests
+      response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
       console.log("[TASKS API] Response status:", response.status);
       console.log("[TASKS API] ====== END ======");
       return response;

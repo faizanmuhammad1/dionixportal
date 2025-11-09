@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTasks } from "@/hooks/use-tasks";
+import { useProjects } from "@/hooks/use-projects";
+import { useEmployees } from "@/hooks/use-employees";
+import { useCreateTask, useUpdateTask, useDeleteTask } from "@/hooks/use-tasks";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -180,11 +185,56 @@ function formatDue(date?: string) {
 }
 
 export function TaskBoard() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const queryClient = useQueryClient();
+  
+  // Use React Query for data fetching - only fetches once, caches data
+  const { data: tasksData = [], isLoading: loadingTasks, error: tasksError } = useTasks();
+  const { data: projectsData = [], isLoading: loadingProjects, error: projectsError } = useProjects();
+  const { data: employeesData = [], isLoading: loadingEmployees, error: employeesError } = useEmployees();
+  
+  // Initialize mutations
+  const createTask = useCreateTask();
+  const updateTask = useUpdateTask();
+  const deleteTask = useDeleteTask();
+  
+  // Transform React Query data to match component's expected format
+  const tasks = (tasksData || []).map((t: any) => ({
+    id: t.id || t.task_id,
+    title: t.title,
+    description: t.description || "",
+    status: t.status as Task["status"],
+    priority: t.priority as Task["priority"],
+    assignee_id: t.assignee_id || undefined,
+    assignee_name: t.assignee_name,
+    assignee_email: t.assignee_email,
+    project_id: t.project_id || undefined,
+    project_name: t.project_name,
+    due_date: t.due_date || undefined,
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+    created_by: t.created_by || "system",
+    tags: Array.isArray(t.tags) ? t.tags : [],
+    estimated_hours: t.estimated_hours || undefined,
+    actual_hours: t.actual_hours || undefined,
+    progress: t.progress || 0,
+  })) as Task[];
+  
+  const projects = (projectsData || []).map((p: any) => ({
+    id: p.id || p.project_id,
+    name: p.name || p.project_name || "",
+    status: (p.status || "planning") as Project["status"],
+  })) as Project[];
+  
+  const employees = (employeesData || []).map((e: any) => ({
+    id: e.id,
+    name: `${e.first_name || ""} ${e.last_name || ""}`.trim() || e.name || "Unknown",
+    email: e.email || "",
+    avatar_url: e.avatar_url,
+  })) as Employee[];
+  
+  const loading = loadingTasks || loadingProjects || loadingEmployees;
+  
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterAssignee, setFilterAssignee] = useState<string>("all");
@@ -230,147 +280,70 @@ export function TaskBoard() {
   const supabase = createClient();
 
   useEffect(() => {
-    loadData(true); // Show loading on initial load only
     getCurrentUser().then(setCurrentUser);
+  }, []);
 
-    // Real-time subscriptions
+  // Show error toasts if queries fail
+  useEffect(() => {
+    if (tasksError) {
+      toast({
+        title: "Error",
+        description: tasksError instanceof Error ? tasksError.message : "Failed to load tasks",
+        variant: "destructive",
+      });
+    }
+    if (projectsError) {
+      toast({
+        title: "Error",
+        description: projectsError instanceof Error ? projectsError.message : "Failed to load projects",
+        variant: "destructive",
+      });
+    }
+    if (employeesError) {
+      toast({
+        title: "Error",
+        description: employeesError instanceof Error ? employeesError.message : "Failed to load employees",
+        variant: "destructive",
+      });
+    }
+  }, [tasksError, projectsError, employeesError, toast]);
+
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
+  useEffect(() => {
     const channel = supabase
       .channel("task-board-realtime")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "tasks" },
-        () => loadData(false)
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
+        }
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "tasks" },
-        () => loadData(false)
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
+        }
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "tasks" },
-        () => loadData(false)
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
+        }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
-  }, []);
+  }, [queryClient, supabase]);
 
-  const loadData = async (showLoading = false) => {
-    try {
-      if (showLoading) {
-        setLoading(true);
-      }
-      
-      // Fetch tasks via API (handles RLS and related data)
-      let tasksData: any[] = [];
-      let tasksError = null;
-      try {
-        console.log("[FRONTEND] Fetching tasks from /api/tasks...");
-        const tasksResponse = await fetch("/api/tasks", { credentials: "same-origin" });
-        console.log("[FRONTEND] Tasks API response status:", tasksResponse.status, tasksResponse.statusText);
-        console.log("[FRONTEND] Response headers:", Object.fromEntries(tasksResponse.headers.entries()));
-        
-        if (tasksResponse.ok) {
-          const tasksResult = await tasksResponse.json();
-          console.log("[FRONTEND] Tasks API response body:", tasksResult);
-          console.log("[FRONTEND] Response has tasks property:", 'tasks' in tasksResult);
-          console.log("[FRONTEND] Tasks property type:", typeof tasksResult.tasks);
-          console.log("[FRONTEND] Tasks property is array:", Array.isArray(tasksResult.tasks));
-          
-          tasksData = tasksResult.tasks || [];
-          console.log("[FRONTEND] Tasks fetched from API:", tasksData.length, "tasks");
-          console.log("[FRONTEND] Tasks data:", tasksData);
-          
-          if (tasksData.length === 0) {
-            console.warn("[FRONTEND] API returned empty tasks array. Full response:", JSON.stringify(tasksResult, null, 2));
-          }
-        } else {
-          const errorText = await tasksResponse.text();
-          console.error("[FRONTEND] Tasks API error:", tasksResponse.status, errorText);
-          tasksError = { message: `Failed to fetch tasks: ${tasksResponse.status} ${errorText}` };
-        }
-      } catch (err) {
-        tasksError = err;
-        console.error("Error fetching tasks:", err);
-      }
-
-      // Fetch projects
-      const { data: projectsData, error: projectsError } = await supabase
-        .from("projects")
-        .select("project_id, project_name, status")
-        .order("project_name");
-
-      // Fetch employees via API (server-side can access auth.users for email)
-      let employeesData: any[] = [];
-      let employeesError = null;
-      try {
-        const empResponse = await fetch("/api/employees", { credentials: "same-origin" });
-        if (empResponse.ok) {
-          employeesData = await empResponse.json();
-        } else {
-          employeesError = { message: "Failed to fetch employees" };
-        }
-      } catch (err) {
-        employeesError = err;
-      }
-
-      if (tasksError) console.error("Tasks error:", tasksError);
-      if (projectsError) console.error("Projects error:", projectsError);
-      if (employeesError) console.error("Employees error:", employeesError);
-
-      // Tasks are already mapped by the API
-      const mappedTasks = (tasksData || []).map((t: any) => ({
-        id: t.id || t.task_id,
-        title: t.title,
-        description: t.description || "",
-        status: t.status as Task["status"],
-        priority: t.priority as Task["priority"],
-        assignee_id: t.assignee_id || undefined,
-        assignee_name: t.assignee_name,
-        assignee_email: t.assignee_email,
-        project_id: t.project_id || undefined,
-        project_name: t.project_name,
-        due_date: t.due_date || undefined,
-        created_at: t.created_at,
-        updated_at: t.updated_at,
-        created_by: t.created_by || "system",
-        tags: Array.isArray(t.tags) ? t.tags : [],
-        estimated_hours: t.estimated_hours || undefined,
-        actual_hours: t.actual_hours || undefined,
-        progress: t.progress || 0,
-      }));
-
-      // Map projects to expected format
-      const mappedProjects = (projectsData || []).map((p: any) => ({
-        id: p.project_id,
-        name: p.project_name,
-        status: p.status || "planning",
-      }));
-
-      // Map employees to expected format
-      const mappedEmployees = (employeesData || []).map((e: any) => ({
-        id: e.id,
-        name: `${e.first_name || ""} ${e.last_name || ""}`.trim() || "Unknown",
-        email: e.email || "",
-      }));
-
-      console.log("Mapped tasks:", mappedTasks.length, mappedTasks);
-      setTasks(mappedTasks);
-      setProjects(mappedProjects);
-      setEmployees(mappedEmployees);
-    } catch (err) {
-      console.error("Error loading data", err);
-      setTasks([]);
-      setProjects([]);
-      setEmployees([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // React Query handles data fetching - no need for loadData function
 
   // CRUD Handlers -------------------------------------------------
   const handleCreateTask = () => {
@@ -424,29 +397,26 @@ export function TaskBoard() {
       const projectId = taskForm.project_id && taskForm.project_id !== "no-project" ? taskForm.project_id : null;
       
       if (editingTask) {
-        // If task has a project, use API route for backend verification
+        // If task has a project, use React Query mutation
         if (projectId && editingTask.project_id) {
-          const updatePayload = {
-            title: taskForm.title.trim(),
-            description: taskForm.description.trim(),
-            priority: taskForm.priority,
-            assignee_id: taskForm.assignee_id || null,
-            due_date: taskForm.due_date || null,
-            status: taskForm.status,
-          };
-          
-          const response = await fetch(`/api/projects/${projectId}/tasks?task_id=${editingTask.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            body: JSON.stringify(updatePayload),
-          });
-          
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+          try {
+            await updateTask.mutateAsync({
+              projectId,
+              taskId: editingTask.id,
+              taskData: {
+                title: taskForm.title.trim(),
+                description: taskForm.description.trim(),
+                priority: taskForm.priority,
+                assignee_id: taskForm.assignee_id || null,
+                due_date: taskForm.due_date || null,
+                status: taskForm.status,
+              },
+            });
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "Failed to update task";
             toast({ 
               title: "Failed to update task", 
-              description: errorData.details || errorData.error || "Unknown error",
+              description: errorMessage,
               variant: "destructive" 
             });
             setIsSubmitting(false);
@@ -481,13 +451,12 @@ export function TaskBoard() {
           }
         }
         
-        // Reload data to get fresh state (silently, no loading skeleton)
-        await loadData(false);
+        // React Query mutations automatically invalidate cache
         toast({ title: "Task updated successfully" });
       } else {
         // Create new task
         if (projectId) {
-          // Use API route for tasks with projects (backend verification)
+          // Use React Query mutation for tasks with projects
           // Normalize assignee_id: convert empty string or "unassigned" to null
           const normalizedAssigneeId = taskForm.assignee_id && 
             taskForm.assignee_id.trim() !== "" && 
@@ -495,27 +464,23 @@ export function TaskBoard() {
             ? taskForm.assignee_id 
             : null;
           
-          const newTaskData = {
-            title: taskForm.title.trim(),
-            description: taskForm.description.trim(),
-            status: taskForm.status || "todo",
-            priority: taskForm.priority,
-            assignee_id: normalizedAssigneeId,
-            due_date: taskForm.due_date || null,
-          };
-          
-          const response = await fetch(`/api/projects/${projectId}/tasks`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            body: JSON.stringify(newTaskData),
-          });
-          
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+          try {
+            await createTask.mutateAsync({
+              projectId,
+              taskData: {
+                title: taskForm.title.trim(),
+                description: taskForm.description.trim(),
+                status: taskForm.status || "todo",
+                priority: taskForm.priority,
+                assignee_id: normalizedAssigneeId,
+                due_date: taskForm.due_date || null,
+              },
+            });
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "Failed to create task";
             toast({ 
               title: "Failed to create task", 
-              description: errorData.details || errorData.error || "Unknown error",
+              description: errorMessage,
               variant: "destructive" 
             });
             setIsSubmitting(false);
@@ -552,8 +517,7 @@ export function TaskBoard() {
           }
         }
         
-        // Reload data to get fresh state (silently, no loading skeleton)
-        await loadData(false);
+        // React Query mutations automatically invalidate cache
         toast({ title: "Task created successfully" });
       }
       setTaskDialogOpen(false);
@@ -624,7 +588,9 @@ export function TaskBoard() {
         }
       }
 
-      await loadData(false);
+      // Invalidate React Query cache to refetch tasks
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast({ 
         title: "Task reassigned", 
         description: newAssigneeId 
@@ -639,13 +605,24 @@ export function TaskBoard() {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      const { error } = await supabase.from("tasks").delete().eq("task_id", taskId);
-      if (error) {
-        console.error("Error deleting task:", error);
-        toast({ title: "Delete failed", variant: "destructive" });
-        return;
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      
+      if (task.project_id) {
+        // Use React Query mutation for tasks with projects
+        await deleteTask.mutateAsync({ projectId: task.project_id, taskId });
+      } else {
+        // For tasks without projects, use direct Supabase
+        const { error } = await supabase.from("tasks").delete().eq("task_id", taskId);
+        if (error) {
+          console.error("Error deleting task:", error);
+          toast({ title: "Delete failed", variant: "destructive" });
+          return;
+        }
+        // Invalidate React Query cache
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
       }
-      await loadData(false);
       toast({ title: "Task deleted successfully" });
     } catch (err) {
       console.error(err);
@@ -657,35 +634,35 @@ export function TaskBoard() {
     taskId: string,
     newStatus: Task["status"]
   ) => {
-    // Optimistic update - update UI immediately
-    setTasks((prevTasks) =>
-      prevTasks.map((task) =>
-        task.id === taskId
-          ? { ...task, status: newStatus, updated_at: new Date().toISOString() }
-          : task
-      )
-    );
-
     try {
-      const { error } = await supabase
-        .from("tasks")
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq("task_id", taskId);
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
       
-      if (error) {
-        console.error("Error updating status:", error);
-        // Revert optimistic update on error
-        await loadData(false);
-        toast({ title: "Status update failed", variant: "destructive" });
-        return;
+      if (task.project_id) {
+        // Use React Query mutation for tasks with projects
+        await updateTask.mutateAsync({
+          projectId: task.project_id,
+          taskId,
+          taskData: { status: newStatus },
+        });
+      } else {
+        // For tasks without projects, use direct Supabase
+        const { error } = await supabase
+          .from("tasks")
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq("task_id", taskId);
+        
+        if (error) {
+          console.error("Error updating status:", error);
+          toast({ title: "Status update failed", variant: "destructive" });
+          return;
+        }
+        // Invalidate React Query cache
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
       }
-      
-      // Refresh data silently (no loading state)
-      await loadData(false);
     } catch (err) {
       console.error(err);
-      // Revert optimistic update on error
-      await loadData(false);
       toast({ title: "Status update failed", variant: "destructive" });
     }
   };
@@ -1042,34 +1019,6 @@ export function TaskBoard() {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-2" />
-            <div className="h-4 w-64 bg-gray-200 rounded animate-pulse" />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="space-y-3">
-              <div className="h-6 w-24 bg-gray-200 rounded animate-pulse" />
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, j) => (
-                  <div
-                    key={j}
-                    className="h-24 bg-gray-200 rounded animate-pulse"
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {selectedTaskForReview && (
@@ -1227,28 +1176,38 @@ export function TaskBoard() {
                 </div>
 
                 <div className="space-y-2 min-h-[200px]">
-                  {statusTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("taskId", task.id);
-                        e.dataTransfer.setData("currentStatus", task.status);
-                      }}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const taskId = e.dataTransfer.getData("taskId");
-                        const currentStatus =
-                          e.dataTransfer.getData("currentStatus");
-                        if (currentStatus !== status) {
-                          handleStatusChange(taskId, status as Task["status"]);
-                        }
-                      }}
-                    >
-                      <TaskCard task={task} />
-                    </div>
-                  ))}
+                  {loading ? (
+                    // Show skeleton loaders for tasks while loading
+                    Array.from({ length: 3 }).map((_, j) => (
+                      <div
+                        key={`skeleton-${status}-${j}`}
+                        className="h-32 bg-muted rounded-lg animate-pulse border border-border"
+                      />
+                    ))
+                  ) : (
+                    statusTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        draggable={!loading}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("taskId", task.id);
+                          e.dataTransfer.setData("currentStatus", task.status);
+                        }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const taskId = e.dataTransfer.getData("taskId");
+                          const currentStatus =
+                            e.dataTransfer.getData("currentStatus");
+                          if (currentStatus !== status) {
+                            handleStatusChange(taskId, status as Task["status"]);
+                          }
+                        }}
+                      >
+                        <TaskCard task={task} />
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             );
@@ -1257,13 +1216,23 @@ export function TaskBoard() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>All Tasks ({sortedTasks.length})</CardTitle>
+            <CardTitle>All Tasks ({loading ? 0 : sortedTasks.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {sortedTasks.map((task) => (
-                <TaskCard key={task.id} task={task} />
-              ))}
+              {loading ? (
+                // Show skeleton loaders for tasks while loading
+                Array.from({ length: 5 }).map((_, index) => (
+                  <div
+                    key={`skeleton-list-${index}`}
+                    className="h-24 bg-muted rounded-lg animate-pulse border border-border"
+                  />
+                ))
+              ) : (
+                sortedTasks.map((task) => (
+                  <TaskCard key={task.id} task={task} />
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
