@@ -219,32 +219,32 @@ export function UnifiedProjectManagement() {
     
     const fetchAllProjectMembers = async () => {
       try {
-        const { data: allMembers, error } = await supabase
-          .from("project_members")
-          .select("project_id, user_id");
-        
-        if (error) {
-          console.error("Error fetching project members:", error);
-          return;
-        }
-        
         // Create a map of project_id -> array of user_ids
         const membersMap = new Map<string, string[]>();
-        if (allMembers && allMembers.length > 0) {
-          allMembers.forEach((member: any) => {
-            const projectId = member.project_id;
-            const userId = member.user_id;
-            if (projectId && userId) {
-              if (!membersMap.has(projectId)) {
-                membersMap.set(projectId, []);
-              }
-              membersMap.get(projectId)!.push(userId);
+
+        // IMPORTANT: avoid RLS issues by using our admin-backed API per project
+        // Iterate projects and fetch members via /api/projects/[id]/members
+        const projectIds: string[] = (projectsData || [])
+          .map((p: any) => p.project_id || p.id)
+          .filter(Boolean);
+
+        await Promise.all(
+          projectIds.map(async (pid: string) => {
+            try {
+              const res = await fetch(`/api/projects/${pid}/members`, { credentials: "same-origin" });
+              if (!res.ok) return;
+              const json = await res.json();
+              const users: string[] = (json.members || []).map((m: any) => m.user_id).filter(Boolean);
+              membersMap.set(pid, users);
+            } catch (e) {
+              // fail soft per project
+              console.warn("Failed to fetch members for project", pid, e);
             }
-          });
-          console.log("Project members map populated:", Array.from(membersMap.entries()));
-        } else {
-          console.log("No project members found in database");
-        }
+          })
+        );
+
+        // Helpful debug
+        // console.log("Project members map populated (via API):", Array.from(membersMap.entries()));
         
         setProjectMembersMap(membersMap);
       } catch (error) {
@@ -253,7 +253,7 @@ export function UnifiedProjectManagement() {
     };
     
     fetchAllProjectMembers();
-  }, [projectsData, supabase]);
+  }, [projectsData]);
   
   // Enrich projects with tasks and calculate progress
   // Use useMemo to ensure projects are recomputed when projectMembersMap changes
@@ -2888,17 +2888,21 @@ export function UnifiedProjectManagement() {
                           <div className="space-y-2">
                             {selectedProject.assigned_employees.map((empId) => {
                               const emp = employees.find((e) => e.id === empId);
+                              const fullName = `${emp?.first_name || ""} ${emp?.last_name || ""}`.trim();
+                              const displayName = fullName || emp?.name || "Unknown";
+                              const initial =
+                                (emp?.first_name?.[0] || emp?.name?.[0] || "?").toUpperCase();
                               return (
                                 <div
                                   key={empId}
                                   className="rounded border bg-muted/30 px-2 py-2 flex items-center gap-2"
                                 >
                                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
-                                    {emp?.name?.charAt(0).toUpperCase() || "?"}
+                                    {initial}
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="text-xs font-medium truncate">
-                                      {emp?.name || "Unknown"}
+                                      {displayName}
                                     </div>
                                     <div className="text-[10px] text-muted-foreground truncate">
                                       {emp?.email || empId}
