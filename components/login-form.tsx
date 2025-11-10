@@ -50,20 +50,20 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       <Card className="w-full max-w-md shadow-2xl relative z-10 animate-scale-in border-2 backdrop-blur-sm bg-card/95">
         <CardHeader className="space-y-3 pb-6">
           {/* Logo */}
-          <div className="flex justify-center mb-4">
-            <div className="relative w-24 h-24">
+          <div className="flex justify-center mb-6">
+            <div className="relative w-32 h-32">
               <Image
                 src={lightModeLogoSrc}
                 alt="Dionix.ai"
-                width={96}
-                height={96}
+                width={128}
+                height={128}
                 className="block dark:hidden object-contain"
               />
               <Image
                 src={darkModeLogoSrc}
                 alt="Dionix.ai"
-                width={96}
-                height={96}
+                width={128}
+                height={128}
                 className="hidden dark:block object-contain"
               />
             </div>
