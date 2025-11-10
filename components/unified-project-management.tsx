@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useProjects } from "@/hooks/use-projects";
+import { useProjectSummaries, useProjectDetails } from "@/hooks/use-projects";
 import { useEmployees } from "@/hooks/use-employees";
 import { useTasks } from "@/hooks/use-tasks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -88,6 +88,7 @@ async function deleteProjectApi(projectId: string) {
 
 interface Project {
   id: string;
+  project_id?: string; // Optional: raw API data may have project_id
   name: string;
   description: string;
   status: "planning" | "active" | "completed" | "on-hold";
@@ -199,8 +200,8 @@ interface Employee {
 export function UnifiedProjectManagement() {
   const queryClient = useQueryClient();
   
-  // Use React Query for data fetching - only fetches once, caches data
-  const { data: projectsData = [], isLoading: loadingProjects, error: projectsError } = useProjects();
+  // Use React Query for data fetching - fetch summaries only for list view
+  const { data: projectsData = [], isLoading: loadingProjects, error: projectsError } = useProjectSummaries();
   const { data: employeesData = [], isLoading: loadingEmployees, error: employeesError } = useEmployees();
   const { data: tasksData = [], isLoading: loadingTasks, error: tasksError } = useTasks();
   
@@ -308,7 +309,20 @@ export function UnifiedProjectManagement() {
           address: project.public_address,
         },
         media_links: project.media_links || (typeof project.media_links === 'string' ? project.media_links.split(",") : []),
-        bank_details: project.bank_details || {},
+        bank_details: (() => {
+          if (!project.bank_details) return {};
+          if (typeof project.bank_details === 'string') {
+            try {
+              return JSON.parse(project.bank_details);
+            } catch {
+              return {};
+            }
+          }
+          if (typeof project.bank_details === 'object') {
+            return project.bank_details;
+          }
+          return {};
+        })(),
         service_specific: project.service_specific || project.step2_data || {},
         payment_integration_needs: project.payment_integration_needs || [],
       } as Project;
@@ -322,12 +336,82 @@ export function UnifiedProjectManagement() {
   // Removed unused submissions state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [viewingProjectId, setViewingProjectId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 7;
   const [searchTerm, setSearchTerm] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false); // now controls inline side panel visibility
+  
+  // Fetch full project details when viewing
+  const { data: fullProjectData, isLoading: loadingProjectDetails } = useProjectDetails(viewingProjectId);
+  
+  // Update selectedProject when full project data is loaded
+  useEffect(() => {
+    if (fullProjectData && viewingProjectId) {
+      // Enrich the full project data similar to how we enrich summaries
+      const projectTasks = tasks.filter((t: Task) => t.project_id === fullProjectData.project_id || t.project_id === fullProjectData.id);
+      const completed = projectTasks.filter((t: Task) => t.status === "completed").length;
+      const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
+      
+      const projectId = fullProjectData.project_id || fullProjectData.id;
+      let assignedEmployees: string[] = [];
+      
+      if (projectMembersMap.size > 0 && projectId) {
+        assignedEmployees = projectMembersMap.get(projectId) || [];
+      }
+      
+      const enrichedProject = {
+        ...fullProjectData,
+        id: projectId,
+        name: fullProjectData.name || fullProjectData.project_name || "",
+        client: fullProjectData.client || fullProjectData.client_name || "",
+        description: fullProjectData.description || "",
+        status: fullProjectData.status || "planning",
+        priority: fullProjectData.priority || "medium",
+        start_date: fullProjectData.start_date || "",
+        end_date: fullProjectData.end_date || "",
+        budget: Number(fullProjectData.budget || 0),
+        tasks: projectTasks,
+        progress,
+        assigned_employees: assignedEmployees,
+        attachments: fullProjectData.attachments || [],
+        comments: fullProjectData.comments || [],
+        service_type: fullProjectData.service_type || fullProjectData.project_type || fullProjectData.type,
+        company_number: fullProjectData.company_number || fullProjectData.business_number,
+        company_email: fullProjectData.company_email,
+        company_address: fullProjectData.company_address,
+        about_company: fullProjectData.about_company,
+        social_links: fullProjectData.social_links || (fullProjectData.social_media_links ? (typeof fullProjectData.social_media_links === 'string' ? fullProjectData.social_media_links.split(",") : fullProjectData.social_media_links) : []),
+        public_contacts: fullProjectData.public_contacts || {
+          phone: fullProjectData.public_business_number,
+          email: fullProjectData.public_company_email,
+          address: fullProjectData.public_address,
+        },
+        media_links: fullProjectData.media_links || (typeof fullProjectData.media_links === 'string' ? fullProjectData.media_links.split(",") : []),
+        bank_details: (() => {
+          if (!fullProjectData.bank_details) return {};
+          if (typeof fullProjectData.bank_details === 'string') {
+            try {
+              return JSON.parse(fullProjectData.bank_details);
+            } catch {
+              return {};
+            }
+          }
+          if (typeof fullProjectData.bank_details === 'object') {
+            return fullProjectData.bank_details;
+          }
+          return {};
+        })(),
+        service_specific: fullProjectData.service_specific || fullProjectData.step2_data || {},
+        payment_integration_needs: fullProjectData.payment_integration_needs || [],
+      } as Project;
+      
+      setSelectedProject(enrichedProject);
+    }
+  }, [fullProjectData, viewingProjectId, tasks, projectMembersMap]);
+  
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1703,6 +1787,7 @@ export function UnifiedProjectManagement() {
   const startEdit = (project: Project) => {
     // Ensure any details dialog is closed before opening editor
     setDetailsOpen(false);
+    setViewingProjectId(null);
     setEditingProject(project);
 
     // Reset form errors
@@ -2104,65 +2189,263 @@ export function UnifiedProjectManagement() {
 
         <TabsContent value="projects" className="space-y-6">
           {/* Inline Preview Panel - Shows at top when project selected */}
-          {detailsOpen && selectedProject && (
+          {detailsOpen && (selectedProject || viewingProjectId) && (
             <Card className="border-primary/20 md:max-h-[80vh] lg:max-h-[85vh] flex flex-col">
               <CardHeader className="sticky top-0 z-10 pb-3 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-base mb-1 break-words">
-                      {selectedProject.name}
-                    </CardTitle>
-                    <CardDescription className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs">
-                      <span className="truncate">
-                        {selectedProject.client || "No client"}
-                      </span>
-                      <span className="hidden sm:inline text-muted-foreground/50">
-                        •
-                      </span>
-                      <span className="text-muted-foreground/80">
-                        {selectedProject.start_date
-                          ? new Date(
-                              selectedProject.start_date
-                            ).toLocaleDateString()
-                          : "No start date"}
-                      </span>
-                    </CardDescription>
+                {loadingProjectDetails ? (
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <Skeleton className="h-5 w-48" />
+                      <Skeleton className="h-4 w-32" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-5 w-16" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Close preview"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => {
+                          setDetailsOpen(false);
+                          setViewingProjectId(null);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        selectedProject.status === "active"
-                          ? "default"
-                          : selectedProject.status === "completed"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className="uppercase tracking-wide text-[10px] px-2 py-1 h-auto"
-                    >
-                      {selectedProject.status}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Close preview"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => setDetailsOpen(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                ) : selectedProject ? (
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base mb-1 break-words">
+                        {selectedProject.name}
+                      </CardTitle>
+                      <CardDescription className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs">
+                        <span className="truncate">
+                          {selectedProject.client || "No client"}
+                        </span>
+                        <span className="hidden sm:inline text-muted-foreground/50">
+                          •
+                        </span>
+                        <span className="text-muted-foreground/80">
+                          {selectedProject.start_date
+                            ? new Date(
+                                selectedProject.start_date
+                              ).toLocaleDateString()
+                            : "No start date"}
+                        </span>
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          selectedProject.status === "active"
+                            ? "default"
+                            : selectedProject.status === "completed"
+                            ? "secondary"
+                            : "outline"
+                        }
+                        className="uppercase tracking-wide text-[10px] px-2 py-1 h-auto"
+                      >
+                        {selectedProject.status}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Close preview"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => {
+                          setDetailsOpen(false);
+                          setViewingProjectId(null);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </CardHeader>
               <CardContent className="space-y-5 overflow-y-auto">
-                <Tabs value={projectDetailTab} onValueChange={setProjectDetailTab} className="w-full">
-                  <TabsList className="w-full flex flex-wrap gap-1 sm:gap-2">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="company">Company</TabsTrigger>
-                    <TabsTrigger value="details">Details</TabsTrigger>
-                    <TabsTrigger value="attachments">Attachments</TabsTrigger>
-                    <TabsTrigger value="comments">Comments</TabsTrigger>
-                    <TabsTrigger value="team">Team</TabsTrigger>
-                  </TabsList>
+                {loadingProjectDetails ? (
+                  <Tabs value={projectDetailTab} onValueChange={setProjectDetailTab} className="w-full">
+                    <TabsList className="w-full flex flex-wrap gap-1 sm:gap-2">
+                      <TabsTrigger value="overview">Overview</TabsTrigger>
+                      <TabsTrigger value="company">Company</TabsTrigger>
+                      <TabsTrigger value="details">Details</TabsTrigger>
+                      <TabsTrigger value="attachments">Attachments</TabsTrigger>
+                      <TabsTrigger value="comments">Comments</TabsTrigger>
+                      <TabsTrigger value="team">Team</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="overview" className="pt-4">
+                      <div className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Skeleton className="h-3 w-16" />
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                          <div className="space-y-2">
+                            <Skeleton className="h-3 w-20" />
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Skeleton className="h-3 w-16" />
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Skeleton className="h-3 w-20" />
+                            <div className="flex items-center gap-2">
+                              <Skeleton className="h-2 flex-1" />
+                              <Skeleton className="h-4 w-12" />
+                            </div>
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Skeleton className="h-3 w-20" />
+                            <Skeleton className="h-16 w-full" />
+                          </div>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="company" className="pt-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-20" />
+                          <Skeleton className="h-8 w-full" />
+                        </div>
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-24" />
+                          <Skeleton className="h-8 w-full" />
+                        </div>
+                        <div className="space-y-2 sm:col-span-2">
+                          <Skeleton className="h-3 w-16" />
+                          <Skeleton className="h-8 w-full" />
+                        </div>
+                        <div className="space-y-2 sm:col-span-2">
+                          <Skeleton className="h-3 w-28" />
+                          <Skeleton className="h-20 w-full" />
+                        </div>
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-24" />
+                          <Skeleton className="h-8 w-full" />
+                        </div>
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-24" />
+                          <Skeleton className="h-8 w-full" />
+                        </div>
+                        <div className="space-y-2 sm:col-span-2">
+                          <Skeleton className="h-3 w-28" />
+                          <Skeleton className="h-8 w-full" />
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="details" className="pt-4">
+                      <div className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-2 sm:col-span-2">
+                            <Skeleton className="h-3 w-20" />
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Skeleton className="h-3 w-24" />
+                            <Skeleton className="h-24 w-full" />
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Skeleton className="h-3 w-20" />
+                            <Skeleton className="h-24 w-full" />
+                          </div>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="attachments" className="pt-4">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <Skeleton className="h-5 w-32" />
+                          <Skeleton className="h-9 w-24" />
+                        </div>
+                        <div className="space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="flex items-center gap-3 p-3 rounded border">
+                              <Skeleton className="h-10 w-10 rounded" />
+                              <div className="flex-1 space-y-2">
+                                <Skeleton className="h-4 w-48" />
+                                <Skeleton className="h-3 w-32" />
+                              </div>
+                              <Skeleton className="h-8 w-8" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="comments" className="pt-4">
+                      <div className="space-y-4">
+                        <div className="space-y-3 p-4 rounded border">
+                          <Skeleton className="h-4 w-24" />
+                          <Skeleton className="h-20 w-full" />
+                          <div className="flex justify-end gap-2">
+                            <Skeleton className="h-9 w-16" />
+                            <Skeleton className="h-9 w-28" />
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {[1, 2].map((i) => (
+                            <div key={i} className="flex gap-3 p-3 rounded border">
+                              <Skeleton className="h-8 w-8 rounded-full" />
+                              <div className="flex-1 space-y-2">
+                                <Skeleton className="h-4 w-32" />
+                                <Skeleton className="h-12 w-full" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="team" className="pt-4">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-40" />
+                          <div className="space-y-2">
+                            {[1, 2, 3].map((i) => (
+                              <div key={i} className="flex items-center gap-2 p-2 rounded border">
+                                <Skeleton className="h-8 w-8 rounded-full" />
+                                <div className="flex-1 space-y-1">
+                                  <Skeleton className="h-4 w-32" />
+                                  <Skeleton className="h-3 w-48" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Skeleton className="h-3 w-28" />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Skeleton className="h-16 w-full" />
+                            <Skeleton className="h-16 w-full" />
+                          </div>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <div className="flex flex-wrap gap-2 pt-2 border-t mt-4">
+                      <Skeleton className="h-9 flex-1" />
+                      <Skeleton className="h-9 flex-1" />
+                    </div>
+                  </Tabs>
+                ) : selectedProject ? (
+                  <>
+                    <Tabs value={projectDetailTab} onValueChange={setProjectDetailTab} className="w-full">
+                      <TabsList className="w-full flex flex-wrap gap-1 sm:gap-2">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="company">Company</TabsTrigger>
+                        <TabsTrigger value="details">Details</TabsTrigger>
+                        <TabsTrigger value="attachments">Attachments</TabsTrigger>
+                        <TabsTrigger value="comments">Comments</TabsTrigger>
+                        <TabsTrigger value="team">Team</TabsTrigger>
+                      </TabsList>
 
                   <TabsContent value="overview" className="pt-4">
                     <div className="space-y-3">
@@ -2440,16 +2723,25 @@ export function UnifiedProjectManagement() {
                       })()}
 
 
-                      {selectedProject.bank_details &&
-                      Object.keys(selectedProject.bank_details).length > 0 && (
-                        <div className="space-y-1">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                            Bank Details
-                          </div>
-                          <div className="rounded border bg-muted/30 p-2">
-                            <div className="space-y-2 text-xs">
-                              {Object.entries(selectedProject.bank_details).map(
-                                ([k, v]) => (
+                      {(() => {
+                        const bankDetails = selectedProject.bank_details;
+                        if (!bankDetails || typeof bankDetails !== 'object') return null;
+                        
+                        // Filter out empty values
+                        const entries = Object.entries(bankDetails).filter(([_, v]) => 
+                          v !== null && v !== undefined && v !== ''
+                        );
+                        
+                        if (entries.length === 0) return null;
+                        
+                        return (
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                              Bank Details
+                            </div>
+                            <div className="rounded border bg-muted/30 p-2">
+                              <div className="space-y-2 text-xs">
+                                {entries.map(([k, v]) => (
                                   <div
                                     key={k}
                                     className="flex justify-between gap-2"
@@ -2461,12 +2753,12 @@ export function UnifiedProjectManagement() {
                                       {String(v) || "—"}
                                     </span>
                                   </div>
-                                )
-                              )}
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {(() => {
                         const serviceSpecific = selectedProject.service_specific || {};
@@ -2945,31 +3237,33 @@ export function UnifiedProjectManagement() {
                         </div>
                       </div>
                     </div>
-                  </TabsContent>
-                </Tabs>
+                      </TabsContent>
+                    </Tabs>
 
-                <div className="flex flex-wrap gap-2 pt-2 border-t">
-                  <Button
-                    size="sm"
-                    onClick={() => startEdit(selectedProject)}
-                    className="flex-1"
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => {
-                      setDeleteTarget(selectedProject);
-                      setDeleteOpen(true);
-                    }}
-                    className="flex-1"
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                </div>
+                    <div className="flex flex-wrap gap-2 pt-2 border-t">
+                      <Button
+                        size="sm"
+                        onClick={() => startEdit(selectedProject)}
+                        className="flex-1"
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          setDeleteTarget(selectedProject);
+                          setDeleteOpen(true);
+                        }}
+                        className="flex-1"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
               </CardContent>
             </Card>
           )}
@@ -3025,8 +3319,17 @@ export function UnifiedProjectManagement() {
                         "border-primary/70 shadow-md ring-2 ring-primary/20"
                     )}
                     onClick={() => {
-                      setSelectedProject(project);
+                      const projectId = project.project_id || project.id;
+                      
+                      // Scroll to top of page
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                      
+                      // Set viewing project ID to trigger full data fetch
+                      setViewingProjectId(projectId);
                       setDetailsOpen(true);
+                      
+                      // Set selected project from summary data initially
+                      setSelectedProject(project);
                     }}
                   >
                     <CardHeader className="flex-1 pb-3">
@@ -3141,17 +3444,36 @@ export function UnifiedProjectManagement() {
                     </CardContent>
                     <div className="flex gap-2 p-4 pt-0">
                       <Button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          setSelectedProject(project);
+                          const projectId = project.project_id || project.id;
+                          
+                          // Scroll to top of page
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                          
+                          // Set viewing project ID to trigger full data fetch
+                          setViewingProjectId(projectId);
                           setDetailsOpen(true);
+                          
+                          // Set selected project from summary data initially
+                          setSelectedProject(project);
                         }}
                         variant={isSelected ? "secondary" : "outline"}
                         size="sm"
                         className="flex-1"
+                        disabled={loadingProjectDetails && viewingProjectId === (project.project_id || project.id)}
                       >
-                        <Eye className="h-4 w-4 mr-2" />
-                        {isSelected ? "Viewing" : "View"}
+                        {loadingProjectDetails && viewingProjectId === (project.project_id || project.id) ? (
+                          <>
+                            <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-4 w-4 mr-2" />
+                            {isSelected ? "Viewing" : "View"}
+                          </>
+                        )}
                       </Button>
                       <Button
                         onClick={(e) => {
@@ -3377,6 +3699,7 @@ export function UnifiedProjectManagement() {
                     // Close the details panel if the deleted project is currently being viewed
                     if (selectedProject?.id === deleteTarget.id) {
                       setDetailsOpen(false);
+    setViewingProjectId(null);
                       setSelectedProject(null);
                     }
                     

@@ -132,3 +132,28 @@ export function useDeleteEmployee() {
   });
 }
 
+export function useUpdateEmployeePassword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ employeeId, password }: { employeeId: string; password: string }) => {
+      const response = await fetch(`/api/employees/${employeeId}/password`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ password }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || error.details || "Failed to update password");
+      }
+
+      return response.json();
+    },
+    // Don't invalidate employees list on password update since it doesn't affect the list
+  });
+}
+

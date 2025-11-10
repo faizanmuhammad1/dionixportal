@@ -19,8 +19,12 @@ export interface Project {
   [key: string]: any;
 }
 
-async function fetchProjects(): Promise<Project[]> {
-  const response = await fetch("/api/projects", {
+async function fetchProjects(summary: boolean = false): Promise<Project[]> {
+  const url = summary 
+    ? "/api/projects?summary=true"
+    : "/api/projects";
+    
+  const response = await fetch(url, {
     credentials: "same-origin",
   });
 
@@ -32,12 +36,26 @@ async function fetchProjects(): Promise<Project[]> {
   return data.projects || [];
 }
 
+// Fetch project summaries (lightweight data for list view)
+export function useProjectSummaries() {
+  return useQuery({
+    queryKey: ["project-summaries"],
+    queryFn: () => fetchProjects(true),
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
+// Fetch full project data (for detailed views)
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: fetchProjects,
-    staleTime: Infinity, // Never consider data stale - only refetch on manual invalidation
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    queryFn: () => fetchProjects(false),
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

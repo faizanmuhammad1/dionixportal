@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee } from "@/hooks/use-employees"
+import { useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee, useUpdateEmployeePassword } from "@/hooks/use-employees"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Mail, Edit, Trash2, Users, Search, UserPlus, Calendar } from "lucide-react"
+import { Mail, Edit, Trash2, Users, Search, UserPlus, Calendar, Key, Eye, EyeOff } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface Employee {
@@ -55,6 +55,13 @@ export function EmployeeManagement() {
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
+  const [employeeForPasswordUpdate, setEmployeeForPasswordUpdate] = useState<Employee | null>(null)
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showPasswordInDialog, setShowPasswordInDialog] = useState(false)
   const [newEmployee, setNewEmployee] = useState({
     email: "",
     firstName: "",
@@ -73,6 +80,7 @@ export function EmployeeManagement() {
   const createEmployee = useCreateEmployee()
   const updateEmployee = useUpdateEmployee()
   const deleteEmployee = useDeleteEmployee()
+  const updatePassword = useUpdateEmployeePassword()
 
   // Show error toast if query fails
   useEffect(() => {
@@ -107,9 +115,36 @@ export function EmployeeManagement() {
           },
         })
         
+        // Update password if provided
+        if (newEmployee.password && newEmployee.password.trim().length > 0) {
+          if (newEmployee.password.length < 8) {
+            toast({
+              title: "Validation Error",
+              description: "Password must be at least 8 characters long",
+              variant: "destructive",
+            })
+            return
+          }
+          
+          try {
+            await updatePassword.mutateAsync({
+              employeeId: editingEmployee.id,
+              password: newEmployee.password,
+            })
+          } catch (passwordError: any) {
+            console.error("Error updating password:", passwordError)
+            toast({
+              title: "Warning",
+              description: "Employee updated but password update failed: " + (passwordError.message || "Unknown error"),
+              variant: "destructive",
+            })
+            return
+          }
+        }
+        
         toast({
           title: "Success",
-          description: "Employee updated successfully!",
+          description: "Employee updated successfully!" + (newEmployee.password && newEmployee.password.trim().length > 0 ? " Password has been updated." : ""),
           variant: "default",
         })
       } else {
@@ -197,6 +232,62 @@ export function EmployeeManagement() {
     }
   }
 
+  const handlePasswordUpdate = async () => {
+    if (!employeeForPasswordUpdate) return
+    
+    // Validate password
+    if (newPassword.length < 8) {
+      toast({
+        title: "Validation Error",
+        description: "Password must be at least 8 characters long",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Validation Error",
+        description: "Passwords do not match",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    try {
+      await updatePassword.mutateAsync({
+        employeeId: employeeForPasswordUpdate.id,
+        password: newPassword,
+      })
+      
+      toast({
+        title: "Success",
+        description: `Password updated successfully for ${employeeForPasswordUpdate.first_name} ${employeeForPasswordUpdate.last_name}. They will need to log in with the new password.`,
+        variant: "default",
+      })
+      
+      // Reset form and close dialog
+      setNewPassword("")
+      setConfirmPassword("")
+      setEmployeeForPasswordUpdate(null)
+      setPasswordDialogOpen(false)
+    } catch (error: any) {
+      console.error("Error updating password:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update password",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handlePasswordUpdateClick = (employee: Employee) => {
+    setEmployeeForPasswordUpdate(employee)
+    setNewPassword("")
+    setConfirmPassword("")
+    setPasswordDialogOpen(true)
+  }
+
   const filteredEmployees = employees.filter(
     (employee) =>
       (employee.first_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -231,7 +322,8 @@ export function EmployeeManagement() {
             setIsCreateDialogOpen(open)
             if (!open) {
               setEditingEmployee(null)
-              setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", department: "", position: "", phone: "", hireDate: "", employmentType: "full-time" })
+              setNewEmployee({ email: "", firstName: "", lastName: "", role: "employee", department: "", position: "", phone: "", hireDate: "", employmentType: "full-time", password: "" })
+              setShowPasswordInDialog(false)
             }
           }}>
             <DialogTrigger asChild>
@@ -382,28 +474,44 @@ export function EmployeeManagement() {
                   </div>
                 </div>
                 
-                {!editingEmployee && (
-                  <div className="space-y-2">
-                    <Label htmlFor="password" className="text-sm font-medium">
-                      Password <span className="text-muted-foreground font-normal">(Optional)</span>
-                    </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm font-medium">
+                    Password <span className="text-muted-foreground font-normal">(Optional)</span>
+                  </Label>
+                  <div className="relative">
                     <Input
                       id="password"
-                      type="password"
+                      type={showPasswordInDialog ? "text" : "password"}
                       value={newEmployee.password}
                       onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
-                      placeholder="Leave empty to auto-generate"
-                      className="h-10"
+                      placeholder={editingEmployee ? "Leave empty to keep current password" : "Leave empty to auto-generate"}
+                      className="h-10 pr-10"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Leave empty to auto-generate a secure password. The employee can log in immediately with this password.
-                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-10 px-3 py-2 hover:bg-transparent"
+                      onClick={() => setShowPasswordInDialog(!showPasswordInDialog)}
+                    >
+                      {showPasswordInDialog ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
                   </div>
-                )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {editingEmployee 
+                      ? "Enter a new password to update it. Leave empty to keep the current password. Password must be at least 8 characters."
+                      : "Leave empty to auto-generate a secure password. The employee can log in immediately with this password."
+                    }
+                  </p>
+                </div>
                 
                 <div className="pt-4 border-t">
-                  <Button onClick={handleCreateEmployee} className="w-full h-11" disabled={createEmployee.isPending || updateEmployee.isPending}>
-                    {createEmployee.isPending || updateEmployee.isPending ? (
+                  <Button onClick={handleCreateEmployee} className="w-full h-11" disabled={createEmployee.isPending || updateEmployee.isPending || updatePassword.isPending}>
+                    {createEmployee.isPending || updateEmployee.isPending || updatePassword.isPending ? (
                       <span className="flex items-center gap-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                         {editingEmployee ? "Updating Employee..." : "Creating Employee..."}
@@ -538,6 +646,14 @@ export function EmployeeManagement() {
                         <Button 
                           variant="ghost" 
                           size="sm" 
+                          title="Update Password" 
+                          onClick={() => handlePasswordUpdateClick(employee)}
+                        >
+                          <Key className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
                           title="Deactivate" 
                           disabled={deactivatingId === employee.id}
                           onClick={() => handleDeleteClick(employee)}
@@ -657,6 +773,104 @@ export function EmployeeManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Password Update Dialog */}
+      <Dialog open={passwordDialogOpen} onOpenChange={(open) => {
+        setPasswordDialogOpen(open)
+        if (!open) {
+          setEmployeeForPasswordUpdate(null)
+          setNewPassword("")
+          setConfirmPassword("")
+          setShowPassword(false)
+          setShowConfirmPassword(false)
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Password</DialogTitle>
+            <DialogDescription>
+              Update the password for{" "}
+              <strong>
+                {employeeForPasswordUpdate?.first_name} {employeeForPasswordUpdate?.last_name}
+              </strong>
+              {" "}({employeeForPasswordUpdate?.email}). They will need to log in with the new password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword" className="text-sm font-medium">New Password</Label>
+              <div className="relative">
+                <Input
+                  id="newPassword"
+                  type={showPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password (min 8 characters)"
+                  className="h-10 pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-10 px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Password must be at least 8 characters long
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password</Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="h-10 pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-10 px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="pt-4 border-t">
+              <Button 
+                onClick={handlePasswordUpdate} 
+                className="w-full h-11" 
+                disabled={updatePassword.isPending || !newPassword || !confirmPassword}
+              >
+                {updatePassword.isPending ? (
+                  <span className="flex items-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Updating Password...
+                  </span>
+                ) : (
+                  "Update Password"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

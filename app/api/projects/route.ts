@@ -21,11 +21,16 @@ export const GET = withAuth(
     const search = searchParams.get('search');
     const start_date = searchParams.get('start_date');
     const end_date = searchParams.get('end_date');
+    const summary = searchParams.get('summary') === 'true';
 
-    // Build query
+    // Build query - use summary fields if summary mode is enabled
+    const selectFields = summary 
+      ? 'project_id, project_name, client_name, description, status, priority, budget, start_date, end_date, created_at'
+      : '*';
+    
     let query = supabase
       .from('projects')
-      .select('*')
+      .select(selectFields)
       .order('created_at', { ascending: false });
 
     // Apply role-based filtering
