@@ -11,6 +11,11 @@ import { signInWithEmail, getCurrentUser, type User } from "@/lib/auth"
 import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle } from "lucide-react"
 import Image from "next/image"
 
+const lightModeLogoSrc =
+  "https://res.cloudinary.com/dnqyibnud/image/upload/v1758975261/main-logo-dark_zivcxt.png"
+const darkModeLogoSrc =
+  "https://res.cloudinary.com/dnqyibnud/image/upload/v1758975274/main-logo_sxwdaf.png"
+
 interface LoginFormProps {
   onLogin: (user: User) => void
 }
@@ -48,14 +53,14 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           <div className="flex justify-center mb-4">
             <div className="relative w-24 h-24">
               <Image
-                src="/dark-logo.svg"
+                src={lightModeLogoSrc}
                 alt="Dionix.ai"
                 width={96}
                 height={96}
                 className="block dark:hidden object-contain"
               />
               <Image
-                src="/main-logo.svg"
+                src={darkModeLogoSrc}
                 alt="Dionix.ai"
                 width={96}
                 height={96}

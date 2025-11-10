@@ -44,6 +44,11 @@ import {
 import type { User } from "@/lib/auth";
 import { createClient } from "@/lib/supabase";
 
+const LIGHT_MODE_LOGO_SRC =
+  "https://res.cloudinary.com/dnqyibnud/image/upload/v1758975261/main-logo-dark_zivcxt.png";
+const DARK_MODE_LOGO_SRC =
+  "https://res.cloudinary.com/dnqyibnud/image/upload/v1758975274/main-logo_sxwdaf.png";
+
 interface DashboardLayoutProps {
   user: User;
   children: React.ReactNode;
@@ -377,7 +382,7 @@ export function DashboardLayout({
               <div className="relative flex-1 h-16 min-h-[64px] w-full">
                 <div className="block dark:hidden h-full w-full">
                   <Image
-                    src="/dark-logo.svg"
+                    src={LIGHT_MODE_LOGO_SRC}
                     alt="Dionix.ai"
                     fill
                     priority
@@ -388,7 +393,7 @@ export function DashboardLayout({
                 </div>
                 <div className="hidden dark:block h-full w-full">
                   <Image
-                    src="/main-logo.svg"
+                    src={DARK_MODE_LOGO_SRC}
                     alt="Dionix.ai"
                     fill
                     priority
@@ -466,7 +471,7 @@ export function DashboardLayout({
               <div className="relative w-full h-16 min-h-[64px]">
                 <div className="block dark:hidden h-full w-full relative">
                   <Image
-                    src="/dark-logo.svg"
+                    src={LIGHT_MODE_LOGO_SRC}
                     alt="Dionix.ai"
                     fill
                     priority
@@ -477,7 +482,7 @@ export function DashboardLayout({
                 </div>
                 <div className="hidden dark:block h-full w-full relative">
                   <Image
-                    src="/main-logo.svg"
+                    src={DARK_MODE_LOGO_SRC}
                     alt="Dionix.ai"
                     fill
                     priority
@@ -492,7 +497,7 @@ export function DashboardLayout({
               <div className="relative w-full h-12 min-h-[48px]">
                 <div className="block dark:hidden h-full w-full relative">
                   <Image
-                    src="/dark-logo.svg"
+                    src={LIGHT_MODE_LOGO_SRC}
                     alt="Dionix.ai"
                     fill
                     priority
@@ -503,7 +508,7 @@ export function DashboardLayout({
                 </div>
                 <div className="hidden dark:block h-full w-full relative">
                   <Image
-                    src="/main-logo.svg"
+                    src={DARK_MODE_LOGO_SRC}
                     alt="Dionix.ai"
                     fill
                     priority
@@ -624,13 +629,13 @@ export function DashboardLayout({
             <div className="flex flex-1 items-center lg:hidden">
               <div className="relative w-full max-w-[140px] h-10">
                 <Image
-                  src="/dark-logo.svg"
+                  src={LIGHT_MODE_LOGO_SRC}
                   alt="Dionix.ai"
                   fill
                   className="block dark:hidden object-contain"
                 />
                 <Image
-                  src="/main-logo.svg"
+                  src={DARK_MODE_LOGO_SRC}
                   alt="Dionix.ai"
                   fill
                   className="hidden dark:block object-contain"
