@@ -8,6 +8,7 @@ import {
   Briefcase,
   LayoutDashboard,
   MessageSquare,
+  MessageCircleMore,
   Users,
   Settings,
   LogOut,
@@ -117,6 +118,12 @@ export function DashboardLayout({
             href: "/?view=contact-center",
             icon: MessageSquare,
             current: activeView === "contact-center",
+          },
+          {
+            name: "Messages",
+            href: "/?view=messages",
+            icon: MessageCircleMore,
+            current: activeView === "messages",
           },
           {
             name: "Support Center",
@@ -231,6 +238,12 @@ export function DashboardLayout({
         ]
       : [
           // Employee Dashboard
+          {
+            name: "Messages",
+            href: "/?view=messages",
+            icon: MessageCircleMore,
+            current: activeView === "messages",
+          },
           {
             name: "Project Center",
             href: "/?view=project-center",
@@ -364,7 +377,7 @@ export function DashboardLayout({
               <div className="relative flex-1 h-16 min-h-[64px] w-full">
                 <div className="block dark:hidden h-full w-full">
                   <Image
-                    src="/dark-logo.png"
+                    src="/dark-logo.svg"
                     alt="Dionix.ai"
                     fill
                     priority
@@ -375,7 +388,7 @@ export function DashboardLayout({
                 </div>
                 <div className="hidden dark:block h-full w-full">
                   <Image
-                    src="/main-logo.png"
+                    src="/main-logo.svg"
                     alt="Dionix.ai"
                     fill
                     priority
@@ -453,7 +466,7 @@ export function DashboardLayout({
               <div className="relative w-full h-16 min-h-[64px]">
                 <div className="block dark:hidden h-full w-full relative">
                   <Image
-                    src="/dark-logo.png"
+                    src="/dark-logo.svg"
                     alt="Dionix.ai"
                     fill
                     priority
@@ -464,7 +477,7 @@ export function DashboardLayout({
                 </div>
                 <div className="hidden dark:block h-full w-full relative">
                   <Image
-                    src="/main-logo.png"
+                    src="/main-logo.svg"
                     alt="Dionix.ai"
                     fill
                     priority
@@ -479,7 +492,7 @@ export function DashboardLayout({
               <div className="relative w-full h-12 min-h-[48px]">
                 <div className="block dark:hidden h-full w-full relative">
                   <Image
-                    src="/dark-logo.png"
+                    src="/dark-logo.svg"
                     alt="Dionix.ai"
                     fill
                     priority
@@ -490,7 +503,7 @@ export function DashboardLayout({
                 </div>
                 <div className="hidden dark:block h-full w-full relative">
                   <Image
-                    src="/main-logo.png"
+                    src="/main-logo.svg"
                     alt="Dionix.ai"
                     fill
                     priority
@@ -611,13 +624,13 @@ export function DashboardLayout({
             <div className="flex flex-1 items-center lg:hidden">
               <div className="relative w-full max-w-[140px] h-10">
                 <Image
-                  src="/dark-logo.png"
+                  src="/dark-logo.svg"
                   alt="Dionix.ai"
                   fill
                   className="block dark:hidden object-contain"
                 />
                 <Image
-                  src="/main-logo.png"
+                  src="/main-logo.svg"
                   alt="Dionix.ai"
                   fill
                   className="hidden dark:block object-contain"
@@ -632,6 +645,7 @@ export function DashboardLayout({
                 size="icon"
                 onClick={() => onNavigate?.("notifications") || router.push("/?view=notifications")}
                 className="relative"
+                title="Notifications"
               >
                 <Bell className="h-5 w-5" />
                 {notifCount > 0 && (

@@ -41,32 +41,21 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 dark:from-slate-950 dark:via-blue-950 dark:to-slate-900 p-4 relative overflow-hidden">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 bg-grid-slate-200 dark:bg-grid-slate-800 opacity-20" style={{
-        backgroundImage: `radial-gradient(circle at 1px 1px, rgb(148 163 184 / 0.2) 1px, transparent 0)`,
-        backgroundSize: '40px 40px'
-      }} />
-      
-      {/* Animated Gradient Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400 dark:bg-blue-600 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-3xl opacity-20 animate-blob" />
-      <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-400 dark:bg-purple-600 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-3xl opacity-20 animate-blob animation-delay-2000" />
-      <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-pink-400 dark:bg-pink-600 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-3xl opacity-20 animate-blob animation-delay-4000" />
-      
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
       <Card className="w-full max-w-md shadow-2xl relative z-10 animate-scale-in border-2 backdrop-blur-sm bg-card/95">
         <CardHeader className="space-y-3 pb-6">
           {/* Logo */}
           <div className="flex justify-center mb-4">
             <div className="relative w-24 h-24">
               <Image
-                src="/dark-logo.png"
+                src="/dark-logo.svg"
                 alt="Dionix.ai"
                 width={96}
                 height={96}
                 className="block dark:hidden object-contain"
               />
               <Image
-                src="/main-logo.png"
+                src="/main-logo.svg"
                 alt="Dionix.ai"
                 width={96}
                 height={96}
@@ -75,7 +64,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             </div>
           </div>
           
-          <CardTitle className="text-3xl font-bold text-center bg-gradient-to-r from-slate-900 to-slate-700 dark:from-slate-100 dark:to-slate-300 bg-clip-text text-transparent">
+          <CardTitle className="text-3xl font-bold text-center">
             Welcome Back
           </CardTitle>
           <CardDescription className="text-center text-base">

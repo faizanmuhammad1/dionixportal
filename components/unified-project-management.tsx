@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useProjects } from "@/hooks/use-projects";
 import { useEmployees } from "@/hooks/use-employees";
 import { useTasks } from "@/hooks/use-tasks";
@@ -208,47 +208,112 @@ export function UnifiedProjectManagement() {
   const employees = (employeesData || []) as Employee[];
   const tasks = (tasksData || []) as Task[];
   
+  // State to store project members mapping
+  const [projectMembersMap, setProjectMembersMap] = useState<Map<string, string[]>>(new Map());
+  
+  const supabase = createClient();
+  
+  // Fetch all project members to populate assigned_employees
+  useEffect(() => {
+    if (!projectsData || projectsData.length === 0) return;
+    
+    const fetchAllProjectMembers = async () => {
+      try {
+        const { data: allMembers, error } = await supabase
+          .from("project_members")
+          .select("project_id, user_id");
+        
+        if (error) {
+          console.error("Error fetching project members:", error);
+          return;
+        }
+        
+        // Create a map of project_id -> array of user_ids
+        const membersMap = new Map<string, string[]>();
+        if (allMembers && allMembers.length > 0) {
+          allMembers.forEach((member: any) => {
+            const projectId = member.project_id;
+            const userId = member.user_id;
+            if (projectId && userId) {
+              if (!membersMap.has(projectId)) {
+                membersMap.set(projectId, []);
+              }
+              membersMap.get(projectId)!.push(userId);
+            }
+          });
+          console.log("Project members map populated:", Array.from(membersMap.entries()));
+        } else {
+          console.log("No project members found in database");
+        }
+        
+        setProjectMembersMap(membersMap);
+      } catch (error) {
+        console.error("Error in fetchAllProjectMembers:", error);
+      }
+    };
+    
+    fetchAllProjectMembers();
+  }, [projectsData, supabase]);
+  
   // Enrich projects with tasks and calculate progress
-  const projects = (projectsData || []).map((project: any) => {
-    if (!project) return null;
-    
-    const projectTasks = tasks.filter((t: Task) => t.project_id === project.id || t.project_id === project.project_id);
-    const completed = projectTasks.filter((t: Task) => t.status === "completed").length;
-    const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
-    
-    return {
-      ...project,
-      id: project.id || project.project_id,
-      name: project.name || project.project_name || "",
-      client: project.client || project.client_name || "",
-      description: project.description || "",
-      status: project.status || "planning",
-      priority: project.priority || "medium",
-      start_date: project.start_date || "",
-      end_date: project.end_date || "",
-      budget: Number(project.budget || 0),
-      tasks: projectTasks,
-      progress,
-      assigned_employees: project.assigned_employees || [],
-      attachments: project.attachments || [],
-      comments: project.comments || [],
-      service_type: project.service_type || project.project_type || project.type,
-      company_number: project.company_number || project.business_number,
-      company_email: project.company_email,
-      company_address: project.company_address,
-      about_company: project.about_company,
-      social_links: project.social_links || (project.social_media_links ? (typeof project.social_media_links === 'string' ? project.social_media_links.split(",") : project.social_media_links) : []),
-      public_contacts: project.public_contacts || {
-        phone: project.public_business_number,
-        email: project.public_company_email,
-        address: project.public_address,
-      },
-      media_links: project.media_links || (typeof project.media_links === 'string' ? project.media_links.split(",") : []),
-      bank_details: project.bank_details || {},
-      service_specific: project.service_specific || project.step2_data || {},
-      payment_integration_needs: project.payment_integration_needs || [],
-    } as Project;
-  }).filter((p): p is Project => p !== null);
+  // Use useMemo to ensure projects are recomputed when projectMembersMap changes
+  const projects = useMemo(() => {
+    return (projectsData || []).map((project: any) => {
+      if (!project) return null;
+      
+      const projectTasks = tasks.filter((t: Task) => t.project_id === project.id || t.project_id === project.project_id);
+      const completed = projectTasks.filter((t: Task) => t.status === "completed").length;
+      const progress = projectTasks.length ? Math.round((completed / projectTasks.length) * 100) : 0;
+      
+      // Get assigned employees from project_members map, fallback to project.assigned_employees
+      // Projects table uses project_id as primary key, so use that consistently
+      const projectId = project.project_id || project.id;
+      let assignedEmployees: string[] = [];
+      
+      // Get from projectMembersMap - the map uses project_id as the key
+      if (projectMembersMap.size > 0 && projectId) {
+        assignedEmployees = projectMembersMap.get(projectId) || [];
+      }
+      
+      // Fallback to project.assigned_employees if map is empty or doesn't have the project
+      if (assignedEmployees.length === 0 && project.assigned_employees) {
+        assignedEmployees = project.assigned_employees;
+      }
+      
+      return {
+        ...project,
+        id: projectId,
+        name: project.name || project.project_name || "",
+        client: project.client || project.client_name || "",
+        description: project.description || "",
+        status: project.status || "planning",
+        priority: project.priority || "medium",
+        start_date: project.start_date || "",
+        end_date: project.end_date || "",
+        budget: Number(project.budget || 0),
+        tasks: projectTasks,
+        progress,
+        assigned_employees: assignedEmployees,
+        attachments: project.attachments || [],
+        comments: project.comments || [],
+        service_type: project.service_type || project.project_type || project.type,
+        company_number: project.company_number || project.business_number,
+        company_email: project.company_email,
+        company_address: project.company_address,
+        about_company: project.about_company,
+        social_links: project.social_links || (project.social_media_links ? (typeof project.social_media_links === 'string' ? project.social_media_links.split(",") : project.social_media_links) : []),
+        public_contacts: project.public_contacts || {
+          phone: project.public_business_number,
+          email: project.public_company_email,
+          address: project.public_address,
+        },
+        media_links: project.media_links || (typeof project.media_links === 'string' ? project.media_links.split(",") : []),
+        bank_details: project.bank_details || {},
+        service_specific: project.service_specific || project.step2_data || {},
+        payment_integration_needs: project.payment_integration_needs || [],
+      } as Project;
+    }).filter((p): p is Project => p !== null);
+  }, [projectsData, tasks, projectMembersMap]);
   
   const loading = loadingProjects || loadingEmployees || loadingTasks;
   
@@ -337,7 +402,6 @@ export function UnifiedProjectManagement() {
   // Track active tab in project details view
   const [projectDetailTab, setProjectDetailTab] = useState("overview");
 
-  const supabase = createClient();
   const { toast } = useToast();
   
   // Show error toasts if queries fail
@@ -465,6 +529,24 @@ export function UnifiedProjectManagement() {
 
       if (error) throw error;
 
+      // Refresh the projectMembersMap to update all projects
+      const { data: allMembers } = await supabase
+        .from("project_members")
+        .select("project_id, user_id");
+      
+      if (allMembers) {
+        const membersMap = new Map<string, string[]>();
+        allMembers.forEach((member: any) => {
+          const projectId = member.project_id;
+          const userId = member.user_id;
+          if (!membersMap.has(projectId)) {
+            membersMap.set(projectId, []);
+          }
+          membersMap.get(projectId)!.push(userId);
+        });
+        setProjectMembersMap(membersMap);
+      }
+
       // Refresh project members from database to ensure we have the latest data
       const { data: members, error: fetchError } = await supabase
         .from("project_members")
@@ -551,6 +633,24 @@ export function UnifiedProjectManagement() {
         .eq("user_id", employeeId);
 
       if (error) throw error;
+
+      // Refresh the projectMembersMap to update all projects
+      const { data: allMembers } = await supabase
+        .from("project_members")
+        .select("project_id, user_id");
+      
+      if (allMembers) {
+        const membersMap = new Map<string, string[]>();
+        allMembers.forEach((member: any) => {
+          const projectId = member.project_id;
+          const userId = member.user_id;
+          if (!membersMap.has(projectId)) {
+            membersMap.set(projectId, []);
+          }
+          membersMap.get(projectId)!.push(userId);
+        });
+        setProjectMembersMap(membersMap);
+      }
 
       // Refresh project members from database to ensure we have the latest data
       const { data: members, error: fetchError } = await supabase
@@ -3096,17 +3196,29 @@ export function UnifiedProjectManagement() {
               </div>
             )}
             {employees.map((employee) => {
-              const employeeProjects = projects.filter((p) =>
-                p.assigned_employees.includes(employee.id)
-              );
+              // Get employee's full name from first_name and last_name
+              const employeeName = `${employee.first_name || ""} ${employee.last_name || ""}`.trim() || "Unknown";
+              
+              // Find projects assigned to this employee by checking project_members
+              // The assigned_employees array should be populated from projectMembersMap
+              const employeeProjects = projects.filter((p) => {
+                // Check if assigned_employees array exists and includes this employee ID
+                if (p.assigned_employees && Array.isArray(p.assigned_employees)) {
+                  return p.assigned_employees.includes(employee.id);
+                }
+                return false;
+              });
               const projectCount = employeeProjects.length;
               
-              const initials = (employee.name || "Unknown")
-                .split(' ')
-                .map(n => n.charAt(0))
-                .join('')
-                .toUpperCase()
-                .slice(0, 2);
+              // Generate initials from first_name and last_name
+              const initials = employeeName !== "Unknown"
+                ? employeeName
+                    .split(' ')
+                    .map(n => n.charAt(0))
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2)
+                : "U";
 
               return (
                 <Card key={employee.id} className="hover:shadow-lg transition-shadow">
@@ -3119,7 +3231,7 @@ export function UnifiedProjectManagement() {
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-lg font-semibold truncate">
-                          {employee.name || "Unknown"}
+                          {employeeName}
                         </CardTitle>
                         <CardDescription className="text-sm text-muted-foreground">
                           <div className="space-y-0.5">
@@ -3205,7 +3317,7 @@ export function UnifiedProjectManagement() {
                       onClick={() => {
                         setSelectedEmployeeForProject({
                           id: employee.id,
-                          name: employee.name || "Unknown",
+                          name: employeeName,
                           email: employee.email || "",
                         });
                         setEmployeeProjectModalOpen(true);
