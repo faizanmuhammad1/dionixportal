@@ -8,7 +8,6 @@ import {
   Briefcase,
   LayoutDashboard,
   MessageSquare,
-  MessageCircleMore,
   Users,
   Settings,
   LogOut,
@@ -125,12 +124,6 @@ export function DashboardLayout({
             current: activeView === "contact-center",
           },
           {
-            name: "Messages",
-            href: "/?view=messages",
-            icon: MessageCircleMore,
-            current: activeView === "messages",
-          },
-          {
             name: "Support Center",
             href: "/?view=support",
             icon: Headphones,
@@ -243,12 +236,6 @@ export function DashboardLayout({
         ]
       : [
           // Employee Dashboard
-          {
-            name: "Messages",
-            href: "/?view=messages",
-            icon: MessageCircleMore,
-            current: activeView === "messages",
-          },
           {
             name: "Project Center",
             href: "/?view=project-center",

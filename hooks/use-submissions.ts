@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { createClient } from "@/lib/supabase";
 
 export interface Submission {
   submission_id: string;
@@ -35,18 +34,17 @@ export interface Submission {
 }
 
 async function fetchSubmissions(): Promise<Submission[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("submissions")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const response = await fetch("/api/submissions", {
+    credentials: "same-origin",
+  });
 
-  if (error) {
-    console.error("Error fetching submissions:", error);
-    throw new Error("Failed to fetch submissions");
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: "Failed to fetch submissions" }));
+    throw new Error(error.error || "Failed to fetch submissions");
   }
 
-  return (data || []) as Submission[];
+  const payload = await response.json().catch(() => ({ submissions: [] }));
+  return (payload.submissions || []) as Submission[];
 }
 
 export function useSubmissions() {

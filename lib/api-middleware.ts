@@ -52,27 +52,47 @@ async function getServerSession(): Promise<SessionUser | null> {
       return null;
     }
 
-    // Get all data from auth.users metadata (avoids RLS issues)
-    const roleFromMetadata = user.user_metadata?.role || "client";
-    const firstNameFromMetadata = user.user_metadata?.first_name || "User";
-    const lastNameFromMetadata = user.user_metadata?.last_name || "";
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, first_name, last_name, department, position, status")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const resolvedRole =
+      (profile?.role as SessionUser["role"]) ||
+      (user.user_metadata?.role as SessionUser["role"]) ||
+      "client";
+    const resolvedFirstName =
+      profile?.first_name ||
+      user.user_metadata?.first_name ||
+      "User";
+    const resolvedLastName =
+      profile?.last_name ||
+      user.user_metadata?.last_name ||
+      "";
+    const resolvedDepartment =
+      profile?.department ?? user.user_metadata?.department;
+    const resolvedPosition =
+      profile?.position ?? user.user_metadata?.position;
+    const resolvedStatus =
+      (profile?.status as "active" | "inactive" | undefined) || "active";
 
     console.log("Server session found:", {
       id: user.id,
       email: user.email,
-      role: roleFromMetadata
+      role: resolvedRole
     });
 
     return {
       id: user.id,
       email: user.email!,
-      role: roleFromMetadata as any,
-      firstName: firstNameFromMetadata,
-      lastName: lastNameFromMetadata,
-      department: user.user_metadata?.department,
-      position: user.user_metadata?.position,
-      status: "active", // Assume active if they can authenticate
-      permissions: ROLE_PERMISSIONS[roleFromMetadata] || [],
+      role: resolvedRole,
+      firstName: resolvedFirstName,
+      lastName: resolvedLastName,
+      department: resolvedDepartment,
+      position: resolvedPosition,
+      status: resolvedStatus,
+      permissions: ROLE_PERMISSIONS[resolvedRole] || [],
       lastLogin: user.last_sign_in_at,
       sessionExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     };

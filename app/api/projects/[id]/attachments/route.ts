@@ -20,12 +20,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if employee has access to this project
-    const userRole = (user.user_metadata?.role as string) || 'employee';
-    
+    const adminSupabase = createAdminSupabaseClient();
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const userRole = (profile?.role as string) || "employee";
+
     if (userRole === 'employee') {
       // Verify employee is a member of this project
-      const adminSupabase = createAdminSupabaseClient();
       const { data: membership } = await adminSupabase
         .from('project_members')
         .select('user_id')
@@ -42,7 +47,7 @@ export async function GET(
     }
 
     // Use admin client for employees to bypass RLS
-    const dbClient = userRole === 'employee' ? createAdminSupabaseClient() : supabase;
+    const dbClient = userRole === 'employee' ? adminSupabase : supabase;
     const { data, error } = await dbClient
       .from("attachments")
       .select("*")
@@ -73,12 +78,17 @@ export async function POST(
     if (!projectId || !storage_path || !file_name)
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
 
-    // Check if employee has access to this project
-    const userRole = (user.user_metadata?.role as string) || 'employee';
-    
+    const adminSupabase = createAdminSupabaseClient();
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const userRole = (profile?.role as string) || "employee";
+
     if (userRole === 'employee') {
       // Verify employee is a member of this project
-      const adminSupabase = createAdminSupabaseClient();
       const { data: membership } = await adminSupabase
         .from('project_members')
         .select('user_id')
@@ -106,7 +116,7 @@ export async function POST(
     };
     
     // Use admin client for employees to bypass RLS
-    const db = userRole === 'employee' ? createAdminSupabaseClient() : supabase;
+    const db = userRole === 'employee' ? adminSupabase : supabase;
     const { data, error } = await db
       .from("attachments")
       .insert(insertPayload)
@@ -135,8 +145,15 @@ export async function DELETE(
     const attachmentId = url.searchParams.get("attachment_id");
     if (!attachmentId) return NextResponse.json({ error: "Missing attachment_id" }, { status: 400 });
     
-    const userRole = (user.user_metadata?.role as string) || 'employee';
-    const db = userRole === 'employee' ? createAdminSupabaseClient() : supabase;
+    const adminSupabase = createAdminSupabaseClient();
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const userRole = (profile?.role as string) || "employee";
+    const db = userRole === 'employee' ? adminSupabase : supabase;
     
     // Look up attachment with uploaded_by field
     const { data: row, error: readErr } = await db

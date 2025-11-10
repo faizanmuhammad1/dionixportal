@@ -19,12 +19,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if employee has access to this project
-    const userRole = (user.user_metadata?.role as string) || 'employee';
-    
+    const adminSupabase = createAdminSupabaseClient();
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const userRole = (profile?.role as string) || "employee";
+
     if (userRole === 'employee') {
       // Verify employee is a member of this project
-      const adminSupabase = createAdminSupabaseClient();
       const { data: membership } = await adminSupabase
         .from('project_members')
         .select('user_id')
@@ -41,7 +46,7 @@ export async function GET(
     }
 
     // Use admin client for employees to bypass RLS
-    const dbClient = userRole === 'employee' ? createAdminSupabaseClient() : supabase;
+    const dbClient = userRole === 'employee' ? adminSupabase : supabase;
     const { data, error } = await dbClient
       .from("comments")
       .select("*")

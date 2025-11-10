@@ -122,24 +122,41 @@ export class SessionManager {
     // Update last fetch time
     this.lastFetchTime.set(user.id, now);
 
-    // Get all data from auth.users metadata (set during signup/login)
-    // This avoids RLS issues with querying profiles table from browser
-    const roleFromMetadata = user.user_metadata?.role || "client";
-    const firstNameFromMetadata = user.user_metadata?.first_name || "User";
-    const lastNameFromMetadata = user.user_metadata?.last_name || "";
+    // Load authoritative profile details; fall back to metadata if profile not available
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, first_name, last_name, department, position, status")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    // Create session user object from metadata only
-    // Profile data will be fetched via API endpoints when needed
+    const roleFromProfile = profile?.role || null;
+    const firstNameFromProfile = profile?.first_name || null;
+    const lastNameFromProfile = profile?.last_name || null;
+    const departmentFromProfile = profile?.department || null;
+    const positionFromProfile = profile?.position || null;
+    const statusFromProfile = (profile?.status as "active" | "inactive" | null) || null;
+
+    const roleFallback = (user.user_metadata?.role as string) || "client";
+    const firstNameFallback = user.user_metadata?.first_name || "User";
+    const lastNameFallback = user.user_metadata?.last_name || "";
+
+    const resolvedRole = (roleFromProfile as SessionUser["role"]) || (roleFallback as SessionUser["role"]);
+    const resolvedFirstName = firstNameFromProfile || firstNameFallback;
+    const resolvedLastName = lastNameFromProfile || lastNameFallback;
+    const resolvedDepartment = departmentFromProfile ?? user.user_metadata?.department;
+    const resolvedPosition = positionFromProfile ?? user.user_metadata?.position;
+    const resolvedStatus = statusFromProfile || "active";
+
     const sessionUser: SessionUser = {
       id: user.id,
       email: user.email!,
-      role: roleFromMetadata as any,
-      firstName: firstNameFromMetadata,
-      lastName: lastNameFromMetadata,
-      department: user.user_metadata?.department,
-      position: user.user_metadata?.position,
-      status: "active", // Assume active if they can authenticate
-      permissions: ROLE_PERMISSIONS[roleFromMetadata] || [],
+      role: resolvedRole,
+      firstName: resolvedFirstName,
+      lastName: resolvedLastName,
+      department: resolvedDepartment || undefined,
+      position: resolvedPosition || undefined,
+      status: resolvedStatus,
+      permissions: ROLE_PERMISSIONS[resolvedRole] || [],
       lastLogin: user.last_sign_in_at,
       sessionExpiry: new Date(Date.now() + this.sessionTimeout)
     };

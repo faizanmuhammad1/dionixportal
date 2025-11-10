@@ -17,7 +17,6 @@ import { EmployeeProjectCenter } from "@/components/employee-project-center";
 import { TaskBoard } from "@/components/task-board";
 import { ComingSoon } from "@/components/coming-soon";
 import { UserProfile } from "@/components/user-profile";
-import { ChatPage } from "@/components/chat-page";
 import { getCurrentUser, signOut, type User } from "@/lib/auth";
 import { useSession } from "@/hooks/use-session";
 import { ProtectedRoute } from "@/components/protected-route";
@@ -46,7 +45,6 @@ type ViewType =
   | "employee-support"
   | "client-submissions"
   | "task-management"
-  | "messages"
   | "settings";
 
 function HomePageContent() {
@@ -79,7 +77,6 @@ function HomePageContent() {
     "employee-support",
     "client-submissions",
     "task-management",
-    "messages",
     "settings",
   ];
 
@@ -375,10 +372,6 @@ function HomePageContent() {
       {currentView === "career-hub" && user.role === "admin" && (
         <JobManagement />
       )}
-      {currentView === "messages" && (
-        <ChatPage />
-      )}
-
       {/* Coming soon components for incomplete features */}
       {currentView === "activity-log" && user.role === "admin" && (
         <ComingSoon title="Activity Log" />

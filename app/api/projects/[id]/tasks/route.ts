@@ -26,10 +26,13 @@ export async function GET(
       return NextResponse.json({ error: "Missing project id" }, { status: 400 });
     }
 
-    // Check if employee has access to this project
-    // Get user role from metadata (set by withAuth middleware in other routes)
-    // For this route, we'll check directly
-    const userRole = (user.user_metadata?.role as string) || 'employee';
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const userRole = (profile?.role as string) || "employee";
     
     if (userRole === 'employee') {
       // Verify employee is a member of this project
