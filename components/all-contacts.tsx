@@ -458,12 +458,17 @@ export function AllContacts() {
                 if (!deleteId) return;
                 try {
                   setDeleting(true);
-                  const { error } = await supabase
-                    .from("form_submissions")
-                    .delete()
-                    .eq("id", deleteId);
-                  if (error) throw error;
-                  setContacts((prev) => prev.filter((c) => c.id !== deleteId));
+                  const response = await fetch(`/api/contact-submissions/${deleteId}`, {
+                    method: "DELETE",
+                  });
+                  
+                  if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "Failed to delete submission");
+                  }
+                  
+                  // Invalidate query to ensure sync
+                  queryClient.invalidateQueries({ queryKey: ["form-submissions"] });
                   toast({ title: "Contact removed" });
                 } catch (e: any) {
                   toast({

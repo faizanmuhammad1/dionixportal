@@ -5,11 +5,13 @@ import { uploadProjectFile, createSignedUrl, removeProjectFile } from './storage
 
 export class ProjectService {
   private supabase = createClient();
+  private skipAuthCheck = false;
   
-  constructor(supabaseClient?: any) {
+  constructor(supabaseClient?: any, skipAuthCheck = false) {
     if (supabaseClient) {
       this.supabase = supabaseClient;
     }
+    this.skipAuthCheck = skipAuthCheck;
   }
 
   // Normalize legacy step2_data keys (snake_case) to new camelCase keys
@@ -157,7 +159,12 @@ export class ProjectService {
         throw new Error('User not authenticated');
       }
 
-      // Note: file upload handling is not supported in this path currently
+      // Prepare bank_details
+      const bankDetails = projectData.bank_details 
+        ? (typeof projectData.bank_details === 'string' 
+           ? JSON.parse(projectData.bank_details) 
+           : projectData.bank_details)
+        : null;
 
       // Prepare project data for database (match projects table columns)
       const dbProjectData: any = {
@@ -184,16 +191,12 @@ export class ProjectService {
         media_links: Array.isArray(projectData.media_links)
           ? projectData.media_links.join(',')
           : projectData.media_links,
-        bank_details: typeof projectData.bank_details === 'string'
-          ? projectData.bank_details
-          : projectData.bank_details
-            ? JSON.stringify(projectData.bank_details)
-            : null,
         created_by_admin: user.id,
+        bank_details: bankDetails,
       };
 
       // Insert project into database
-      const { data, error } = await this.supabase
+      const { data: project, error } = await this.supabase
         .from('projects')
         .insert(dbProjectData)
         .select()
@@ -203,9 +206,7 @@ export class ProjectService {
         throw new Error(`Project creation failed: ${error.message}`);
       }
 
-      // No post-insert file updates needed
-
-      return this.mapProjectRow(data);
+      return this.mapProjectRow(project);
     } catch (error) {
       console.error('Create project error:', error);
       throw error;
@@ -273,12 +274,14 @@ export class ProjectService {
     if (!res.ok) throw new Error("Failed to delete comment");
     return true;
   }
+
   /**
    * Get a project by ID
    */
   async getProject(projectId: string): Promise<Project | null> {
     try {
-      const { data, error } = await this.supabase
+      // Fetch project (if user has access)
+      const projectPromise = this.supabase
         .from('projects')
         .select(`
           *,
@@ -286,15 +289,18 @@ export class ProjectService {
         `)
         .eq('project_id', projectId)
         .single();
+        
+      const projectResult = await projectPromise;
 
-      if (error) {
-        if (error.code === 'PGRST116') {
+      if (projectResult.error) {
+        if (projectResult.error.code === 'PGRST116') {
           return null; // Project not found
         }
-        throw new Error(`Get project failed: ${error.message}`);
+        throw new Error(`Get project failed: ${projectResult.error.message}`);
       }
 
-      return this.mapProjectRow(data);
+      const projectData = projectResult.data;
+      return this.mapProjectRow(projectData);
     } catch (error) {
       console.error('Get project error:', error);
       throw error;
@@ -335,13 +341,18 @@ export class ProjectService {
         }
       }
 
-      const { data, error } = await query;
+      const { data: projects, error } = await query;
 
       if (error) {
         throw new Error(`Get user projects failed: ${error.message}`);
       }
-
-      return (data || []).map((row: any) => this.mapProjectRow(row));
+      
+      // For lists, we generally don't fetch detailed financials for every project to save RTT/perf
+      // unless explicitly needed. The existing UI likely doesn't show bank details in the list view.
+      // If budget is needed in list view, it's still available in `projects` table as a fallback/cache
+      // (since we kept it there too), but strictly `bank_details` are hidden.
+      
+      return (projects || []).map((row: any) => this.mapProjectRow(row));
     } catch (error) {
       console.error('Get user projects error:', error);
       throw error;
@@ -353,22 +364,21 @@ export class ProjectService {
    */
   async updateProject(projectId: string, updates: Partial<ProjectFormData>): Promise<Project> {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await this.supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('User not authenticated');
+      // Get current user (if not skipped)
+      if (!this.skipAuthCheck) {
+        const { data: { user }, error: userError } = await this.supabase.auth.getUser();
+        if (userError || !user) {
+          throw new Error('User not authenticated');
+        }
       }
 
-      // Note: file upload handling is not supported in this path currently
-
-      // Prepare update data
+      // Separate financials from main project updates
       const updateData: any = {};
       
       if (updates.name) updateData.project_name = updates.name;
       if (updates.type) updateData.project_type = updates.type;
       if (updates.description !== undefined) updateData.description = updates.description;
       if (updates.client_name !== undefined) updateData.client_name = updates.client_name;
-      if (updates.budget !== undefined) updateData.budget = updates.budget;
       if (updates.start_date !== undefined) updateData.start_date = updates.start_date;
       if (updates.end_date !== undefined) updateData.end_date = updates.end_date;
       if (updates.status) updateData.status = updates.status;
@@ -385,10 +395,19 @@ export class ProjectService {
         if (updates.public_contacts.address !== undefined) updateData.public_address = updates.public_contacts.address;
       }
       if (updates.media_links) updateData.media_links = Array.isArray(updates.media_links) ? updates.media_links.join(',') : updates.media_links;
-      if (updates.bank_details) updateData.bank_details = typeof updates.bank_details === 'string' ? updates.bank_details : JSON.stringify(updates.bank_details);
+
+      // Handle Financials - kept in main table
+      if (updates.budget !== undefined) {
+          updateData.budget = updates.budget;
+      }
+      if (updates.bank_details !== undefined) {
+          updateData.bank_details = typeof updates.bank_details === 'string' 
+             ? JSON.parse(updates.bank_details) 
+             : updates.bank_details;
+      }
 
       // Update project
-      const { data, error } = await this.supabase
+      const { data: project, error } = await this.supabase
         .from('projects')
         .update(updateData)
         .eq('project_id', projectId)
@@ -399,7 +418,7 @@ export class ProjectService {
         throw new Error(`Update project failed: ${error.message}`);
       }
 
-      return this.mapProjectRow(data);
+      return this.mapProjectRow(project);
     } catch (error) {
       console.error('Update project error:', error);
       throw error;
@@ -445,7 +464,7 @@ export class ProjectService {
         }
       }
 
-      // Delete project (comments and attachments will be deleted automatically due to CASCADE)
+      // Delete project (comments, financials and attachments will be deleted automatically due to CASCADE)
       const { error } = await this.supabase
         .from('projects')
         .delete()

@@ -21,31 +21,10 @@ async function getServerSession(): Promise<SessionUser | null> {
   try {
     const supabase = createServerSupabaseClient();
     
-    // Get auth user with timeout handling
-    let authResult: { data: { user: any }, error: any };
-    try {
-      authResult = await Promise.race([
-        supabase.auth.getUser(),
-        new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error("Authentication timeout after 15 seconds")), 15000);
-        })
-      ]);
-    } catch (error: any) {
-      // Handle connection/timeout errors
-      if (error?.code === 'ENOTFOUND' || error?.code === 'UND_ERR_CONNECT_TIMEOUT' || 
-          error?.message?.includes('timeout') || error?.message?.includes('getaddrinfo')) {
-        console.error("Supabase connection error:", {
-          code: error.code,
-          message: error.message,
-          hostname: error.hostname || 'unknown',
-          syscall: error.syscall
-        });
-        throw new Error("Cannot connect to Supabase. Please check your network connection and Supabase URL configuration.");
-      }
-      throw error;
-    }
-    
-    const { data: { user }, error: authError } = authResult;
+    // Get auth user - NO TIMEOUTS
+    // Let the platform (Vercel/Edge) handle the timeout naturally
+    // This prevents "race" conditions where we resolve a timeout error while the request is still pending
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError || !user) {
       console.log("No auth user found", authError ? `Error: ${authError.message}` : "");

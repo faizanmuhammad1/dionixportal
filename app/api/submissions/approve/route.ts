@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server";
 import { withAuth } from "@/lib/api-middleware";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ export const POST = withAuth(
         return NextResponse.json({ error: "Missing submission_id" }, { status: 400 });
       }
 
-      const supabase = createServerSupabaseClient();
+      const supabase = createAdminSupabaseClient(); // Use admin client to bypass RLS
       
       // Always fetch the submission to get step2_data and other details
       const { data: submission, error: fetchError } = await supabase

@@ -68,9 +68,11 @@ export function useCreateTask() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-tasks", variables.projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-details", variables.projectId] });
     },
   });
 }
@@ -96,9 +98,11 @@ export function useUpdateTask() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-tasks", variables.projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-details", variables.projectId] });
     },
   });
 }
@@ -123,9 +127,11 @@ export function useDeleteTask() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-tasks", variables.projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-details", variables.projectId] });
     },
   });
 }

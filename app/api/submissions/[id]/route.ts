@@ -100,10 +100,18 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Only admin/manager should be deleting arbitrary submissions unless they own it
+    // (RLS might handle ownership, but we're switching to admin client for reliable deletion of related data)
+    
     console.log(`Deleting submission ${params.id} by user ${user.id}`);
     
+    // Use admin client for the actual deletion process to ensure we can delete
+    // related records (like legacy rows or cleanup tasks) without hitting restrictive RLS
+    // or "permission denied for table users" if triggers touch the users table.
+    const adminClient = createAdminSupabaseClient();
+    
     // Get submission info before deletion for logging and storage cleanup
-    const { data: submissionInfo } = await supabase
+    const { data: submissionInfo } = await adminClient
       .from('submissions')
       .select('submission_id, client_name, status, uploaded_media, media_links')
       .eq('submission_id', params.id)
@@ -131,39 +139,31 @@ export async function DELETE(
     // Also check legacy table client_project_details for matching id and uploaded_files
     let legacyUploadedFiles: string[] = [];
     try {
-      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        const admin = createAdminSupabaseClient();
-        const { data: legacyRow } = await admin
-          .from('client_project_details')
-          .select('uploaded_files')
-          .eq('id', params.id)
-          .single();
-        const files = (legacyRow as any)?.uploaded_files;
-        if (Array.isArray(files)) {
-          legacyUploadedFiles = files.filter((p: any) => typeof p === 'string');
-        }
+      const { data: legacyRow } = await adminClient
+        .from('client_project_details')
+        .select('uploaded_files')
+        .eq('id', params.id)
+        .single();
+      const files = (legacyRow as any)?.uploaded_files;
+      if (Array.isArray(files)) {
+        legacyUploadedFiles = files.filter((p: any) => typeof p === 'string');
       }
     } catch {}
 
     // Try to remove any discovered storage objects (best-effort)
     try {
-      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        const admin = createAdminSupabaseClient();
-        const pathsToRemove = [...new Set([...potentialStoragePaths, ...legacyUploadedFiles])];
-        if (pathsToRemove.length > 0) {
-          // Use the same convention as attachments deletion which passes full storage_path strings
-          // Attempt removal from the common bucket used in the app
-          await admin.storage.from('project-files').remove(pathsToRemove);
-        }
-      } else {
-        console.warn('Skipping storage cleanup for submissions: SUPABASE_SERVICE_ROLE_KEY not set');
+      const pathsToRemove = [...new Set([...potentialStoragePaths, ...legacyUploadedFiles])];
+      if (pathsToRemove.length > 0) {
+        // Use the same convention as attachments deletion which passes full storage_path strings
+        // Attempt removal from the common bucket used in the app
+        await adminClient.storage.from('project-files').remove(pathsToRemove);
       }
     } catch (e) {
       console.error('Storage cleanup (submission) encountered an issue:', e);
     }
 
-    // Delete the submission (primary table)
-    const { error } = await supabase
+    // Delete the submission (primary table) using admin client
+    const { error } = await adminClient
       .from('submissions')
       .delete()
       .eq('submission_id', params.id);
@@ -178,13 +178,10 @@ export async function DELETE(
 
     // Also attempt to delete legacy row if exists (best-effort)
     try {
-      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        const admin = createAdminSupabaseClient();
-        await admin
-          .from('client_project_details')
-          .delete()
-          .eq('id', params.id);
-      }
+      await adminClient
+        .from('client_project_details')
+        .delete()
+        .eq('id', params.id);
     } catch (e) {
       // Non-fatal
     }

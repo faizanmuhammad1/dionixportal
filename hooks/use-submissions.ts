@@ -82,6 +82,9 @@ export function useApproveSubmission() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["active-projects-count"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] });
     },
   });
 }
@@ -104,6 +107,7 @@ export function useRejectSubmission() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] });
     },
   });
 }
@@ -124,6 +128,7 @@ export function useDeleteSubmission() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] });
     },
   });
 }

@@ -736,15 +736,16 @@ export function JobManagement() {
           </div>
 
           <Card>
-            <Table>
+            <CardContent>
+              <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Applicant</TableHead>
-                  <TableHead>Position</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead className="whitespace-nowrap">Applied</TableHead>
-                  <TableHead>Experience</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="w-[250px]">Applicant</TableHead>
+                  <TableHead className="w-[200px]">Position</TableHead>
+                  <TableHead className="w-[200px]">Location</TableHead>
+                  <TableHead className="w-[120px] whitespace-nowrap">Applied</TableHead>
+                  <TableHead className="w-[100px]">Experience</TableHead>
+                  <TableHead className="w-[100px]">Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1009,6 +1010,7 @@ export function JobManagement() {
                   ))}
               </TableBody>
             </Table>
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

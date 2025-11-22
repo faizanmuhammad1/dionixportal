@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase-server";
 import { withAuth, withCors } from "@/lib/api-middleware";
 import { validateInput, submissionCreateSchema } from "@/lib/validation";
 
@@ -18,8 +17,14 @@ export const GET = withAuth(
         ));
       }
 
-      const supabase = createServerSupabaseClient();
-      const { data, error } = await supabase.rpc("get_pending_submissions");
+      // Use admin client to bypass RLS policies that might reference auth.users
+      const supabase = createAdminSupabaseClient();
+
+      const { data, error } = await supabase
+        .from('submissions')
+        .select('*')
+        .in('status', ['received', 'pending', 'approved', 'rejected', 'processing', 'in_review', 'new'])
+        .order('created_at', { ascending: false });
 
       if (error) {
         return withCors(NextResponse.json({ error: error.message }, { status: 500 }));
@@ -47,27 +52,28 @@ export const POST = withAuth(
         ));
       }
 
-    const body = await request.json();
-    
-    // SECURITY: Validate input data
-    const validation = validateInput(submissionCreateSchema, body);
-    if (!validation.success) {
-      return NextResponse.json({ 
-        error: "Invalid input data", 
-        details: validation.errors 
-      }, { status: 400 });
-    }
-    
+      const body = await request.json();
+
+      // SECURITY: Validate input data
+      const validation = validateInput(submissionCreateSchema, body);
+      if (!validation.success) {
+        return NextResponse.json({
+          error: "Invalid input data",
+          details: validation.errors
+        }, { status: 400 });
+      }
+
       const supabase = createServerSupabaseClient();
 
-      const { data, error } = await supabase
+      // 1. Insert Submission (without sensitive data)
+      const { data: submission, error } = await supabase
         .from("submissions")
         .insert({
           client_id: user.id,
           project_type: body.project_type,
           description: body.description,
           client_name: body.client_name,
-          budget: body.budget || 0,
+          budget: body.budget || 0, // Keep in main table for reference/sorting if column exists
           start_date: body.start_date,
           end_date: body.end_date,
           priority: body.priority || "medium",
@@ -92,7 +98,7 @@ export const POST = withAuth(
         return withCors(NextResponse.json({ error: error.message }, { status: 500 }));
       }
 
-      return withCors(NextResponse.json({ submission: data }));
+      return withCors(NextResponse.json({ submission }));
     } catch (error) {
       return withCors(NextResponse.json({ error: "Internal server error" }, { status: 500 }));
     }

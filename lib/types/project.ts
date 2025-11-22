@@ -1,43 +1,10 @@
-// TypeScript types for the project management system
+import { Database } from '@/lib/database.types';
 
-export interface Project {
-  id: string;
-  name: string;
-  type: ProjectType;
-  description?: string;
-  client_name?: string;
-  budget: number;
-  start_date?: string;
-  end_date?: string;
-  status: ProjectStatus;
-  priority: ProjectPriority;
-  service_specific: Record<string, any>;
-  company_number?: string;
-  company_email?: string;
-  company_address?: string;
-  about_company?: string;
-  social_links: string[];
-  public_contacts: Record<string, any>;
-  media_links: string[];
-  bank_details: Record<string, any>;
-  payment_integration_needs?: string[];
-  confirmed: boolean;
-  confirmed_at?: string;
-  created_by?: string;
-  created_at: string;
-  updated_at: string;
-}
+// Base types from database
+type DbProject = Database['public']['Tables']['projects']['Row'];
+type DbSubmission = Database['public']['Tables']['submissions']['Row'];
 
-export interface ProjectActivity {
-  activity_id: string;
-  project_id: string;
-  action: string;
-  old_value?: Record<string, any>;
-  new_value?: Record<string, any>;
-  created_at: string;
-  created_by?: string;
-}
-
+// Enums
 export type ProjectType = 
   | 'web' 
   | 'branding' 
@@ -58,6 +25,46 @@ export type ProjectPriority =
   | 'high' 
   | 'critical';
 
+// Core Project Interface (Frontend representation)
+export interface Project {
+  id: string;
+  name: string;
+  type: ProjectType;
+  description?: string;
+  client_name?: string;
+  budget: number;
+  start_date?: string;
+  end_date?: string;
+  status: ProjectStatus;
+  priority: ProjectPriority;
+  service_specific: Record<string, any>;
+  company_number?: string;
+  company_email?: string;
+  company_address?: string;
+  about_company?: string;
+  social_links: string[];
+  public_contacts: Record<string, any>;
+  media_links: string[];
+  bank_details?: Record<string, any>; // Now optional/loaded separately
+  confirmed: boolean;
+  confirmed_at?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Project Activity
+export interface ProjectActivity {
+  activity_id: string;
+  project_id: string;
+  action: string;
+  old_value?: Record<string, any>;
+  new_value?: Record<string, any>;
+  created_at: string;
+  created_by?: string;
+}
+
+// Form Data for Creation/Updates
 export interface ProjectFormData {
   // Step 1: Core Project Details
   name: string;

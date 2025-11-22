@@ -2,36 +2,17 @@
 
 import type React from "react";
 import {
-  Mail,
-  FolderOpen,
-  CheckSquare,
-  Briefcase,
-  LayoutDashboard,
-  MessageSquare,
-  Users,
-  Settings,
-  LogOut,
   Menu,
   X,
-  FileText,
-  DollarSign,
-  BarChart3,
-  Clock,
-  Archive,
-  Bell,
-  Building2,
-  UserCheck,
-  Target,
-  Database,
-  Headphones,
+  LogOut,
   ChevronLeft,
   ChevronRight,
+  Bell,
 } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -42,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { User } from "@/lib/auth";
 import { createClient } from "@/lib/supabase";
+import { getNavigationForRole, NavItem } from "@/config/navigation";
 
 const LIGHT_MODE_LOGO_SRC =
   "https://res.cloudinary.com/dnqyibnud/image/upload/v1758975261/main-logo-dark_zivcxt.png";
@@ -99,215 +81,26 @@ export function DashboardLayout({
     return 'dashboard';
   })();
 
-  const navigation = [
-    // Core Dashboard
-    {
-      name: "Overview",
-      href: "/?view=dashboard",
-      icon: LayoutDashboard,
-      current: activeView === "dashboard",
-    },
+  // Generate navigation based on user role from config
+  const navigationItems = useMemo(() => getNavigationForRole(user.role), [user.role]);
+  
+  const availableNav = navigationItems.filter((item) => !item.comingSoon);
+  const comingSoonNav = navigationItems.filter((item) => item.comingSoon);
 
-    ...(user.role === "admin"
-      ? [
-          // Communication Hub
-          {
-            name: "Email Center",
-            href: "/?view=email-center",
-            icon: Mail,
-            current: activeView === "email-center",
-          },
-          {
-            name: "Contact Directory",
-            href: "/?view=contact-center",
-            icon: MessageSquare,
-            current: activeView === "contact-center",
-          },
-          {
-            name: "Support Center",
-            href: "/?view=support",
-            icon: Headphones,
-            current: activeView === "support",
-            comingSoon: true,
-          },
-
-          // Project Hub
-          {
-            name: "Project Center",
-            href: "/?view=project-center",
-            icon: FolderOpen,
-            current: activeView === "project-center",
-          },
-          {
-            name: "Client Submissions",
-            href: "/?view=client-submissions",
-            icon: FileText,
-            current: activeView === "client-submissions",
-          },
-          {
-            name: "Task Board",
-            href: "/?view=task-management",
-            icon: CheckSquare,
-            current: activeView === "task-management",
-          },
-          {
-            name: "Time Tracker",
-            href: "/?view=time-tracking",
-            icon: Clock,
-            current: activeView === "time-tracking",
-            comingSoon: true,
-          },
-
-          // Team Management
-          {
-            name: "Career Portal",
-            href: "/?view=career-hub",
-            icon: Briefcase,
-            current: activeView === "career-hub",
-          },
-          {
-            name: "Team Directory",
-            href: "/?view=team-directory",
-            icon: Users,
-            current: activeView === "team-directory",
-          },
-          {
-            name: "Attendance Hub",
-            href: "/?view=attendance",
-            icon: UserCheck,
-            current: activeView === "attendance",
-            comingSoon: true,
-          },
-
-          // Business Operations
-          {
-            name: "Client Portal",
-            href: "/?view=clients",
-            icon: Building2,
-            current: activeView === "clients",
-            comingSoon: true,
-          },
-          {
-            name: "Finance Center",
-            href: "/?view=invoicing",
-            icon: DollarSign,
-            current: activeView === "invoicing",
-            comingSoon: true,
-          },
-          {
-            name: "Analytics Hub",
-            href: "/?view=analytics",
-            icon: BarChart3,
-            current: activeView === "analytics",
-            comingSoon: true,
-          },
-
-          // Content Management
-          {
-            name: "Document Library",
-            href: "/?view=documents",
-            icon: FileText,
-            current: activeView === "documents",
-            comingSoon: true,
-          },
-          {
-            name: "Knowledge Hub",
-            href: "/?view=knowledge",
-            icon: Archive,
-            current: activeView === "knowledge",
-            comingSoon: true,
-          },
-
-          // System Settings
-          {
-            name: "Notifications",
-            href: "/?view=notifications",
-            icon: Bell,
-            current: activeView === "notifications",
-            comingSoon: true,
-          },
-          {
-            name: "Data Center",
-            href: "/?view=data",
-            icon: Database,
-            current: activeView === "data",
-            comingSoon: true,
-          },
-        ]
-      : [
-          // Employee Dashboard
-          {
-            name: "Project Center",
-            href: "/?view=project-center",
-            icon: FolderOpen,
-            current: activeView === "project-center",
-          },
-          {
-            name: "Time Tracker",
-            href: "/?view=my-time",
-            icon: Clock,
-            current: activeView === "my-time",
-            comingSoon: true,
-          },
-          {
-            name: "Performance",
-            href: "/?view=performance",
-            icon: Target,
-            current: activeView === "performance",
-            comingSoon: true,
-          },
-          {
-            name: "My Documents",
-            href: "/?view=my-documents",
-            icon: FileText,
-            current: activeView === "my-documents",
-            comingSoon: true,
-          },
-          {
-            name: "Help Desk",
-            href: "/?view=employee-support",
-            icon: Headphones,
-            current: activeView === "employee-support",
-            comingSoon: true,
-          },
-        ]),
-
-    // Settings (always last)
-    {
-      name: "Settings",
-      href: "/?view=settings",
-      icon: Settings,
-      current: activeView === "settings",
-      comingSoon: true,
-    },
-  ];
-
-  const availableNav = navigation.filter((item) => !item.comingSoon);
-  const comingSoonNav = navigation.filter((item) => item.comingSoon);
-
-  const handleNavClick = (href: string) => {
+  const handleNavClick = (item: NavItem) => {
     try {
       // Use router for navigation
-      router.push(href);
+      router.push(item.href);
       // Also call onNavigate if provided for backward compatibility
       if (onNavigate) {
-        try {
-          const view = new URL(href, typeof window !== 'undefined' ? window.location.origin : 'http://localhost').searchParams.get('view') || href.replace('/?view=', '').replace('?view=', '');
-          onNavigate(view);
-        } catch (e) {
-          // Fallback: extract view from href string
-          const match = href.match(/[?&]view=([^&]+)/);
-          if (match) {
-            onNavigate(match[1]);
-          }
-        }
+        onNavigate(item.view);
       }
       setSidebarOpen(false); // Close mobile sidebar on navigation
     } catch (error) {
       console.error("Navigation error:", error);
       // Fallback to window.location if router fails
       if (typeof window !== 'undefined') {
-        window.location.href = href;
+        window.location.href = item.href;
       }
     }
   };
@@ -403,13 +196,13 @@ export function DashboardLayout({
             {availableNav.map((item) => (
               <Button
                 key={item.name}
-                variant={item.current ? "default" : "ghost"}
+                variant={activeView === item.view ? "default" : "ghost"}
                 className={`w-full justify-start relative transition-colors ${
-                  item.current
+                  activeView === item.view
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
                     : "text-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
-                onClick={() => handleNavClick(item.href)}
+                onClick={() => handleNavClick(item)}
               >
                 <item.icon className="mr-2 h-4 w-4" />
                 {item.name}
@@ -511,17 +304,17 @@ export function DashboardLayout({
             {availableNav.map((item) => (
               <Button
                 key={item.name}
-                variant={item.current ? "default" : "ghost"}
+                variant={activeView === item.view ? "default" : "ghost"}
                 className={`w-full transition-all duration-200 ${
                   sidebarCollapsed && !sidebarHovered
                     ? "justify-center px-2"
                     : "justify-start"
                 } ${
-                  item.current
+                  activeView === item.view
                     ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
                     : "text-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
-                onClick={() => handleNavClick(item.href)}
+                onClick={() => handleNavClick(item)}
                 title={
                   sidebarCollapsed && !sidebarHovered ? item.name : undefined
                 }
@@ -635,7 +428,11 @@ export function DashboardLayout({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => onNavigate?.("notifications") || router.push("/?view=notifications")}
+                onClick={() => {
+                    const notifItem = navigationItems.find(i => i.view === 'notifications');
+                    if (notifItem) handleNavClick(notifItem);
+                    else router.push("/?view=notifications");
+                }}
                 className="relative"
                 title="Notifications"
               >

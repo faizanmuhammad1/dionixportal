@@ -30,7 +30,7 @@ export function sanitizeHtml(html: string, options?: {
   }
 
   const purify = getPurify();
-  
+
   if (!purify) {
     // Server-side fallback - basic sanitization
     return html

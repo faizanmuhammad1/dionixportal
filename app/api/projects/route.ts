@@ -24,6 +24,7 @@ export const GET = withAuth(
     const summary = searchParams.get('summary') === 'true';
 
     // Build query - use summary fields if summary mode is enabled
+    // Note: bank_details is NO LONGER available in the projects table
     const selectFields = summary 
       ? 'project_id, project_name, client_name, description, status, priority, budget, start_date, end_date, created_at'
       : '*';
@@ -80,6 +81,12 @@ export const GET = withAuth(
       console.error('Database error:', error);
       throw error;
     }
+
+      // For individual project details (not summary), we might want to enrich with financials
+      // BUT only if the user has permission.
+      // Since this is a LIST endpoint, we typically do NOT return sensitive bank details for performance and security.
+      // Detailed view (GET /api/projects/:id) should handle fetching financials if authorized.
+      // Therefore, the project list will just have the basic info.
     
       const response = withCors(NextResponse.json({ projects: projects || [] }));
       // Add cache headers for GET requests

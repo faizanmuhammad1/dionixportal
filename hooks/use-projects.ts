@@ -249,6 +249,8 @@ export function useCreateProject() {
     onSuccess: () => {
       // Invalidate and refetch projects
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["active-projects-count"] });
     },
   });
 }
@@ -274,8 +276,10 @@ export function useUpdateProject() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["project-details", variables.projectId] });
     },
   });
 }
@@ -291,6 +295,7 @@ export function useDeleteProject() {
           "Content-Type": "application/json",
         },
         credentials: "same-origin",
+        body: JSON.stringify({}), // Some backends might require a body, though usually not for DELETE
       });
 
       if (!response.ok) {
@@ -302,6 +307,8 @@ export function useDeleteProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["active-projects-count"] });
     },
   });
 }

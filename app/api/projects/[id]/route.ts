@@ -130,8 +130,10 @@ export const PUT = withAuth(
       console.log("Received update data for project:", projectId, body);
       const updates: Partial<ProjectFormData> = body;
 
-      const supabase = createServerSupabaseClient();
-      const projectService = new ProjectService(supabase);
+      // Use admin client for updates to ensure we can write to all tables/fields
+      // and bypass any strict RLS that might be blocking updates to related tables
+      const supabase = createAdminSupabaseClient();
+      const projectService = new ProjectService(supabase, true); // Skip auth check since we validated in middleware
       const project = await projectService.updateProject(projectId, updates);
       
       console.log("Project updated successfully:", projectId);

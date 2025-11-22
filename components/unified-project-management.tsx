@@ -197,6 +197,64 @@ interface Employee {
   employment_type?: string;
 }
 
+export type ServiceType =
+  | "web-development"
+  | "branding-design"
+  | "digital-marketing"
+  | "ai-solutions"
+  | "custom-project"
+  | "other";
+
+export type FormDataState = {
+  // Step 0: Service Selection
+  selectedService: ServiceType | "";
+
+  // Step 1: Service-Specific Information
+  // Web Development
+  domainSuggestions: string;
+  websiteReferences: string;
+  featuresRequirements: string;
+
+  // Branding & Design
+  logoIdeasConcepts: string;
+  colorBrandTheme: string;
+  designAssetsNeeded: string[];
+
+  // Digital Marketing
+  targetAudienceIndustry: string;
+  marketingGoals: string;
+  channelsOfInterest: string[];
+
+  // AI Solutions
+  aiSolutionType: string[];
+  businessChallengeUseCase: string;
+  dataAvailability: string;
+
+  // Other (Custom Service)
+  serviceDescription: string;
+  expectedOutcome: string;
+
+  // Step 2: Company & Contact Information
+  contactBusinessNumber: string;
+  contactCompanyEmail: string;
+  contactCompanyAddress: string;
+  aboutCompanyDetails: string;
+
+  // Step 3: Social Media & Public Contact Info
+  socialLinks: string;
+  publicBusinessNumber: string;
+  publicCompanyEmail: string;
+  publicCompanyAddress: string;
+
+  // Step 4: Media & Banking Information
+  mediaLinks: string;
+  account_name: string;
+  account_number: string;
+  iban: string;
+  swift: string;
+  paymentIntegrationNeeds: string[];
+};
+
 export function UnifiedProjectManagement() {
   const queryClient = useQueryClient();
   
@@ -420,12 +478,44 @@ export function UnifiedProjectManagement() {
   const [wizardStep, setWizardStep] = useState(0);
   const [tryAdvance, setTryAdvance] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [serviceType, setServiceType] = useState<
-    "web" | "branding" | "marketing" | "ai" | "custom" | ""
-  >("");
-  const [serviceSpecific, setServiceSpecific] = useState<Record<string, any>>(
-    {}
-  );
+
+    const [detailedFormData, setDetailedFormData] = useState<FormDataState>({
+    selectedService: "",
+    domainSuggestions: "",
+    websiteReferences: "",
+    featuresRequirements: "",
+    logoIdeasConcepts: "",
+    colorBrandTheme: "",
+    designAssetsNeeded: [],
+    targetAudienceIndustry: "",
+    marketingGoals: "",
+    channelsOfInterest: [],
+    aiSolutionType: [],
+    businessChallengeUseCase: "",
+    dataAvailability: "",
+    serviceDescription: "",
+    expectedOutcome: "",
+    contactBusinessNumber: "",
+    contactCompanyEmail: "",
+    contactCompanyAddress: "",
+    aboutCompanyDetails: "",
+    socialLinks: "",
+    publicBusinessNumber: "",
+    publicCompanyEmail: "",
+    publicCompanyAddress: "",
+    mediaLinks: "",
+    account_name: "",
+    account_number: "",
+    iban: "",
+    swift: "",
+    paymentIntegrationNeeds: [],
+  });
+
+  // Legacy states - mapped to detailedFormData where possible
+  const [serviceType, setServiceType] = useState<ServiceType | "">(""); 
+  const [serviceSpecific, setServiceSpecific] = useState<Record<string, any>>({});
+  // ... other legacy states can remain for now if deeply used, but we should migrate usage
+  
   const [companyNumber, setCompanyNumber] = useState("");
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
@@ -1265,23 +1355,47 @@ export function UnifiedProjectManagement() {
       if (!formData.name.trim()) {
         errors.name = "Project name is required";
       }
-      if (!formData.project_type && !serviceType) {
+      if (!formData.project_type && !detailedFormData.selectedService) {
         errors.serviceType = "Project type is required";
       }
     } else if (currentStep === 3) {
-      // Step 3: Company & Contact Information
-      if (!companyNumber.trim()) {
+       // Step 3: Service Specific Information
+       const type = formData.project_type || detailedFormData.selectedService;
+       
+       if ((type === 'web-development' || type === 'web') && !detailedFormData.featuresRequirements) {
+          errors.featuresRequirements = "Features & Requirements is required";
+       }
+       
+       if ((type === 'branding-design' || type === 'branding') && !detailedFormData.logoIdeasConcepts) {
+          errors.logoIdeasConcepts = "Logo ideas are required";
+       }
+       
+       if ((type === 'digital-marketing' || type === 'marketing') && !detailedFormData.marketingGoals) {
+          errors.marketingGoals = "Marketing goals are required";
+       }
+       
+       if ((type === 'ai-solutions' || type === 'ai') && !detailedFormData.businessChallengeUseCase) {
+          errors.businessChallengeUseCase = "Business challenge is required";
+       }
+
+       if ((type === 'custom-project' || type === 'custom') && !detailedFormData.serviceDescription) {
+          errors.serviceDescription = "Service description is required";
+       }
+       
+    } else if (currentStep === 4) {
+      // Step 4: Company & Contact Information
+      if (!detailedFormData.contactBusinessNumber.trim()) {
         errors.companyNumber = "Business phone number is required";
       }
-      if (!companyEmail.trim()) {
+      if (!detailedFormData.contactCompanyEmail.trim()) {
         errors.companyEmail = "Company email is required";
-      } else if (!/\S+@\S+\.\S+/.test(companyEmail)) {
+      } else if (!/\S+@\S+\.\S+/.test(detailedFormData.contactCompanyEmail)) {
         errors.companyEmail = "Please enter a valid email address";
       }
-      if (!companyAddress.trim()) {
+      if (!detailedFormData.contactCompanyAddress.trim()) {
         errors.companyAddress = "Company address is required";
       }
-      if (!aboutCompany.trim()) {
+      if (!detailedFormData.aboutCompanyDetails.trim()) {
         errors.aboutCompany = "About company is required";
       }
     }
@@ -1356,6 +1470,7 @@ export function UnifiedProjectManagement() {
         () => {
           console.log("🔄 Project INSERT detected, invalidating cache...");
           queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
         }
       )
       .on(
@@ -1364,6 +1479,7 @@ export function UnifiedProjectManagement() {
         () => {
           console.log("🔄 Project UPDATE detected, invalidating cache...");
           queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
         }
       )
       .on(
@@ -1372,6 +1488,7 @@ export function UnifiedProjectManagement() {
         () => {
           console.log("🔄 Project DELETE detected, invalidating cache...");
           queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
         }
       )
       .on(
@@ -1381,6 +1498,7 @@ export function UnifiedProjectManagement() {
           console.log("🔄 Task INSERT detected, invalidating cache...");
           queryClient.invalidateQueries({ queryKey: ["tasks"] });
           queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
         }
       )
       .on(
@@ -1390,6 +1508,7 @@ export function UnifiedProjectManagement() {
           console.log("🔄 Task UPDATE detected, invalidating cache...");
           queryClient.invalidateQueries({ queryKey: ["tasks"] });
           queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
         }
       )
       .on(
@@ -1399,6 +1518,7 @@ export function UnifiedProjectManagement() {
           console.log("🔄 Task DELETE detected, invalidating cache...");
           queryClient.invalidateQueries({ queryKey: ["tasks"] });
           queryClient.invalidateQueries({ queryKey: ["projects"] });
+          queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
         }
       )
       .subscribe();
@@ -1567,7 +1687,12 @@ export function UnifiedProjectManagement() {
 
   const previousStep = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      let prev = currentStep - 1;
+      // Skip Step 2 if going back from Step 3 and project type is set (which is likely)
+      if (currentStep === 3 && (formData.project_type || detailedFormData.selectedService)) {
+        prev = 1;
+      }
+      setCurrentStep(prev);
     }
   };
 
@@ -1577,7 +1702,14 @@ export function UnifiedProjectManagement() {
     // If not on last step, validate and advance
     if (currentStep < totalSteps) {
       if (validateCurrentStep()) {
-        setCurrentStep(currentStep + 1);
+        let nextStep = currentStep + 1;
+        
+        // Skip Step 2 (Service Selection) if project type is already selected
+        if (currentStep === 1 && (formData.project_type || detailedFormData.selectedService)) {
+          nextStep = 3;
+        }
+        
+        setCurrentStep(nextStep);
       }
       return;
     }
@@ -1644,55 +1776,56 @@ export function UnifiedProjectManagement() {
         const updateData = {
           name: formData.name,
           client_name: formData.client,
-          type: serviceType,
+          type: formData.project_type || detailedFormData.selectedService,
           description: formData.description,
           status: formData.status,
           priority: formData.priority,
           budget: formData.budget,
           start_date: formData.start_date,
           end_date: formData.end_date,
-          company_number: companyNumber,
-          company_email: companyEmail,
-          company_address: companyAddress,
-          about_company: aboutCompany,
-          social_links: socialLinks,
+          company_number: detailedFormData.contactBusinessNumber,
+          company_email: detailedFormData.contactCompanyEmail,
+          company_address: detailedFormData.contactCompanyAddress,
+          about_company: detailedFormData.aboutCompanyDetails,
+          social_links: detailedFormData.socialLinks ? detailedFormData.socialLinks.split(",").map(s => s.trim()).filter(Boolean) : [],
           public_contacts: {
-            phone: publicContactPhone,
-            email: publicContactEmail,
-            address: publicContactAddress,
+            phone: detailedFormData.publicBusinessNumber,
+            email: detailedFormData.publicCompanyEmail,
+            address: detailedFormData.publicCompanyAddress,
           },
-          media_links: mediaLinks,
+          media_links: detailedFormData.mediaLinks ? detailedFormData.mediaLinks.split(",").map(s => s.trim()).filter(Boolean) : [],
           bank_details: {
-            account_name: bankAccountName,
-            account_number: bankAccountNumber,
-            iban: bankIban,
-            swift: bankSwift,
+            account_name: detailedFormData.account_name,
+            account_number: detailedFormData.account_number,
+            iban: detailedFormData.iban,
+            swift: detailedFormData.swift,
           },
           service_specific: {
-            // Map form field names back to database field names
-            domain_suggestions: serviceSpecific.domainSuggestions || "",
-            references: serviceSpecific.websiteReferences || "",
-            features: serviceSpecific.featuresRequirements || "",
-
-            // Branding fields
-            logo_ideas: serviceSpecific.logoIdeasConcepts || "",
-            color_preferences: serviceSpecific.colorBrandTheme || "",
-            design_assets: serviceSpecific.designAssetsNeeded || [],
-
-            // AI fields
-            ai_solution_type: serviceSpecific.aiSolutionType || "",
-            business_challenge: serviceSpecific.businessChallenge || "",
-            data_availability: serviceSpecific.dataAvailability || "",
-
-            // Marketing fields
-            target_audience: serviceSpecific.targetAudience || "",
-            marketing_goals: serviceSpecific.marketingGoals || "",
-            channels: serviceSpecific.marketingChannels || [],
-
-            // Custom fields
-            service_description: serviceSpecific.serviceDescription || "",
-            expected_outcome: serviceSpecific.expectedOutcome || "",
+            // Web Development
+            domainSuggestions: detailedFormData.domainSuggestions,
+            websiteReferences: detailedFormData.websiteReferences,
+            featuresRequirements: detailedFormData.featuresRequirements,
+            
+            // Branding
+            logoIdeasConcepts: detailedFormData.logoIdeasConcepts,
+            colorBrandTheme: detailedFormData.colorBrandTheme,
+            designAssetsNeeded: detailedFormData.designAssetsNeeded,
+            
+            // Digital Marketing
+            targetAudienceIndustry: detailedFormData.targetAudienceIndustry,
+            marketingGoals: detailedFormData.marketingGoals,
+            channelsOfInterest: detailedFormData.channelsOfInterest,
+            
+            // AI Solutions
+            aiSolutionType: detailedFormData.aiSolutionType,
+            businessChallengeUseCase: detailedFormData.businessChallengeUseCase,
+            dataAvailability: detailedFormData.dataAvailability,
+            
+            // Custom
+            serviceDescription: detailedFormData.serviceDescription,
+            expectedOutcome: detailedFormData.expectedOutcome,
           },
+          payment_integration_needs: detailedFormData.paymentIntegrationNeeds,
         };
 
         console.log("Sending update data:", updateData);
@@ -1722,7 +1855,7 @@ export function UnifiedProjectManagement() {
 
         const projectData = {
           name: formData.name,
-          type: (formData.project_type || serviceType || "web-development") as any,
+          type: (formData.project_type || detailedFormData.selectedService || "web-development") as any,
           description: formData.description || undefined,
           client_name: formData.client || undefined,
           budget: formData.budget,
@@ -1731,25 +1864,49 @@ export function UnifiedProjectManagement() {
           priority: formData.priority,
           status: formData.status,
           // All steps data
-          company_number: companyNumber || "",
-          company_email: companyEmail || "",
-          company_address: companyAddress || "",
-          about_company: aboutCompany || "",
-          social_links: socialLinks.length > 0 ? socialLinks : [],
+          company_number: detailedFormData.contactBusinessNumber || "",
+          company_email: detailedFormData.contactCompanyEmail || "",
+          company_address: detailedFormData.contactCompanyAddress || "",
+          about_company: detailedFormData.aboutCompanyDetails || "",
+          social_links: detailedFormData.socialLinks ? detailedFormData.socialLinks.split(",").map(s => s.trim()).filter(Boolean) : [],
           public_contacts: {
-            phone: publicContactPhone || undefined,
-            email: publicContactEmail || undefined,
-            address: publicContactAddress || undefined,
+            phone: detailedFormData.publicBusinessNumber || undefined,
+            email: detailedFormData.publicCompanyEmail || undefined,
+            address: detailedFormData.publicCompanyAddress || undefined,
           },
-          media_links: mediaLinks.length > 0 ? mediaLinks : [],
+          media_links: detailedFormData.mediaLinks ? detailedFormData.mediaLinks.split(",").map(s => s.trim()).filter(Boolean) : [],
           bank_details: {
-            account_name: bankAccountName || undefined,
-            account_number: bankAccountNumber || undefined,
-            iban: bankIban || undefined,
-            swift: bankSwift || undefined,
+            account_name: detailedFormData.account_name || undefined,
+            account_number: detailedFormData.account_number || undefined,
+            iban: detailedFormData.iban || undefined,
+            swift: detailedFormData.swift || undefined,
           },
-          service_specific: serviceSpecific,
-          payment_integration_needs: paymentIntegrationNeeds,
+          service_specific: {
+            // Web Development
+            domainSuggestions: detailedFormData.domainSuggestions,
+            websiteReferences: detailedFormData.websiteReferences,
+            featuresRequirements: detailedFormData.featuresRequirements,
+            
+            // Branding
+            logoIdeasConcepts: detailedFormData.logoIdeasConcepts,
+            colorBrandTheme: detailedFormData.colorBrandTheme,
+            designAssetsNeeded: detailedFormData.designAssetsNeeded,
+            
+            // Digital Marketing
+            targetAudienceIndustry: detailedFormData.targetAudienceIndustry,
+            marketingGoals: detailedFormData.marketingGoals,
+            channelsOfInterest: detailedFormData.channelsOfInterest,
+            
+            // AI Solutions
+            aiSolutionType: detailedFormData.aiSolutionType,
+            businessChallengeUseCase: detailedFormData.businessChallengeUseCase,
+            dataAvailability: detailedFormData.dataAvailability,
+            
+            // Custom
+            serviceDescription: detailedFormData.serviceDescription,
+            expectedOutcome: detailedFormData.expectedOutcome,
+          },
+          payment_integration_needs: detailedFormData.paymentIntegrationNeeds,
         };
 
         const project = await projectService.createProject(projectData);
@@ -1768,6 +1925,10 @@ export function UnifiedProjectManagement() {
 
       // Invalidate React Query cache to refetch projects
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      if (editingProject) {
+         queryClient.invalidateQueries({ queryKey: ["project-details", editingProject.id] });
+      }
       resetForm();
     } catch (error) {
       console.error("Error saving project:", error);
@@ -1827,7 +1988,7 @@ export function UnifiedProjectManagement() {
     };
 
     // Populate form data with new field structure
-    const projectType = project.service_type || project.type || "";
+    const projectType = project.service_type || project.type || "web-development";
     setFormData({
       name: project.name || "",
       description: project.description || "",
@@ -1845,15 +2006,15 @@ export function UnifiedProjectManagement() {
     // Set service type and map to new field names
     // Normalize service type: convert "web-development" to "web", etc.
     const normalizedServiceType = (() => {
-      if (projectType === "web-development" || projectType === "Web Development") return "web";
-      if (projectType === "branding-design" || projectType === "Branding Design") return "branding";
-      if (projectType === "digital-marketing" || projectType === "Digital Marketing") return "marketing";
-      if (projectType === "ai-solutions" || projectType === "AI Solutions") return "ai";
-      if (projectType === "custom-project" || projectType === "Custom Project" || projectType === "other") return "custom";
-      if (projectType === "web" || projectType === "branding" || projectType === "marketing" || projectType === "ai" || projectType === "custom") return projectType;
-      return "";
+      const type = String(projectType).toLowerCase();
+      if (type.includes("web")) return "web-development";
+      if (type.includes("brand")) return "branding-design";
+      if (type.includes("marketing")) return "digital-marketing";
+      if (type.includes("ai")) return "ai-solutions";
+      if (type.includes("custom") || type.includes("other")) return "custom-project";
+      return "web-development";
     })();
-    setServiceType(normalizedServiceType as typeof serviceType);
+    setServiceType(normalizedServiceType as any); // Cast as any to avoid strict type check errors with legacy state
 
     // Company & Contact Information (Step 4)
     setCompanyNumber(project.company_number || "");
@@ -1881,12 +2042,62 @@ export function UnifiedProjectManagement() {
 
     // Service-specific data with comprehensive field mapping
     const serviceSpecificData = project.service_specific || {};
+    
+    // Initialize detailedFormData correctly
+    setDetailedFormData({
+      selectedService: (normalizedServiceType as ServiceType) || "web-development",
+      
+      // Web Development
+      domainSuggestions: getField('domainSuggestions', ['domain_suggestions', 'domain_suggestions_svc']) || "",
+      websiteReferences: getField('websiteReferences', ['website_references', 'references']) || "",
+      featuresRequirements: getField('featuresRequirements', ['features_requirements', 'features_requirements_svc', 'features']) || "",
+
+      // Branding
+      logoIdeasConcepts: getField('logoIdeasConcepts', ['logoIdeas', 'logo_ideas_concepts', 'logo_concepts', 'logo_ideas']) || "",
+      colorBrandTheme: getField('colorBrandTheme', ['brandTheme', 'color_brand_theme', 'color_preferences', 'brand_theme']) || "",
+      designAssetsNeeded: parseArray(getField('designAssetsNeeded', ['design_assets_needed', 'design_assets'])),
+
+      // Digital Marketing
+      targetAudienceIndustry: getField('targetAudienceIndustry', ['target_audience_industry', 'targetAudience', 'target_audience']) || "",
+      marketingGoals: getField('marketingGoals', ['marketing_goals']) || "",
+      channelsOfInterest: parseArray(getField('channelsOfInterest', ['channels_of_interest', 'channels', 'marketingChannels'])),
+
+      // AI Solutions
+      aiSolutionType: parseArray(getField('aiSolutionType', ['ai_solution_type'])),
+      businessChallengeUseCase: getField('businessChallengeUseCase', ['business_challenge_use_case', 'business_challenge']) || "",
+      dataAvailability: getField('dataAvailability', ['data_availability']) || "",
+
+      // Custom
+      serviceDescription: getField('serviceDescription', ['service_description']) || "",
+      expectedOutcome: getField('expectedOutcome', ['expected_outcome']) || "",
+
+      // Contact Info
+      contactBusinessNumber: project.company_number || "",
+      contactCompanyEmail: project.company_email || "",
+      contactCompanyAddress: project.company_address || "",
+      aboutCompanyDetails: project.about_company || "",
+
+      // Public & Social
+      socialLinks: socialLinksArray.join(", "),
+      publicBusinessNumber: project.public_contacts?.phone || "",
+      publicCompanyEmail: project.public_contacts?.email || "",
+      publicCompanyAddress: project.public_contacts?.address || "",
+
+      // Media & Banking
+      mediaLinks: mediaLinksArray.join(", "),
+      account_name: project.bank_details?.account_name || "",
+      account_number: project.bank_details?.account_number || "",
+      iban: project.bank_details?.iban || "",
+      swift: project.bank_details?.swift || "",
+      paymentIntegrationNeeds: parseArray(project.payment_integration_needs),
+    });
+
+    // Legacy states for compatibility (can be removed later)
     setServiceSpecific({
       // Web development fields - check all possible variations
       domainSuggestions: getField('domainSuggestions', ['domain_suggestions', 'domain_suggestions_svc']) || "",
       websiteReferences: getField('websiteReferences', ['website_references', 'references']) || "",
       featuresRequirements: getField('featuresRequirements', ['features_requirements', 'features_requirements_svc', 'features']) || "",
-      budgetTimeline: getField('budgetTimeline', ['budget_timeline']) || "",
       additional_requirements: getField('additional_requirements', ['additionalRequirements']) || "",
 
       // Branding fields
@@ -1898,13 +2109,11 @@ export function UnifiedProjectManagement() {
       aiSolutionType: parseArray(getField('aiSolutionType', ['ai_solution_type'])),
       businessChallengeUseCase: getField('businessChallengeUseCase', ['business_challenge_use_case', 'business_challenge']) || "",
       dataAvailability: getField('dataAvailability', ['data_availability']) || "",
-      budgetRange: getField('budgetRange', ['budget_range']) || "",
 
       // Marketing fields
       targetAudienceIndustry: getField('targetAudienceIndustry', ['target_audience_industry', 'targetAudience', 'target_audience']) || "",
       marketingGoals: getField('marketingGoals', ['marketing_goals']) || "",
       channelsOfInterest: parseArray(getField('channelsOfInterest', ['channels_of_interest', 'channels', 'marketingChannels'])),
-      budgetRangeMonthly: getField('budgetRangeMonthly', ['monthly_budget_range']) || "",
 
       // Custom fields
       serviceDescription: getField('serviceDescription', ['service_description']) || "",
@@ -1930,31 +2139,32 @@ export function UnifiedProjectManagement() {
     if (editingProject) return true;
 
     switch (serviceType) {
-      case "web":
+      case "web-development":
         return !!(
           serviceSpecific.domain_suggestions ||
           serviceSpecific.references ||
           serviceSpecific.features?.length
         );
-      case "branding":
+      case "branding-design":
         return !!(
           serviceSpecific.logo_ideas ||
           serviceSpecific.color_preferences ||
           serviceSpecific.design_assets?.length
         );
-      case "ai":
+      case "ai-solutions":
         return !!(
           serviceSpecific.ai_solution_type ||
           serviceSpecific.business_challenge ||
           serviceSpecific.data_availability
         );
-      case "marketing":
+      case "digital-marketing":
         return !!(
           serviceSpecific.target_audience ||
           serviceSpecific.marketing_goals ||
           serviceSpecific.channels?.length
         );
-      case "custom":
+      case "custom-project":
+      case "other":
         return !!(
           serviceSpecific.service_description ||
           serviceSpecific.expected_outcome
@@ -3475,18 +3685,6 @@ export function UnifiedProjectManagement() {
                           </>
                         )}
                       </Button>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEdit(project);
-                        }}
-                        variant="default"
-                        size="sm"
-                        className="flex-1"
-                      >
-                        <Edit className="h-4 w-4 mr-2" />
-                        Edit
-                      </Button>
                     </div>
                   </Card>
                 );
@@ -3691,6 +3889,7 @@ export function UnifiedProjectManagement() {
                     await deleteProjectApi(deleteTarget.id);
                     // Invalidate React Query cache after deletion
                     queryClient.invalidateQueries({ queryKey: ["projects"] });
+                    queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
                     toast({
                       title: "Project deleted",
                       description: "The project has been deleted successfully",
@@ -4136,8 +4335,13 @@ export function UnifiedProjectManagement() {
                       <div className="space-y-2">
                         <Label htmlFor="project-type">Project Type *</Label>
                         <Select
-                          value={formData.project_type || "web-development"}
-                          onValueChange={(value) => setFormData({ ...formData, project_type: value as any })}
+                          value={formData.project_type || detailedFormData.selectedService || "web-development"}
+                          onValueChange={(value) => {
+                            setFormData({ ...formData, project_type: value as any });
+                            setDetailedFormData({ ...detailedFormData, selectedService: value as ServiceType });
+                            // Also update legacy serviceType for compatibility
+                            setServiceType(value as any);
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select project type" />
@@ -4328,19 +4532,19 @@ export function UnifiedProjectManagement() {
                 <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-b">
                   <CardTitle className="text-xl">Service-Specific Information</CardTitle>
                   <CardDescription>
-                    Tell us more about your {formData.project_type?.replace('-', ' ') || (serviceType === "web" ? "web development" : serviceType === "branding" ? "branding design" : serviceType === "marketing" ? "digital marketing" : serviceType === "ai" ? "ai solutions" : serviceType === "custom" ? "custom project" : serviceType?.replace('-', ' ') || 'project')} needs
+                    Tell us more about your {formData.project_type?.replace('-', ' ') || (serviceType || 'project').replace('-', ' ')} needs
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-6 space-y-6">
                   {/* Web Development Fields */}
-                  {(formData.project_type === "web-development" || serviceType === "web" || (serviceType as string) === "web-development") && (
+                  {(formData.project_type === "web-development" || serviceType === "web-development") && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="domainSuggestions">Domain Suggestions</Label>
                         <Textarea
                           id="domainSuggestions"
-                          value={serviceSpecific.domainSuggestions || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, domainSuggestions: e.target.value })}
+                          value={detailedFormData.domainSuggestions}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, domainSuggestions: e.target.value })}
                           placeholder="e.g., mycompany.com, mybusiness.net"
                           rows={3}
                         />
@@ -4350,8 +4554,8 @@ export function UnifiedProjectManagement() {
                         <Label htmlFor="websiteReferences">Website References</Label>
                         <Textarea
                           id="websiteReferences"
-                          value={serviceSpecific.websiteReferences || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, websiteReferences: e.target.value })}
+                          value={detailedFormData.websiteReferences}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, websiteReferences: e.target.value })}
                           placeholder="Share links to websites you like..."
                           rows={3}
                         />
@@ -4361,8 +4565,8 @@ export function UnifiedProjectManagement() {
                         <Label htmlFor="featuresRequirements">Features & Requirements *</Label>
                         <Textarea
                           id="featuresRequirements"
-                          value={serviceSpecific.featuresRequirements || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, featuresRequirements: e.target.value })}
+                          value={detailedFormData.featuresRequirements}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, featuresRequirements: e.target.value })}
                           placeholder="Describe the features and functionality you need..."
                           rows={4}
                           required
@@ -4372,33 +4576,18 @@ export function UnifiedProjectManagement() {
                           <p className="text-sm text-destructive">{formErrors.featuresRequirements}</p>
                         )}
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="budgetTimeline">Budget & Timeline *</Label>
-                        <Textarea
-                          id="budgetTimeline"
-                          value={serviceSpecific.budgetTimeline || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, budgetTimeline: e.target.value })}
-                          placeholder="What's your budget range and when do you need it completed?"
-                          rows={3}
-                          required
-                        />
-                        <p className="text-xs text-muted-foreground">This helps us provide accurate quotes and timelines</p>
-                        {formErrors.budgetTimeline && (
-                          <p className="text-sm text-destructive">{formErrors.budgetTimeline}</p>
-                        )}
-                      </div>
                     </div>
                   )}
 
                   {/* Branding Design Fields */}
-                  {(formData.project_type === "branding-design" || serviceType === "branding" || (serviceType as string) === "branding-design") && (
+                  {(formData.project_type === "branding-design" || serviceType === "branding-design") && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="logoIdeasConcepts">Logo Ideas & Concepts *</Label>
                         <Textarea
                           id="logoIdeasConcepts"
-                          value={serviceSpecific.logoIdeasConcepts || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, logoIdeasConcepts: e.target.value })}
+                          value={detailedFormData.logoIdeasConcepts}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, logoIdeasConcepts: e.target.value })}
                           placeholder="Describe your vision for the logo..."
                           rows={3}
                           required
@@ -4412,8 +4601,8 @@ export function UnifiedProjectManagement() {
                         <Label htmlFor="colorBrandTheme">Color & Brand Theme *</Label>
                         <Textarea
                           id="colorBrandTheme"
-                          value={serviceSpecific.colorBrandTheme || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, colorBrandTheme: e.target.value })}
+                          value={detailedFormData.colorBrandTheme}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, colorBrandTheme: e.target.value })}
                           placeholder="What colors and themes represent your brand?"
                           rows={3}
                           required
@@ -4430,11 +4619,11 @@ export function UnifiedProjectManagement() {
                             <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={(serviceSpecific.designAssetsNeeded || []).includes(option)}
+                                checked={(detailedFormData.designAssetsNeeded || []).includes(option)}
                                 onChange={(e) => {
-                                  const current = serviceSpecific.designAssetsNeeded || [];
-                                  setServiceSpecific({
-                                    ...serviceSpecific,
+                                  const current = detailedFormData.designAssetsNeeded || [];
+                                  setDetailedFormData({
+                                    ...detailedFormData,
                                     designAssetsNeeded: e.target.checked
                                       ? [...current, option]
                                       : current.filter((item: string) => item !== option)
@@ -4452,14 +4641,14 @@ export function UnifiedProjectManagement() {
                   )}
 
                   {/* Digital Marketing Fields */}
-                  {(formData.project_type === "digital-marketing" || serviceType === "marketing" || (serviceType as string) === "digital-marketing") && (
+                  {(formData.project_type === "digital-marketing" || serviceType === "digital-marketing") && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="targetAudienceIndustry">Target Audience & Industry *</Label>
                         <Textarea
                           id="targetAudienceIndustry"
-                          value={serviceSpecific.targetAudienceIndustry || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, targetAudienceIndustry: e.target.value })}
+                          value={detailedFormData.targetAudienceIndustry}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, targetAudienceIndustry: e.target.value })}
                           placeholder="Who is your target audience and what industry are you in?"
                           rows={3}
                           required
@@ -4473,8 +4662,8 @@ export function UnifiedProjectManagement() {
                         <Label htmlFor="marketingGoals">Marketing Goals *</Label>
                         <Textarea
                           id="marketingGoals"
-                          value={serviceSpecific.marketingGoals || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, marketingGoals: e.target.value })}
+                          value={detailedFormData.marketingGoals}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, marketingGoals: e.target.value })}
                           placeholder="What do you want to achieve with digital marketing?"
                           rows={3}
                           required
@@ -4491,11 +4680,11 @@ export function UnifiedProjectManagement() {
                             <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={(serviceSpecific.channelsOfInterest || []).includes(option)}
+                                checked={(detailedFormData.channelsOfInterest || []).includes(option)}
                                 onChange={(e) => {
-                                  const current = serviceSpecific.channelsOfInterest || [];
-                                  setServiceSpecific({
-                                    ...serviceSpecific,
+                                  const current = detailedFormData.channelsOfInterest || [];
+                                  setDetailedFormData({
+                                    ...detailedFormData,
                                     channelsOfInterest: e.target.checked
                                       ? [...current, option]
                                       : current.filter((item: string) => item !== option)
@@ -4509,30 +4698,11 @@ export function UnifiedProjectManagement() {
                         </div>
                         <p className="text-xs text-muted-foreground">Which marketing channels interest you most?</p>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="budgetRangeMonthly">Monthly Marketing Budget</Label>
-                        <Select
-                          value={serviceSpecific.budgetRangeMonthly || ""}
-                          onValueChange={(value) => setServiceSpecific({ ...serviceSpecific, budgetRangeMonthly: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select budget range" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Under $1,000">Under $1,000</SelectItem>
-                            <SelectItem value="$1,000 - $5,000">$1,000 - $5,000</SelectItem>
-                            <SelectItem value="$5,000 - $10,000">$5,000 - $10,000</SelectItem>
-                            <SelectItem value="$10,000 - $25,000">$10,000 - $25,000</SelectItem>
-                            <SelectItem value="$25,000+">$25,000+</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">This helps us recommend the right strategies</p>
-                      </div>
                     </div>
                   )}
 
                   {/* AI Solutions Fields */}
-                  {(formData.project_type === "ai-solutions" || serviceType === "ai" || (serviceType as string) === "ai-solutions") && (
+                  {(formData.project_type === "ai-solutions" || serviceType === "ai-solutions") && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label>AI Solution Types</Label>
@@ -4541,11 +4711,11 @@ export function UnifiedProjectManagement() {
                             <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={(serviceSpecific.aiSolutionType || []).includes(option)}
+                                checked={(detailedFormData.aiSolutionType || []).includes(option)}
                                 onChange={(e) => {
-                                  const current = serviceSpecific.aiSolutionType || [];
-                                  setServiceSpecific({
-                                    ...serviceSpecific,
+                                  const current = detailedFormData.aiSolutionType || [];
+                                  setDetailedFormData({
+                                    ...detailedFormData,
                                     aiSolutionType: e.target.checked
                                       ? [...current, option]
                                       : current.filter((item: string) => item !== option)
@@ -4563,8 +4733,8 @@ export function UnifiedProjectManagement() {
                         <Label htmlFor="businessChallengeUseCase">Business Challenge & Use Case *</Label>
                         <Textarea
                           id="businessChallengeUseCase"
-                          value={serviceSpecific.businessChallengeUseCase || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, businessChallengeUseCase: e.target.value })}
+                          value={detailedFormData.businessChallengeUseCase}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, businessChallengeUseCase: e.target.value })}
                           placeholder="Describe the business problem you want to solve..."
                           rows={3}
                           required
@@ -4577,8 +4747,8 @@ export function UnifiedProjectManagement() {
                       <div className="space-y-2">
                         <Label htmlFor="dataAvailability">Data Availability *</Label>
                         <Select
-                          value={serviceSpecific.dataAvailability || ""}
-                          onValueChange={(value) => setServiceSpecific({ ...serviceSpecific, dataAvailability: value })}
+                          value={detailedFormData.dataAvailability || ""}
+                          onValueChange={(value) => setDetailedFormData({ ...detailedFormData, dataAvailability: value })}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select data availability" />
@@ -4595,36 +4765,18 @@ export function UnifiedProjectManagement() {
                           <p className="text-sm text-destructive">{formErrors.dataAvailability}</p>
                         )}
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="budgetRange">Budget Range</Label>
-                        <Select
-                          value={serviceSpecific.budgetRange || ""}
-                          onValueChange={(value) => setServiceSpecific({ ...serviceSpecific, budgetRange: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select budget range" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Under $10,000">Under $10,000</SelectItem>
-                            <SelectItem value="$10,000 - $50,000">$10,000 - $50,000</SelectItem>
-                            <SelectItem value="$50,000 - $100,000">$50,000 - $100,000</SelectItem>
-                            <SelectItem value="$100,000+">$100,000+</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">AI solutions vary in complexity and cost</p>
-                      </div>
                     </div>
                   )}
 
                   {/* Custom/Other Fields */}
-                  {(formData.project_type === "custom-project" || (serviceType as string) === "custom-project" || (serviceType as string) === "other" || serviceType === "custom") && (
+                  {(formData.project_type === "custom-project" || (serviceType as string) === "custom-project" || serviceType === "other") && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="serviceDescription">Service Description *</Label>
                         <Textarea
                           id="serviceDescription"
-                          value={serviceSpecific.serviceDescription || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, serviceDescription: e.target.value })}
+                          value={detailedFormData.serviceDescription}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, serviceDescription: e.target.value })}
                           placeholder="Describe the service you need..."
                           rows={4}
                           required
@@ -4638,8 +4790,8 @@ export function UnifiedProjectManagement() {
                         <Label htmlFor="expectedOutcome">Expected Outcome *</Label>
                         <Textarea
                           id="expectedOutcome"
-                          value={serviceSpecific.expectedOutcome || ""}
-                          onChange={(e) => setServiceSpecific({ ...serviceSpecific, expectedOutcome: e.target.value })}
+                          value={detailedFormData.expectedOutcome}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, expectedOutcome: e.target.value })}
                           placeholder="What results are you hoping to achieve?"
                           rows={3}
                           required
@@ -4668,8 +4820,8 @@ export function UnifiedProjectManagement() {
                     <Input
                       id="company-number"
                       type="text"
-                      value={companyNumber}
-                      onChange={(e) => setCompanyNumber(e.target.value)}
+                      value={detailedFormData.contactBusinessNumber}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, contactBusinessNumber: e.target.value })}
                       placeholder="e.g., +1 (555) 123-4567"
                       required
                     />
@@ -4682,8 +4834,8 @@ export function UnifiedProjectManagement() {
                     <Input
                       id="company-email"
                       type="email"
-                      value={companyEmail}
-                      onChange={(e) => setCompanyEmail(e.target.value)}
+                      value={detailedFormData.contactCompanyEmail}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, contactCompanyEmail: e.target.value })}
                       placeholder="contact@yourcompany.com"
                       required
                     />
@@ -4695,8 +4847,8 @@ export function UnifiedProjectManagement() {
                     <Label htmlFor="company-address">Company Address *</Label>
                     <Textarea
                       id="company-address"
-                      value={companyAddress}
-                      onChange={(e) => setCompanyAddress(e.target.value)}
+                      value={detailedFormData.contactCompanyAddress}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, contactCompanyAddress: e.target.value })}
                       placeholder="Your business address..."
                       rows={3}
                       required
@@ -4709,8 +4861,8 @@ export function UnifiedProjectManagement() {
                     <Label htmlFor="about-company">About Your Company *</Label>
                     <Textarea
                       id="about-company"
-                      value={aboutCompany}
-                      onChange={(e) => setAboutCompany(e.target.value)}
+                      value={detailedFormData.aboutCompanyDetails}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, aboutCompanyDetails: e.target.value })}
                       placeholder="Tell us about your company, what you do, and your mission..."
                       rows={4}
                       required
@@ -4735,8 +4887,8 @@ export function UnifiedProjectManagement() {
                     <Label htmlFor="socialLinks">Social Media Links</Label>
                     <Textarea
                       id="socialLinks"
-                      value={socialLinks.join(", ")}
-                      onChange={(e) => setSocialLinks(e.target.value ? e.target.value.split(",").map(s => s.trim()) : [])}
+                      value={detailedFormData.socialLinks}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, socialLinks: e.target.value })}
                       placeholder="Share your social media profiles..."
                       rows={3}
                     />
@@ -4748,8 +4900,8 @@ export function UnifiedProjectManagement() {
                     <Input
                       id="public-phone"
                       type="text"
-                      value={publicContactPhone}
-                      onChange={(e) => setPublicContactPhone(e.target.value)}
+                      value={detailedFormData.publicBusinessNumber}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, publicBusinessNumber: e.target.value })}
                       placeholder="e.g., +1 (555) 123-4567"
                     />
                     <p className="text-xs text-muted-foreground">Phone number for customer inquiries</p>
@@ -4759,8 +4911,8 @@ export function UnifiedProjectManagement() {
                     <Input
                       id="public-email"
                       type="email"
-                      value={publicContactEmail}
-                      onChange={(e) => setPublicContactEmail(e.target.value)}
+                      value={detailedFormData.publicCompanyEmail}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, publicCompanyEmail: e.target.value })}
                       placeholder="info@yourcompany.com"
                     />
                     <p className="text-xs text-muted-foreground">Email address for customer inquiries</p>
@@ -4769,8 +4921,8 @@ export function UnifiedProjectManagement() {
                     <Label htmlFor="public-address">Public Company Address</Label>
                     <Textarea
                       id="public-address"
-                      value={publicContactAddress}
-                      onChange={(e) => setPublicContactAddress(e.target.value)}
+                      value={detailedFormData.publicCompanyAddress}
+                      onChange={(e) => setDetailedFormData({ ...detailedFormData, publicCompanyAddress: e.target.value })}
                       placeholder="Your public business address..."
                       rows={3}
                     />
@@ -4795,8 +4947,8 @@ export function UnifiedProjectManagement() {
                       <Label htmlFor="mediaLinks">Images / Video Links</Label>
                       <Textarea
                         id="mediaLinks"
-                        value={mediaLinks.join(", ")}
-                        onChange={(e) => setMediaLinks(e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [])}
+                        value={detailedFormData.mediaLinks}
+                        onChange={(e) => setDetailedFormData({ ...detailedFormData, mediaLinks: e.target.value })}
                         placeholder="Share links to your media content..."
                         rows={3}
                       />
@@ -4860,12 +5012,13 @@ export function UnifiedProjectManagement() {
                           <label key={option} className="flex items-center space-x-2 p-2 rounded border hover:bg-muted cursor-pointer">
                             <input
                               type="checkbox"
-                              checked={paymentIntegrationNeeds.includes(option)}
+                              checked={(detailedFormData.paymentIntegrationNeeds || []).includes(option)}
                               onChange={(e) => {
+                                const current = detailedFormData.paymentIntegrationNeeds || [];
                                 if (e.target.checked) {
-                                  setPaymentIntegrationNeeds([...paymentIntegrationNeeds, option]);
+                                  setDetailedFormData({ ...detailedFormData, paymentIntegrationNeeds: [...current, option] });
                                 } else {
-                                  setPaymentIntegrationNeeds(paymentIntegrationNeeds.filter(item => item !== option));
+                                  setDetailedFormData({ ...detailedFormData, paymentIntegrationNeeds: current.filter(item => item !== option) });
                                 }
                               }}
                               className="rounded"
@@ -4890,8 +5043,8 @@ export function UnifiedProjectManagement() {
                         <Input
                           id="bank-account-name"
                           type="text"
-                          value={bankAccountName}
-                          onChange={(e) => setBankAccountName(e.target.value)}
+                          value={detailedFormData.account_name}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, account_name: e.target.value })}
                           placeholder="e.g. John Doe Business Account"
                         />
                         <p className="text-xs text-muted-foreground">The legal name on the bank account</p>
@@ -4901,8 +5054,8 @@ export function UnifiedProjectManagement() {
                         <Input
                           id="bank-account-number"
                           type="text"
-                          value={bankAccountNumber}
-                          onChange={(e) => setBankAccountNumber(e.target.value)}
+                          value={detailedFormData.account_number}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, account_number: e.target.value })}
                           placeholder="e.g. 12345678"
                         />
                         <p className="text-xs text-muted-foreground">Your domestic bank account number</p>
@@ -4912,8 +5065,8 @@ export function UnifiedProjectManagement() {
                         <Input
                           id="bank-iban"
                           type="text"
-                          value={bankIban}
-                          onChange={(e) => setBankIban(e.target.value)}
+                          value={detailedFormData.iban}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, iban: e.target.value })}
                           placeholder="e.g. GB29 NWBK 6016 1331 9268 19"
                         />
                         <p className="text-xs text-muted-foreground">International Bank Account Number for international transfers</p>
@@ -4923,8 +5076,8 @@ export function UnifiedProjectManagement() {
                         <Input
                           id="bank-swift"
                           type="text"
-                          value={bankSwift}
-                          onChange={(e) => setBankSwift(e.target.value)}
+                          value={detailedFormData.swift}
+                          onChange={(e) => setDetailedFormData({ ...detailedFormData, swift: e.target.value })}
                           placeholder="e.g. ABCDGB2L"
                         />
                         <p className="text-xs text-muted-foreground">Bank SWIFT/BIC code for international transfers</p>
