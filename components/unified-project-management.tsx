@@ -151,6 +151,8 @@ interface ProjectComment {
   body: string;
   created_by: string;
   created_at: string;
+  author_name?: string;
+  author_details?: any;
 }
 
 interface Submission {
@@ -253,6 +255,28 @@ export type FormDataState = {
   iban: string;
   swift: string;
   paymentIntegrationNeeds: string[];
+};
+
+// Helper function to format comment body with clickable links
+const formatCommentBody = (text: string) => {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, i) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline break-all"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
 };
 
 export function UnifiedProjectManagement() {
@@ -729,7 +753,10 @@ export function UnifiedProjectManagement() {
 
       if (!fetchError && members) {
         const memberList: Array<{ id: string; name: string; email: string }> = [];
+        const memberIds: string[] = [];
+        
         for (const member of members) {
+          memberIds.push(member.user_id);
           const employee = employees.find((emp) => emp.id === member.user_id);
           if (employee) {
             memberList.push({
@@ -761,23 +788,40 @@ export function UnifiedProjectManagement() {
           }
         }
         setProjectMembers(memberList);
+        
+        // Update selectedProject state to reflect changes immediately in the UI
+        if (selectedProject && selectedProject.id === selectedProjectForAssignment.id) {
+          setSelectedProject(prev => prev ? { ...prev, assigned_employees: memberIds } : null);
+        }
       } else {
         // Fallback: update local state if refresh fails
         const employee = employees.find((emp) => emp.id === employeeId);
         if (employee) {
-          setProjectMembers((prev) => [
-            ...prev,
-            {
-              id: employee.id,
-              name:
-                `${employee.first_name || ""} ${
-                  employee.last_name || ""
-                }`.trim() || employee.name,
-              email: employee.email,
-            },
-          ]);
+          const newMember = {
+            id: employee.id,
+            name:
+              `${employee.first_name || ""} ${
+                employee.last_name || ""
+              }`.trim() || employee.name,
+            email: employee.email,
+          };
+          
+          setProjectMembers((prev) => [...prev, newMember]);
+          
+          // Update selectedProject state fallback
+          if (selectedProject && selectedProject.id === selectedProjectForAssignment.id) {
+             setSelectedProject(prev => prev ? { 
+               ...prev, 
+               assigned_employees: [...(prev.assigned_employees || []), employeeId] 
+             } : null);
+          }
         }
       }
+      
+      // Invalidate queries to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["project-members", selectedProjectForAssignment.id] });
 
       toast({
         title: "Success",
@@ -834,7 +878,10 @@ export function UnifiedProjectManagement() {
 
       if (!fetchError && members) {
         const memberList: Array<{ id: string; name: string; email: string }> = [];
+        const memberIds: string[] = [];
+        
         for (const member of members) {
+          memberIds.push(member.user_id);
           const employee = employees.find((emp) => emp.id === member.user_id);
           if (employee) {
             memberList.push({
@@ -866,12 +913,30 @@ export function UnifiedProjectManagement() {
           }
         }
         setProjectMembers(memberList);
+        
+        // Update selectedProject state to reflect changes immediately in the UI
+        if (selectedProject && selectedProject.id === selectedProjectForAssignment.id) {
+          setSelectedProject(prev => prev ? { ...prev, assigned_employees: memberIds } : null);
+        }
       } else {
         // Fallback: update local state if refresh fails
         setProjectMembers((prev) =>
           prev.filter((member) => member.id !== employeeId)
         );
+        
+        // Update selectedProject state fallback
+        if (selectedProject && selectedProject.id === selectedProjectForAssignment.id) {
+            setSelectedProject(prev => prev ? { 
+            ...prev, 
+            assigned_employees: (prev.assigned_employees || []).filter(id => id !== employeeId) 
+            } : null);
+        }
       }
+
+      // Invalidate queries to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["project-members", selectedProjectForAssignment.id] });
 
       toast({
         title: "Success",
@@ -1101,10 +1166,12 @@ export function UnifiedProjectManagement() {
       if (response.ok) {
         const data = await response.json();
         const comments = (data.comments || []).map((c: any) => ({
-          id: c.comment_id,
+          id: c.comment_id || c.id,
           body: c.body,
           created_by: c.created_by || "",
           created_at: c.created_at,
+          author_name: c.author_name, // Include author_name
+          author_details: c.author_details, // Include author_details
         }));
 
         // Update selected project if it's the one being loaded
@@ -1208,6 +1275,8 @@ export function UnifiedProjectManagement() {
 
       // Invalidate React Query cache to refresh project data
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
+      
       setEmployeeProjectModalOpen(false);
       setSelectedEmployeeForProject(null);
     } catch (error: any) {
@@ -3302,7 +3371,7 @@ export function UnifiedProjectManagement() {
                             .map((comment) => {
                               // Find the commenter in employees or use fallback
                               const commenter = employees.find(emp => emp.id === comment.created_by);
-                              const commenterName = commenter?.name || "Unknown User";
+                              const commenterName = comment.author_name || commenter?.name || "Unknown User";
                               const commenterInitials = commenterName
                                 .split(' ')
                                 .map(n => n.charAt(0))
@@ -3337,7 +3406,7 @@ export function UnifiedProjectManagement() {
                                       </span>
                                     </div>
                                     <div className="text-sm text-foreground whitespace-pre-wrap break-words">
-                                      {comment.body}
+                                      {formatCommentBody(comment.body)}
                                     </div>
                                   </div>
 

@@ -62,6 +62,28 @@ interface EmployeeProjectCenterProps {
   user: User;
 }
 
+// Helper function to format comment body with clickable links
+const formatCommentBody = (text: string) => {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, i) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline break-all"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+};
+
 export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
   const supabase = createClient();
   const { toast } = useToast();
@@ -975,7 +997,7 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                     <CardContent>
                       <div className="flex flex-wrap gap-2">
                         {(typeof displayProject.social_media_links === 'string' 
-                          ? displayProject.social_media_links.split(',').filter(Boolean)
+                          ? displayProject.social_media_links.split(/[,\s]+/).filter((link: string) => link.trim())
                           : Array.isArray(displayProject.social_media_links) 
                             ? displayProject.social_media_links 
                             : []
@@ -1375,35 +1397,54 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                   </div>
                 ) : projectComments.length > 0 ? (
                   <div className="space-y-4">
-                    {projectComments.map((comment: any) => (
-                      <Card key={comment.comment_id || comment.id}>
-                        <CardContent className="pt-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <p className="text-sm">{comment.body}</p>
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {comment.created_at
-                                  ? new Date(comment.created_at).toLocaleString()
-                                  : "Unknown date"}
-                              </p>
+                    {projectComments.map((comment: any) => {
+                      const authorName = comment.author_name || "Unknown User";
+                      const authorInitials = authorName
+                        .split(' ')
+                        .map((n: string) => n.charAt(0))
+                        .join('')
+                        .toUpperCase()
+                        .slice(0, 2);
+
+                      return (
+                        <Card key={comment.comment_id || comment.id}>
+                          <CardContent className="pt-4">
+                            <div className="flex items-start gap-3">
+                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+                                {authorInitials}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm font-medium">{authorName}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {comment.created_at
+                                      ? new Date(comment.created_at).toLocaleString()
+                                      : "Unknown date"}
+                                  </span>
+                                </div>
+                                <div className="text-sm whitespace-pre-wrap break-words">
+                                  {formatCommentBody(comment.body)}
+                                </div>
+                              </div>
+                              {comment.created_by === user.id && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => {
+                                    if (confirm("Delete this comment?")) {
+                                      handleDeleteComment(comment.comment_id || comment.id);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
                             </div>
-                            {comment.created_by === user.id && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  if (confirm("Delete this comment?")) {
-                                    handleDeleteComment(comment.comment_id || comment.id);
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">

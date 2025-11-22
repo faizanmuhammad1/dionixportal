@@ -53,7 +53,45 @@ export async function GET(
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ comments: data || [] });
+
+    const comments = data || [];
+    
+    // Fetch user profiles for comments that don't have author_name
+    const userIds = Array.from(new Set(comments.filter((c: any) => !c.author_name).map((c: any) => c.created_by).filter(Boolean)));
+    
+    let userMap = new Map();
+    if (userIds.length > 0) {
+      const { data: profiles } = await adminSupabase
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .in('id', userIds);
+        
+      if (profiles) {
+        profiles.forEach((p: any) => {
+          userMap.set(p.id, p);
+        });
+      }
+    }
+
+    const enrichedComments = comments.map((comment: any) => {
+      // If author_name is already in DB, use it. Otherwise lookup.
+      if (comment.author_name) {
+         return comment;
+      }
+
+      const profile = userMap.get(comment.created_by);
+      const authorName = profile 
+        ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
+        : 'Unknown User';
+        
+      return {
+        ...comment,
+        author_name: authorName,
+        author_details: profile
+      };
+    });
+
+    return NextResponse.json({ comments: enrichedComments });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -80,6 +118,25 @@ export async function POST(
       file_refs: file_refs || null,
       created_by: user?.id || null,
     };
+
+    // Fetch author name for storage if user exists
+    let authorName = "Unknown User";
+    let authorDetails = null;
+
+    if (user?.id) {
+      const { data: profile } = await createAdminSupabaseClient()
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .eq('id', user.id)
+        .maybeSingle();
+      
+      if (profile) {
+        authorDetails = profile;
+        authorName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || "Unknown User";
+        insertPayload.author_name = authorName;
+      }
+    }
+
     const db = user ? supabase : createAdminSupabaseClient();
     const { data, error } = await db
       .from("comments")
@@ -87,7 +144,14 @@ export async function POST(
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message, debug: { user: user?.id || null } }, { status: 500 });
-    return NextResponse.json({ comment: data });
+    
+    return NextResponse.json({ 
+        comment: {
+            ...data,
+            author_name: authorName, // Ensure it's returned even if DB trigger handles it differently (though here we insert it)
+            author_details: authorDetails
+        }
+    });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
