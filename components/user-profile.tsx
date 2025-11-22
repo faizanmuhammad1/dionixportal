@@ -37,102 +37,24 @@ interface UserProfileProps {
   user: User;
 }
 
+import { useUserProfile } from "@/hooks/use-user-profile";
+
 export function UserProfile({ user }: UserProfileProps) {
-  const supabase = createClient();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [profileData, setProfileData] = useState<any>(null);
-  const [assignedProjects, setAssignedProjects] = useState<
-    Array<{
-      id: string;
-      name: string;
-      client: string;
-      status: string;
-      progress: number;
-      dueDate: string;
-      startDate?: string;
-      priority?: string;
-    }>
-  >([]);
+  
+  const { data, isLoading: loading, error } = useUserProfile(user.id, user.role);
+  const profileData = data?.profile;
+  const assignedProjects = data?.assignedProjects || [];
 
   useEffect(() => {
-    let mounted = true;
-
-    const load = async () => {
-      try {
-        // Load profile data
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (profileError) {
-          console.error("Error loading profile:", profileError);
-        } else {
-          setProfileData(profile);
-        }
-
-        // Load assigned projects (only for employees)
-        if (user.role === "employee") {
-          const response = await fetch(`/api/employees/${user.id}/projects`, {
-            credentials: "same-origin",
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            const projects = data.projects || [];
-
-            // Fetch tasks for each project to calculate progress
-            const projectsWithTasks = await Promise.all(
-              projects.map(async (project: any) => {
-                const { data: tasksData } = await supabase
-                  .from("tasks")
-                  .select("task_id, status")
-                  .eq("project_id", project.project_id);
-
-                const total = (tasksData || []).length;
-                const done = (tasksData || []).filter(
-                  (t: any) => t.status === "completed"
-                ).length;
-                const progress = total ? Math.round((done / total) * 100) : 0;
-
-                return {
-                  id: project.project_id,
-                  name: project.project_name,
-                  client: project.client_name || "",
-                  status: project.status,
-                  progress,
-                  dueDate: project.end_date || "",
-                  startDate: project.start_date || "",
-                  priority: project.priority || "medium",
-                };
-              })
-            );
-
-            if (mounted) {
-              setAssignedProjects(projectsWithTasks);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Error loading profile:", e);
-        toast({
-          title: "Error",
-          description: "Failed to load profile information",
-          variant: "destructive",
-        });
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    load();
-
-    return () => {
-      mounted = false;
-    };
-  }, [user.id]);
+    if (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to load profile information",
+        variant: "destructive",
+      });
+    }
+  }, [error, toast]);
 
   if (loading) {
     return (

@@ -100,9 +100,11 @@ export function useUpdateEmployee() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       // Only invalidate and refetch when mutation succeeds
       queryClient.invalidateQueries({ queryKey: ["employees"] });
+      // Invalidate user profile query for this employee to refresh their profile view
+      queryClient.invalidateQueries({ queryKey: ["user-profile", variables.employeeId] });
     },
   });
 }

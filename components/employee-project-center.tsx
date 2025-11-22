@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useEmployeeProjects, useProjectDetails, useProjectTasks, useProjectComments, useProjectAttachments, useProjectMembers } from "@/hooks/use-projects";
+import { useProjectDetails, useProjectTasks, useProjectComments, useProjectAttachments, useProjectMembers } from "@/hooks/use-projects";
+import { useEmployeeDashboardData } from "@/hooks/use-employee-dashboard";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -89,8 +90,10 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  // Use React Query for data fetching - only fetches once, caches data
-  const { data: employeeProjects = [], isLoading: loadingProjects, error: projectsError } = useEmployeeProjects(user.id);
+  // Use React Query for dashboard data (projects + aggregated tasks)
+  const { data: dashboardData, isLoading: loadingProjects, error: projectsError } = useEmployeeDashboardData(user.id);
+  const assignedProjects = dashboardData?.assignedProjects || [];
+  const assignedTasks = dashboardData?.assignedTasks || [];
   
   // Show error toast if projects query fails
   useEffect(() => {
@@ -133,95 +136,6 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
     members: loadingMembers,
   };
   
-  // Process employee projects data to extract assigned projects and tasks
-  const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
-  const [assignedTasks, setAssignedTasks] = useState<any[]>([]);
-  
-  // Load tasks for all projects to calculate progress and get assigned tasks
-  useEffect(() => {
-    if (!employeeProjects.length) {
-      setAssignedProjects([]);
-      setAssignedTasks([]);
-      return;
-    }
-    
-    const loadTasks = async () => {
-      try {
-        const projectsWithTasks = await Promise.all(
-          employeeProjects.map(async (project: any) => {
-            const { data: tasksData, error: tasksError } = await supabase
-              .from("tasks")
-              .select("task_id, title, status, priority, due_date, assignee_id")
-              .eq("project_id", project.project_id);
-
-            if (tasksError) {
-              console.error("Error fetching tasks:", tasksError);
-              return { ...project, tasks: [] };
-            }
-
-            // Fetch full project details
-            const { data: projectDetails, error: projectError } = await supabase
-              .from("projects")
-              .select("description, budget, priority")
-              .eq("project_id", project.project_id)
-              .single();
-
-            return {
-              ...project,
-              tasks: tasksData || [],
-              description: projectDetails?.description || project.description || "",
-              budget: projectDetails?.budget || 0,
-              priority: projectDetails?.priority || project.priority || "medium",
-            };
-          })
-        );
-
-        // Update assigned projects with progress
-        const updatedProjects = projectsWithTasks.map((p: any) => {
-          const total = (p.tasks || []).length;
-          const done = (p.tasks || []).filter(
-            (t: any) => t.status === "completed"
-          ).length;
-          const progress = total ? Math.round((done / total) * 100) : 0;
-          return {
-            id: p.project_id,
-            name: p.project_name,
-            client: p.client_name || "",
-            description: p.description || "",
-            status: p.status,
-            progress,
-            dueDate: p.end_date || "",
-            startDate: p.start_date || "",
-            priority: p.priority || "medium",
-            budget: p.budget || 0,
-          };
-        });
-
-        // Extract my tasks
-        const myTasks = projectsWithTasks
-          .flatMap((p: any) =>
-            (p.tasks || []).map((t: any) => ({ ...t, projectName: p.project_name }))
-          )
-          .filter((t: any) => (t.assignee_id || "") === user.id)
-          .map((t: any) => ({
-            id: t.task_id,
-            title: t.title,
-            project: t.projectName,
-            priority: t.priority,
-            dueDate: t.due_date || "",
-            status: t.status,
-          }));
-        
-        setAssignedProjects(updatedProjects);
-        setAssignedTasks(myTasks);
-      } catch (error) {
-        console.error("Error loading tasks:", error);
-      }
-    };
-    
-    loadTasks();
-  }, [employeeProjects, user.id, supabase]);
-
   // Set up real-time subscriptions to invalidate React Query cache when data changes
   useEffect(() => {
     const channel = supabase
@@ -230,14 +144,14 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
         "postgres_changes",
         { event: "*", schema: "public", table: "project_members", filter: `user_id=eq.${user.id}` },
         () => {
-          queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
+          queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
         () => {
-          queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
+          queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
           if (selectedProject?.id) {
             queryClient.invalidateQueries({ queryKey: ["project-tasks", selectedProject.id] });
           }
@@ -247,7 +161,7 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
         "postgres_changes",
         { event: "*", schema: "public", table: "projects" },
         () => {
-          queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
+          queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
           if (selectedProject?.id) {
             queryClient.invalidateQueries({ queryKey: ["project-details", selectedProject.id] });
           }
@@ -536,35 +450,11 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
   const handleStatusChange = async (taskId: string, newStatus: string) => {
     try {
       await updateTaskStatus(taskId, newStatus);
-      // Reload tasks after successful update
+      // Invalidate React Query cache to refetch tasks
+      queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
       if (selectedProject?.id) {
-        // Invalidate React Query cache to refetch tasks
         queryClient.invalidateQueries({ queryKey: ["project-tasks", selectedProject.id] });
-        queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
       }
-      // Also reload assigned tasks for the table view
-      const load = async () => {
-        try {
-          const res = await fetch(`/api/employees/${user.id}/projects`);
-          if (res.ok) {
-            const data = await res.json();
-            const tasks = data.projects.flatMap((p: any) => 
-              (p.tasks || []).map((t: any) => ({
-                id: t.task_id || t.id,
-                title: t.title,
-                project: p.project_name || p.name,
-                priority: t.priority,
-                dueDate: t.due_date,
-                status: t.status,
-              }))
-            );
-            setAssignedTasks(tasks);
-          }
-        } catch (error) {
-          console.error("Error reloading tasks:", error);
-        }
-      };
-      load();
     } catch (error) {
       // Re-throw error so handleSubmitForReview can catch it
       throw error;
@@ -573,21 +463,23 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
   
   const updateTaskStatus = async (taskId: string, newStatus: string) => {
     setUpdatingIds((s) => [...s, taskId]);
-    const prev = assignedTasks.find((t) => t.id === taskId)?.status;
-    
-    // Optimistic update
-    setAssignedTasks((tasks) =>
-      tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-    );
     
     try {
       // Try using API route first (better for RLS)
-      const task = assignedTasks.find((t) => t.id === taskId);
-      const project = assignedProjects.find((p) => p.name === task?.project);
+      // Try to find task in assignedTasks first, then fallback to projectTasks if available
+      const task = assignedTasks.find((t) => t.id === taskId) || 
+                   projectTasks.find((t: any) => (t.task_id || t.id) === taskId);
       
-      if (project?.id) {
+      // Try to find project
+      let projectId = selectedProject?.id;
+      if (!projectId) {
+         const project = assignedProjects.find((p) => p.name === task?.project || p.name === task?.projectName);
+         projectId = project?.id || task?.project_id;
+      }
+      
+      if (projectId) {
         // Use project tasks API route
-        const res = await fetch(`/api/projects/${project.id}/tasks?task_id=${taskId}`, {
+        const res = await fetch(`/api/projects/${projectId}/tasks?task_id=${taskId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: newStatus }),
@@ -599,6 +491,13 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
         }
         
         toast({ title: "Task updated" });
+        
+        // Invalidate queries
+        queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
+        if (projectId) {
+            queryClient.invalidateQueries({ queryKey: ["project-tasks", projectId] });
+        }
+        
         setUpdatingIds((s) => s.filter((id) => id !== taskId));
         return;
       }
@@ -618,14 +517,9 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
       }
       
       toast({ title: "Task updated" });
-    } catch (e: any) {
-      // Revert optimistic update
-      setAssignedTasks((tasks) =>
-        tasks.map((t) =>
-          t.id === taskId ? { ...t, status: prev || t.status } : t
-        )
-      );
+      queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
       
+    } catch (e: any) {
       const errorMessage = e?.message || e?.error || "Couldn't update task. You may not have permission to update this task.";
       
       toast({
@@ -1275,10 +1169,6 @@ export function EmployeeProjectCenter({ user }: EmployeeProjectCenterProps) {
                                   onClick={() => {
                                     const newStatus = task.status === "todo" ? "in-progress" : "completed";
                                     updateTaskStatus(task.task_id || task.id, newStatus);
-                                    // Refresh tasks
-                                    // Invalidate React Query cache to refetch tasks
-        queryClient.invalidateQueries({ queryKey: ["project-tasks", selectedProject.id] });
-        queryClient.invalidateQueries({ queryKey: ["employee-projects", user.id] });
                                   }}
                                 >
                                   {task.status === "todo" ? "Start" : "Complete"}

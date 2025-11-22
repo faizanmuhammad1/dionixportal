@@ -28,148 +28,94 @@ interface EmployeeDashboardProps {
   user: User;
 }
 
+import { useEmployeeDashboardData } from "@/hooks/use-employee-dashboard";
+import { useQueryClient } from "@tanstack/react-query";
+
 export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
   const supabase = createClient();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [assignedTasks, setAssignedTasks] = useState<
-    Array<{
-      id: string;
-      title: string;
-      project: string;
-      priority: string;
-      dueDate: string;
-      status: string;
-    }>
-  >([]);
-  const [assignedProjects, setAssignedProjects] = useState<
-    Array<{
-      id: string;
-      name: string;
-      client: string;
-      status: string;
-      progress: number;
-      dueDate: string;
-    }>
-  >([]);
+  const queryClient = useQueryClient();
+  
+  // Use React Query for dashboard data (projects + aggregated tasks)
+  const { data: dashboardData, isLoading: loading, error: dashboardError } = useEmployeeDashboardData(user.id);
+  const assignedProjects = dashboardData?.assignedProjects || [];
+  const assignedTasks = dashboardData?.assignedTasks || [];
 
+  // Show error toast if query fails
   useEffect(() => {
-    let mounted = true;
+    if (dashboardError) {
+      toast({
+        title: "Error",
+        description: dashboardError instanceof Error ? dashboardError.message : "Failed to load dashboard data",
+        variant: "destructive",
+      });
+    }
+  }, [dashboardError, toast]);
 
-    const load = async () => {
-      try {
-        // Use API endpoint to get assigned projects
-        const response = await fetch(`/api/employees/${user.id}/projects`, {
-          credentials: "same-origin",
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch assigned projects");
-        }
-
-        const data = await response.json();
-        const projects = data.projects || [];
-
-        // Fetch tasks for each project
-        const projectsWithTasks = await Promise.all(
-          projects.map(async (project: any) => {
-            const { data: tasksData, error: tasksError } = await supabase
-              .from("tasks")
-              .select("task_id, title, status, priority, due_date, assignee_id")
-              .eq("project_id", project.project_id);
-
-            if (tasksError) {
-              console.error("Error fetching tasks:", tasksError);
-              return { ...project, tasks: [] };
-            }
-
-            return {
-              ...project,
-              tasks: tasksData || [],
-            };
-          })
-        );
-
-        const mappedProjects = projectsWithTasks.map((p: any) => {
-          const total = (p.tasks || []).length;
-          const done = (p.tasks || []).filter(
-            (t: any) => t.status === "completed"
-          ).length;
-          const progress = total ? Math.round((done / total) * 100) : 0;
-          return {
-            id: p.project_id,
-            name: p.project_name,
-            client: p.client_name || "",
-            status: p.status,
-            progress,
-            dueDate: p.end_date || "",
-          };
-        });
-
-        const myTasks = projectsWithTasks
-          .flatMap((p: any) =>
-            (p.tasks || []).map((t: any) => ({ ...t, projectName: p.project_name }))
-          )
-          .filter((t: any) => (t.assignee_id || "") === user.id)
-          .map((t: any) => ({
-            id: t.task_id,
-            title: t.title,
-            project: t.projectName,
-            priority: t.priority,
-            dueDate: t.due_date || "",
-            status: t.status,
-          }));
-
-        if (!mounted) return;
-        setAssignedProjects(mappedProjects);
-        setAssignedTasks(myTasks);
-      } catch (e) {
-        console.error("Error loading employee dashboard:", e);
-        toast({
-          title: "Error",
-          description: "Failed to load your projects and tasks",
-          variant: "destructive",
-        });
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    load();
-
-    // Set up real-time subscriptions
+  // Set up real-time subscriptions to invalidate React Query cache when data changes
+  useEffect(() => {
     const channel = supabase
       .channel("employee-dash")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "project_members", filter: `user_id=eq.${user.id}` },
         () => {
-          load();
+          queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
         () => {
-          load();
+          queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "projects" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
         }
       )
       .subscribe();
+
     return () => {
-      mounted = false;
       supabase.removeChannel(channel);
     };
-  }, [user.id]);
+  }, [user.id, queryClient, supabase]);
 
   const [updatingIds, setUpdatingIds] = useState<string[]>([]);
   const updateTaskStatus = async (taskId: string, newStatus: string) => {
-    // optimistic update
     setUpdatingIds((s) => [...s, taskId]);
-    const prev = assignedTasks.find((t) => t.id === taskId)?.status;
-    setAssignedTasks((tasks) =>
-      tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-    );
     try {
+      // Try using API route first (better for RLS)
+      // Try to find task in assignedTasks
+      const task = assignedTasks.find((t) => t.id === taskId);
+      
+      // Try to find project
+      const project = assignedProjects.find((p) => p.name === task?.project || p.name === task?.projectName);
+      const projectId = project?.id;
+      
+      if (projectId) {
+        // Use project tasks API route
+        const res = await fetch(`/api/projects/${projectId}/tasks?task_id=${taskId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || error.details || "Failed to update task status");
+        }
+        
+        toast({ title: "Task updated" });
+        queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
+        setUpdatingIds((s) => s.filter((id) => id !== taskId));
+        return;
+      }
+
+      // Fallback to direct Supabase (might fail due to RLS)
       const updates: any = { status: newStatus };
       if (newStatus === "completed")
         updates.completed_at = new Date().toISOString();
@@ -178,14 +124,10 @@ export function EmployeeDashboard({ user }: EmployeeDashboardProps) {
         .update(updates)
         .eq("task_id", taskId);
       if (error) throw error;
+      
       toast({ title: "Task updated" });
+      queryClient.invalidateQueries({ queryKey: ["employee-dashboard", user.id] });
     } catch (e: any) {
-      // revert on failure
-      setAssignedTasks((tasks) =>
-        tasks.map((t) =>
-          t.id === taskId ? { ...t, status: prev || t.status } : t
-        )
-      );
       toast({
         title: "Update failed",
         description: e?.message || "Couldn't update task",
