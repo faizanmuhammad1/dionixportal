@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Mail, Edit, Trash2, Users, Search, UserPlus, Calendar, Key, Eye, EyeOff } from "lucide-react"
+import { Mail, Edit, Trash2, Users, Search, UserPlus, Calendar, Key, Eye, EyeOff, UserCheck } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface Employee {
@@ -53,8 +53,10 @@ export function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState("")
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
+  const [isPermanentDelete, setIsPermanentDelete] = useState(false)
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
   const [employeeForPasswordUpdate, setEmployeeForPasswordUpdate] = useState<Employee | null>(null)
   const [newPassword, setNewPassword] = useState("")
@@ -76,7 +78,7 @@ export function EmployeeManagement() {
   })
 
   // Use React Query for data fetching - only fetches once, caches data
-  const { data: employees = [], isLoading, error } = useEmployees()
+  const { data: employees = [], isLoading, error, refetch } = useEmployees()
   const createEmployee = useCreateEmployee()
   const updateEmployee = useUpdateEmployee()
   const deleteEmployee = useDeleteEmployee()
@@ -171,9 +173,11 @@ export function EmployeeManagement() {
         })
       }
 
+      await refetch()
+
       // Reset form and close dialog
       setNewEmployee({ 
-        email: "", 
+        email: "",  
         firstName: "", 
         lastName: "", 
         role: "employee", 
@@ -200,6 +204,7 @@ export function EmployeeManagement() {
   const handleDeleteClick = (employee: Employee) => {
     console.log("Delete clicked for employee:", employee.first_name, employee.last_name)
     setEmployeeToDelete(employee)
+    setIsPermanentDelete(employee.status === 'inactive')
     setDeleteConfirmOpen(true)
     console.log("Dialog should be open now")
   }
@@ -210,25 +215,55 @@ export function EmployeeManagement() {
     try {
       setDeactivatingId(employeeToDelete.id)
       
-      await deleteEmployee.mutateAsync(employeeToDelete.id)
+      await deleteEmployee.mutateAsync({
+        id: employeeToDelete.id,
+        permanent: isPermanentDelete
+      })
       
+      await refetch()
+
       toast({
         title: "Success",
-        description: "Employee deactivated successfully!",
+        description: isPermanentDelete ? "Employee permanently deleted." : "Employee deactivated successfully!",
         variant: "default",
       })
       // React Query will automatically refetch employees after mutation
     } catch (error: any) {
-      console.error("Error deactivating employee:", error)
+      console.error("Error deleting employee:", error)
       toast({
         title: "Error",
-        description: error.message || "Failed to deactivate employee",
+        description: error.message || "Failed to delete employee",
         variant: "destructive",
       })
     } finally {
       setDeactivatingId(null)
       setDeleteConfirmOpen(false)
       setEmployeeToDelete(null)
+    }
+  }
+
+  const handleReactivateClick = async (employee: Employee) => {
+    try {
+      setReactivatingId(employee.id)
+      await updateEmployee.mutateAsync({
+        employeeId: employee.id,
+        employeeData: { status: 'active' }
+      })
+      await refetch()
+      toast({
+        title: "Success",
+        description: "Employee reactivated successfully!",
+        variant: "default",
+      })
+    } catch (error: any) {
+      console.error("Error reactivating employee:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reactivate employee",
+        variant: "destructive",
+      })
+    } finally {
+      setReactivatingId(null)
     }
   }
 
@@ -654,9 +689,10 @@ export function EmployeeManagement() {
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          title="Deactivate" 
+                          title={employee.status === 'inactive' ? "Delete Permanently" : "Deactivate"}
                           disabled={deactivatingId === employee.id}
                           onClick={() => handleDeleteClick(employee)}
+                          className={employee.status === 'inactive' ? "text-destructive hover:text-destructive" : ""}
                         >
                           {deactivatingId === employee.id ? (
                             <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -664,6 +700,21 @@ export function EmployeeManagement() {
                             <Trash2 className="h-4 w-4" />
                           )}
                         </Button>
+                        {employee.status === 'inactive' && (
+                           <Button 
+                              variant="ghost"
+                              size="sm"
+                              title="Reactivate"
+                              disabled={reactivatingId === employee.id}
+                              onClick={() => handleReactivateClick(employee)}
+                           >
+                              {reactivatingId === employee.id ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                              ) : (
+                                <UserCheck className="h-4 w-4" />
+                              )}
+                           </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -753,13 +804,18 @@ export function EmployeeManagement() {
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate Employee</AlertDialogTitle>
+            <AlertDialogTitle>
+              {isPermanentDelete ? "Delete Employee Permanently" : "Deactivate Employee"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to deactivate{" "}
+              Are you sure you want to {isPermanentDelete ? "permanently delete" : "deactivate"}{" "}
               <strong>
                 {employeeToDelete?.first_name} {employeeToDelete?.last_name}
               </strong>? 
-              This action will remove their access to the portal. This action can be undone by reactivating the employee.
+              {isPermanentDelete 
+                ? " This action cannot be undone. All data associated with this employee will be removed." 
+                : " This action will remove their access to the portal. This action can be undone by reactivating the employee."
+              }
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -768,7 +824,7 @@ export function EmployeeManagement() {
               onClick={handleDeleteConfirm}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Deactivate Employee
+              {isPermanentDelete ? "Delete Permanently" : "Deactivate Employee"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -113,8 +113,9 @@ export function useDeleteEmployee() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (employeeId: string) => {
-      const response = await fetch(`/api/employees/${employeeId}`, {
+    mutationFn: async ({ id, permanent = false }: { id: string; permanent?: boolean }) => {
+      const url = `/api/employees/${id}${permanent ? "?permanent=true" : ""}`;
+      const response = await fetch(url, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",

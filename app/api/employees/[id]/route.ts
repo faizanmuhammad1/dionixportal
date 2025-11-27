@@ -232,6 +232,10 @@ export async function DELETE(
         if (!employeeId) {
           return withCors(NextResponse.json({ error: "Employee ID is required" }, { status: 400 }));
         }
+
+        // Check for permanent delete flag
+        const url = new URL(req.url);
+        const isPermanent = url.searchParams.get("permanent") === "true";
         
         // Use admin client to bypass RLS for admin operations
         const supabase = createAdminSupabaseClient();
@@ -239,7 +243,7 @@ export async function DELETE(
         // Check if employee exists first
         const { data: existingProfile, error: checkError } = await supabase
           .from("profiles")
-          .select("id, status, role, first_name, last_name, email")
+          .select("id, status, role, first_name, last_name")
           .eq("id", employeeId)
           .single();
 
@@ -248,11 +252,30 @@ export async function DELETE(
           return withCors(NextResponse.json({ error: "Employee not found" }, { status: 404 }));
         }
 
-        // Prevent deactivating the current admin user
+        // Prevent deactivating/deleting the current admin user
         if (employeeId === user.id) {
           return withCors(NextResponse.json({ 
-            error: "You cannot deactivate your own account" 
+            error: "You cannot deactivate or delete your own account" 
           }, { status: 400 }));
+        }
+
+        if (isPermanent) {
+          // HARD DELETE: Remove from auth.users (cascades to profiles if configured, otherwise we might need manual cleanup)
+          // We'll try deleting the auth user which is the root.
+          const { error: deleteError } = await supabase.auth.admin.deleteUser(employeeId);
+          
+          if (deleteError) {
+            console.error("Error deleting user:", deleteError);
+            return withCors(NextResponse.json({ 
+              error: deleteError.message || "Failed to permanently delete employee" 
+            }, { status: 500 }));
+          }
+          
+          return withCors(NextResponse.json({ 
+            ok: true, 
+            message: "Employee permanently deleted.",
+            id: employeeId
+          }));
         }
 
         // Soft delete by setting status to inactive
@@ -285,7 +308,6 @@ export async function DELETE(
         console.log("Employee deactivated successfully:", {
           id: employeeId,
           name: `${existingProfile.first_name} ${existingProfile.last_name}`,
-          email: existingProfile.email,
           role: existingProfile.role
         });
 
