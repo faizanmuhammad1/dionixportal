@@ -59,6 +59,7 @@ import {
   CheckCircle,
   FolderOpen,
   Mail,
+  Search,
 } from "lucide-react";
 // Removed project-store import - React Query handles state management
 import { useToast } from "@/components/ui/use-toast";
@@ -296,46 +297,39 @@ export function UnifiedProjectManagement() {
   
   const supabase = createClient();
   
-  // Fetch all project members to populate assigned_employees
-  useEffect(() => {
+  // Helper function to fetch project members manually
+  const refreshAllProjectMembers = async () => {
     if (!projectsData || projectsData.length === 0) return;
     
-    const fetchAllProjectMembers = async () => {
-      try {
-        // Create a map of project_id -> array of user_ids
-        const membersMap = new Map<string, string[]>();
+    try {
+      const membersMap = new Map<string, string[]>();
+      const projectIds: string[] = (projectsData || [])
+        .map((p: any) => p.project_id || p.id)
+        .filter(Boolean);
 
-        // IMPORTANT: avoid RLS issues by using our admin-backed API per project
-        // Iterate projects and fetch members via /api/projects/[id]/members
-        const projectIds: string[] = (projectsData || [])
-          .map((p: any) => p.project_id || p.id)
-          .filter(Boolean);
+      await Promise.all(
+        projectIds.map(async (pid: string) => {
+          try {
+            const res = await fetch(`/api/projects/${pid}/members`, { credentials: "same-origin" });
+            if (!res.ok) return;
+            const json = await res.json();
+            const users: string[] = (json.members || []).map((m: any) => m.user_id).filter(Boolean);
+            membersMap.set(pid, users);
+          } catch (e) {
+            console.warn("Failed to fetch members for project", pid, e);
+          }
+        })
+      );
+      
+      setProjectMembersMap(membersMap);
+    } catch (error) {
+      console.error("Error in refreshAllProjectMembers:", error);
+    }
+  };
 
-        await Promise.all(
-          projectIds.map(async (pid: string) => {
-            try {
-              const res = await fetch(`/api/projects/${pid}/members`, { credentials: "same-origin" });
-              if (!res.ok) return;
-              const json = await res.json();
-              const users: string[] = (json.members || []).map((m: any) => m.user_id).filter(Boolean);
-              membersMap.set(pid, users);
-            } catch (e) {
-              // fail soft per project
-              console.warn("Failed to fetch members for project", pid, e);
-            }
-          })
-        );
-
-        // Helpful debug
-        // console.log("Project members map populated (via API):", Array.from(membersMap.entries()));
-        
-        setProjectMembersMap(membersMap);
-      } catch (error) {
-        console.error("Error in fetchAllProjectMembers:", error);
-      }
-    };
-    
-    fetchAllProjectMembers();
+  // Fetch all project members to populate assigned_employees
+  useEffect(() => {
+    refreshAllProjectMembers();
   }, [projectsData]);
   
   // Enrich projects with tasks and calculate progress
@@ -424,6 +418,12 @@ export function UnifiedProjectManagement() {
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 7;
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>("all");
+  const [teamSearchTerm, setTeamSearchTerm] = useState("");
+  const [teamRoleFilter, setTeamRoleFilter] = useState<string>("all");
+  const [assignProjectSearchTerm, setAssignProjectSearchTerm] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false); // now controls inline side panel visibility
   
   // Fetch full project details when viewing
@@ -1277,6 +1277,9 @@ export function UnifiedProjectManagement() {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
       
+      // Force refresh of member map
+      await refreshAllProjectMembers();
+      
       setEmployeeProjectModalOpen(false);
       setSelectedEmployeeForProject(null);
     } catch (error: any) {
@@ -1651,12 +1654,43 @@ export function UnifiedProjectManagement() {
       projectName.toLowerCase().includes(searchLower) ||
       projectClient.toLowerCase().includes(searchLower) ||
       projectDescription.toLowerCase().includes(searchLower);
+
+    const matchesStatus = statusFilter === "all" || project.status === statusFilter;
+    const matchesPriority = priorityFilter === "all" || project.priority === priorityFilter;
+    const matchesServiceType = serviceTypeFilter === "all" || project.service_type === serviceTypeFilter;
       
-    if (currentUser && currentUser.role === "employee") {
-      const isAssigned = (project.assigned_employees || []).includes(currentUser.id);
-      return matchesText && isAssigned;
+    const matchesRole = currentUser && currentUser.role === "employee" 
+      ? (project.assigned_employees || []).includes(currentUser.id)
+      : true;
+
+    return matchesText && matchesStatus && matchesPriority && matchesServiceType && matchesRole;
+  }).sort((a, b) => {
+    // Sort by Status: Planning -> Active -> Completed -> On-Hold
+    const statusOrder: Record<string, number> = {
+        "planning": 1,
+        "active": 2,
+        "completed": 3,
+        "on-hold": 4
+    };
+    
+    const statusA = statusOrder[a.status] || 99;
+    const statusB = statusOrder[b.status] || 99;
+    
+    if (statusA !== statusB) {
+        return statusA - statusB;
     }
-    return matchesText;
+    
+    // Then Sort by Priority: High -> Medium -> Low
+    const priorityOrder: Record<string, number> = {
+        "high": 1,
+        "medium": 2,
+        "low": 3
+    };
+    
+    const priorityA = priorityOrder[a.priority] || 99;
+    const priorityB = priorityOrder[b.priority] || 99;
+    
+    return priorityA - priorityB;
   });
 
   // Debug logging for filtered results
@@ -1673,6 +1707,41 @@ export function UnifiedProjectManagement() {
       console.warn("⚠️ Employee has no assigned projects. Total projects available:", projects.length);
     }
   }, [projects, filteredProjects, searchTerm, currentUser]);
+
+  const filteredTeamMembers = useMemo(() => {
+    return employees.filter((employee) => {
+      const searchLower = teamSearchTerm.toLowerCase();
+      const fullName = `${employee.first_name || ""} ${employee.last_name || ""}`.trim();
+      const displayName = fullName || employee.name || "";
+      
+      const matchesText = 
+        displayName.toLowerCase().includes(searchLower) ||
+        (employee.email || "").toLowerCase().includes(searchLower) ||
+        (employee.role || "").toLowerCase().includes(searchLower) ||
+        (employee.department || "").toLowerCase().includes(searchLower);
+
+      const matchesRole = teamRoleFilter === "all" || employee.role === teamRoleFilter;
+      const matchesStatus = employee.status === "active";
+
+      return matchesText && matchesRole && matchesStatus;
+    }).sort((a, b) => {
+       // Sort by Role: Admin -> Manager -> Employee
+       const roleOrder: Record<string, number> = {
+         "admin": 1,
+         "manager": 2,
+         "employee": 3
+       };
+       
+       const roleA = roleOrder[a.role] || 99;
+       const roleB = roleOrder[b.role] || 99;
+       
+       if (roleA !== roleB) return roleA - roleB;
+       
+       const nameA = (a.name || "").toLowerCase();
+       const nameB = (b.name || "").toLowerCase();
+       return nameA.localeCompare(nameB);
+    });
+  }, [employees, teamSearchTerm, teamRoleFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -2467,6 +2536,58 @@ export function UnifiedProjectManagement() {
         </TabsContent>
 
         <TabsContent value="projects" className="space-y-6">
+          {/* Filter and Search Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search projects..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="planning">Planning</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="on-hold">On Hold</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priorities</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={serviceTypeFilter} onValueChange={setServiceTypeFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Service Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Services</SelectItem>
+                  <SelectItem value="web">Web Dev</SelectItem>
+                  <SelectItem value="branding">Branding</SelectItem>
+                  <SelectItem value="marketing">Marketing</SelectItem>
+                  <SelectItem value="ai">AI Solutions</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           {/* Inline Preview Panel - Shows at top when project selected */}
           {detailsOpen && (selectedProject || viewingProjectId) && (
             <Card className="border-primary/20 md:max-h-[80vh] lg:max-h-[85vh] flex flex-col">
@@ -3613,15 +3734,17 @@ export function UnifiedProjectManagement() {
                   >
                     <CardHeader className="flex-1 pb-3">
                       <div className="flex flex-col gap-3">
-                        <div className="flex justify-between items-start gap-2">
-                          <CardTitle className="text-lg font-semibold truncate group-hover:text-primary transition-colors flex-1 min-w-0">
-                            {project.name}
-                          </CardTitle>
-                          <div className="flex flex-wrap gap-2 shrink-0">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex justify-between items-start gap-2">
+                            <CardTitle className="text-lg font-semibold group-hover:text-primary transition-colors line-clamp-2 leading-tight">
+                              {project.name}
+                            </CardTitle>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge
                               variant="outline"
                               className={cn(
-                                "uppercase text-[10px] font-semibold tracking-wider whitespace-nowrap",
+                                "uppercase text-[10px] font-bold tracking-wider whitespace-nowrap h-5 px-2.5 flex items-center justify-center border",
                                 getStatusColor(project.status)
                               )}
                             >
@@ -3631,7 +3754,7 @@ export function UnifiedProjectManagement() {
                               <Badge
                                 variant="secondary"
                                 className={cn(
-                                  "uppercase text-[10px] font-semibold tracking-wider whitespace-nowrap",
+                                  "uppercase text-[10px] font-bold tracking-wider whitespace-nowrap h-5 px-2.5 flex items-center justify-center",
                                   getPriorityColor(project.priority)
                                 )}
                               >
@@ -3761,6 +3884,33 @@ export function UnifiedProjectManagement() {
           </div>
         </TabsContent>
         <TabsContent value="team" className="space-y-6">
+          {/* Team Filters */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search team members..."
+                className="pl-8"
+                value={teamSearchTerm}
+                onChange={(e) => setTeamSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Select value={teamRoleFilter} onValueChange={setTeamRoleFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           {/* Team Members Grid */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {loading && (
@@ -3788,7 +3938,19 @@ export function UnifiedProjectManagement() {
                 )}
               </div>
             )}
-            {employees.map((employee) => {
+
+             {!loading && filteredTeamMembers.length === 0 && employees.length > 0 && (
+              <div className="col-span-full text-center py-16">
+                <div className="mx-auto w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+                   <Search className="h-6 w-6 text-muted-foreground/50" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  No team members match your search.
+                </p>
+              </div>
+            )}
+
+            {filteredTeamMembers.map((employee) => {
               // Get employee's full name from first_name and last_name
               const employeeName = `${employee.first_name || ""} ${employee.last_name || ""}`.trim() || "Unknown";
               
@@ -3814,7 +3976,7 @@ export function UnifiedProjectManagement() {
                 : "U";
 
               return (
-                <Card key={employee.id} className="hover:shadow-lg transition-shadow">
+                <Card key={employee.id} className="hover:shadow-lg transition-shadow flex flex-col h-full">
                   <CardHeader className="pb-3">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-12 w-12">
@@ -3850,7 +4012,7 @@ export function UnifiedProjectManagement() {
                     </div>
                   </CardHeader>
                   
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-3 flex-1 flex flex-col">
                     {/* Contact Information */}
                     <div className="space-y-1.5 text-xs">
                       <div className="flex items-center gap-2 text-muted-foreground">
@@ -3873,8 +4035,8 @@ export function UnifiedProjectManagement() {
                       )}
                     </div>
 
-                    {/* Projects Section */}
-                    <div className="pt-2 border-t">
+                    {/* Projects Section - Pushes to bottom if flex-1 is applied here or to a spacer, but we use flex-1 on CardContent */}
+                    <div className="pt-2 border-t mt-auto">
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-xs font-medium text-muted-foreground">Assigned Projects</div>
                         <Badge variant="secondary" className="text-xs">
@@ -3914,6 +4076,7 @@ export function UnifiedProjectManagement() {
                           email: employee.email || "",
                         });
                         setEmployeeProjectModalOpen(true);
+                        setAssignProjectSearchTerm(""); // Clear search on open
                       }}
                       className="w-full"
                     >
@@ -4245,19 +4408,37 @@ export function UnifiedProjectManagement() {
           </div>
 
           <div className="mt-4">
-            <Label>Available Projects</Label>
-            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {projects.map((project) => {
+            <div className="flex items-center justify-between mb-2">
+                <Label>Available Projects</Label>
+                <div className="relative w-full max-w-[200px]">
+                  <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search projects..."
+                    value={assignProjectSearchTerm}
+                    onChange={(e) => setAssignProjectSearchTerm(e.target.value)}
+                    className="h-8 pl-7 text-xs"
+                  />
+                </div>
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 max-h-[400px] overflow-y-auto pr-2">
+              {projects
+                .filter(p => {
+                  const search = assignProjectSearchTerm.toLowerCase();
+                  return p.name.toLowerCase().includes(search) || 
+                         (p.client || "").toLowerCase().includes(search) ||
+                         (p.description || "").toLowerCase().includes(search);
+                })
+                .map((project) => {
                 const isAssigned = project.assigned_employees.includes(selectedEmployeeForProject?.id || '');
                 return (
                   <div
                     key={project.id}
                     className="flex items-center justify-between rounded-md bg-muted p-3"
                   >
-                    <div>
-                      <p className="text-sm font-medium">{project.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {project.description}
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="text-sm font-medium truncate" title={project.name}>{project.name}</p>
+                      <p className="text-xs text-muted-foreground truncate" title={project.service_type || project.description}>
+                        {project.service_type || project.description}
                       </p>
                     </div>
                     <Button
@@ -4281,6 +4462,7 @@ export function UnifiedProjectManagement() {
                       }}
                       variant={isAssigned ? "destructive" : "default"}
                       size="sm"
+                      className="shrink-0"
                       disabled={isUpdatingAssignments}
                     >
                       {isUpdatingAssignments ? (
