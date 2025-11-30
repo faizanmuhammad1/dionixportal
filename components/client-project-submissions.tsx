@@ -469,6 +469,8 @@ interface Submission {
   description?: string;
   client_name?: string;
   contact_email?: string | null;
+  contact_name?: string | null;
+  business_name?: string | null;
   budget: number;
   start_date?: string;
   end_date?: string;
@@ -659,7 +661,8 @@ export function ClientProjectSubmissions() {
   const openApprove = (s: Submission) => {
     setActiveSubmissionId(s.submission_id);
     setProjectType(s.project_type as ProjectType);
-    setProjectName(s.client_name || s.contact_email || "New Project");
+    // Map business_name to project_name, contact_name to client_name
+    setProjectName(s.business_name || s.client_name || "New Project");
     setDescription(s.description || "");
     setApproveOpen(true);
   };
@@ -1218,9 +1221,10 @@ export function ClientProjectSubmissions() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="whitespace-normal">
-                    Contact Email
+                    Contact Name
                   </TableHead>
-                  <TableHead className="whitespace-normal">Company</TableHead>
+                  <TableHead className="whitespace-normal">Business Name</TableHead>
+                  <TableHead className="whitespace-normal">Email</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="w-[120px]"></TableHead>
@@ -1232,10 +1236,13 @@ export function ClientProjectSubmissions() {
                   Array.from({ length: 5 }).map((_, index) => (
                     <TableRow key={`skeleton-${index}`}>
                       <TableCell>
-                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-4 w-32" />
                       </TableCell>
                       <TableCell>
-                        <Skeleton className="h-4 w-64" />
+                        <Skeleton className="h-4 w-40" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-48" />
                       </TableCell>
                       <TableCell>
                         <Skeleton className="h-6 w-20" />
@@ -1250,7 +1257,7 @@ export function ClientProjectSubmissions() {
                   ))
                 ) : filteredSubmissions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-muted-foreground">
+                    <TableCell colSpan={6} className="text-muted-foreground">
                       No submissions yet
                     </TableCell>
                   </TableRow>
@@ -1265,16 +1272,16 @@ export function ClientProjectSubmissions() {
                           : "hover:bg-muted/30"
                       }`}
                     >
-                      <TableCell className="font-medium whitespace-normal break-all max-w-[240px]">
+                      <TableCell className="font-medium whitespace-normal break-words max-w-[180px]">
+                        {s.contact_name || s.client_name || "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-normal break-words max-w-[200px]">
+                        {s.business_name || "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-normal break-all max-w-[240px]">
                         {s.contact_email ||
                           s.company_email ||
                           s.public_company_email ||
-                          "—"}
-                      </TableCell>
-                      <TableCell className="whitespace-normal break-words max-w-[320px]">
-                        {s.company_details ||
-                          s.about_company ||
-                          s.company_address ||
                           "—"}
                       </TableCell>
                       <TableCell>

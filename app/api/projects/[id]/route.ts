@@ -163,9 +163,9 @@ export const DELETE = withAuth(
 
       console.log(`Deleting project ${params.id} by user ${user.id}`);
       
-      // Get project info before deletion for logging
-      const supabase = createServerSupabaseClient();
-      const { data: projectInfo } = await supabase
+      // Use admin client to bypass RLS for delete operations
+      const adminSupabase = createAdminSupabaseClient();
+      const { data: projectInfo } = await adminSupabase
         .from('projects')
         .select('project_name, project_id')
         .eq('project_id', params.id)
@@ -174,8 +174,8 @@ export const DELETE = withAuth(
       const projectName = projectInfo?.project_name || 'Unknown Project';
       console.log(`Deleting project: ${projectName} (${params.id})`);
       
-      // Create ProjectService with server-side Supabase client
-      const serverProjectService = new ProjectService(supabase);
+      // Create ProjectService with admin Supabase client to bypass RLS
+      const serverProjectService = new ProjectService(adminSupabase, true);
       await serverProjectService.deleteProject(params.id);
       
       console.log(`Successfully deleted project: ${projectName}`);

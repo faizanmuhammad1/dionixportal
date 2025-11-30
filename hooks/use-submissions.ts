@@ -79,12 +79,16 @@ export function useApproveSubmission() {
       }
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["submissions"] });
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.invalidateQueries({ queryKey: ["project-summaries"] });
-      queryClient.invalidateQueries({ queryKey: ["active-projects-count"] });
-      queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"] });
+    onSuccess: async () => {
+      // Invalidate and force refetch all project-related queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["submissions"], refetchType: "all" }),
+        queryClient.invalidateQueries({ queryKey: ["projects"], refetchType: "all" }),
+        queryClient.invalidateQueries({ queryKey: ["project-summaries"], refetchType: "all" }),
+        queryClient.invalidateQueries({ queryKey: ["active-projects-count"], refetchType: "all" }),
+        queryClient.invalidateQueries({ queryKey: ["pending-submissions-count"], refetchType: "all" }),
+        queryClient.invalidateQueries({ queryKey: ["employee-projects"], refetchType: "all" }),
+      ]);
     },
   });
 }

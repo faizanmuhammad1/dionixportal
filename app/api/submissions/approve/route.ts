@@ -67,8 +67,9 @@ export const POST = withAuth(
       if (!step1_data || typeof step1_data !== 'object' || Object.keys(step1_data).length === 0) {
         console.log("step1_data is missing or invalid, creating default from submission");
         
+        // Map business_name -> project_name, contact_name -> client_name
         finalStep1Data = {
-          project_name: submission.client_name || "Unknown Client",
+          project_name: submission.business_name || submission.client_name || "Unknown Project",
           description: submission.description || "No description provided",
           budget: submission.budget || 0,
           start_date: submission.start_date || null,

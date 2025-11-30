@@ -307,16 +307,17 @@ export const DELETE = withAuth(
         );
       }
 
-      const supabase = createServerSupabaseClient();
+      // Use admin client to bypass RLS - authorization is already verified by withAuth
+      const adminSupabase = createAdminSupabaseClient();
 
       // Get task title for logging
-      const { data: task } = await supabase
+      const { data: task } = await adminSupabase
         .from("tasks")
         .select("title")
         .eq("task_id", taskId)
         .single();
 
-      const { error } = await supabase
+      const { error } = await adminSupabase
         .from("tasks")
         .delete()
         .eq("task_id", taskId)
@@ -329,7 +330,7 @@ export const DELETE = withAuth(
 
       // Log activity (non-blocking - don't fail the request if this fails)
       (async () => {
-        const { error: activityError } = await supabase.from("project_activities").insert({
+        const { error: activityError } = await adminSupabase.from("project_activities").insert({
           project_id: projectId,
           activity_type: "task_deleted",
           description: `Task deleted: ${task?.title || "Unknown"}`,
