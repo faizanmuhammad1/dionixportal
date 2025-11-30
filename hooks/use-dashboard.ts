@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getFormSubmissions, getClientProjects, type FormSubmission, type ClientProject } from "@/lib/auth";
 import { useJobApplications } from "./use-job-applications";
+import { useJobs } from "./use-jobs";
 import { createClient } from "@/lib/supabase";
 
 // Form Submissions
@@ -115,9 +116,13 @@ export function useDashboardData() {
   const formSubmissions = useFormSubmissions();
   const clientProjects = useClientProjects();
   const jobApplications = useJobApplications();
+  const jobs = useJobs(true); // Include all jobs to count active ones
   const activeEmployees = useActiveEmployeesCount();
   const activeProjects = useActiveProjectsCount();
   const pendingSubmissions = usePendingSubmissionsCount();
+
+  // Count active jobs (is_active = true)
+  const activeJobsCount = (jobs.data || []).filter((job: any) => job.is_active).length;
 
   return {
     formSubmissions: formSubmissions.data || [],
@@ -126,10 +131,11 @@ export function useDashboardData() {
     activeEmployees: activeEmployees.data || 0,
     activeProjects: activeProjects.data || 0,
     pendingSubmissions: pendingSubmissions.data || 0,
+    activeJobs: activeJobsCount,
     isLoading: formSubmissions.isLoading || clientProjects.isLoading || jobApplications.isLoading || 
-               activeEmployees.isLoading || activeProjects.isLoading || pendingSubmissions.isLoading,
+               activeEmployees.isLoading || activeProjects.isLoading || pendingSubmissions.isLoading || jobs.isLoading,
     error: formSubmissions.error || clientProjects.error || jobApplications.error || 
-           activeEmployees.error || activeProjects.error || pendingSubmissions.error,
+           activeEmployees.error || activeProjects.error || pendingSubmissions.error || jobs.error,
   };
 }
 

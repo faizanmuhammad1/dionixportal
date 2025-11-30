@@ -292,6 +292,13 @@ export function UnifiedProjectManagement() {
   const employees = (employeesData || []) as Employee[];
   const tasks = (tasksData || []) as Task[];
   
+  // Filter out deactivated employees and admins for display
+  const activeEmployees = employees.filter((e) => 
+    e.status === "active" && 
+    e.role !== "admin" && 
+    e.email !== "admin@dionix.ai"
+  );
+  
   // State to store project members mapping
   const [projectMembersMap, setProjectMembersMap] = useState<Map<string, string[]>>(new Map());
   
@@ -1709,7 +1716,7 @@ export function UnifiedProjectManagement() {
   }, [projects, filteredProjects, searchTerm, currentUser]);
 
   const filteredTeamMembers = useMemo(() => {
-    return employees.filter((employee) => {
+    return activeEmployees.filter((employee) => {
       const searchLower = teamSearchTerm.toLowerCase();
       const fullName = `${employee.first_name || ""} ${employee.last_name || ""}`.trim();
       const displayName = fullName || employee.name || "";
@@ -1741,7 +1748,7 @@ export function UnifiedProjectManagement() {
        const nameB = (b.name || "").toLowerCase();
        return nameA.localeCompare(nameB);
     });
-  }, [employees, teamSearchTerm, teamRoleFilter]);
+  }, [activeEmployees, teamSearchTerm, teamRoleFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -2312,10 +2319,10 @@ export function UnifiedProjectManagement() {
     }
   };
 
-  const teamEmployees = employees.filter((e) => e.email !== "admin@dionix.ai");
+  const teamEmployees = activeEmployees;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto px-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
@@ -2415,7 +2422,7 @@ export function UnifiedProjectManagement() {
                 {loading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <div className="text-2xl font-bold">{employees.length}</div>
+                  <div className="text-2xl font-bold">{activeEmployees.length}</div>
                 )}
               </CardContent>
             </Card>
@@ -3920,7 +3927,7 @@ export function UnifiedProjectManagement() {
               </div>
             )}
             
-            {!loading && employees.length === 0 && (
+            {!loading && activeEmployees.length === 0 && (
               <div className="col-span-full text-center py-16">
                 <div className="mx-auto w-24 h-24 rounded-full bg-muted/30 flex items-center justify-center mb-4">
                   <Users className="h-12 w-12 text-muted-foreground/50" />
@@ -3939,7 +3946,7 @@ export function UnifiedProjectManagement() {
               </div>
             )}
 
-             {!loading && filteredTeamMembers.length === 0 && employees.length > 0 && (
+             {!loading && filteredTeamMembers.length === 0 && activeEmployees.length > 0 && (
               <div className="col-span-full text-center py-16">
                 <div className="mx-auto w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center mb-4">
                    <Search className="h-6 w-6 text-muted-foreground/50" />

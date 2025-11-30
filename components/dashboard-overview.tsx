@@ -29,6 +29,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     activeEmployees,
     activeProjects: activeProjectsCount,
     pendingSubmissions: pendingSubmissionsCount,
+    activeJobs: activeJobsCount,
     isLoading: loading,
   } = useDashboardData()
 
@@ -107,7 +108,8 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
     activeProjects: activeProjectsCount,
     jobApplications: jobApplications.length,
     pendingProjects: pendingSubmissionsCount, // Use real pending submissions count from database
-    newApplications: jobApplications.filter((a) => a.status === "pending").length,
+    activeJobs: activeJobsCount,
+    activeEmployees: activeEmployees,
   }
 
   return (
@@ -175,7 +177,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 ) : (
                   <>
                     <div className="text-2xl font-bold">{stats.activeProjects}</div>
-                    <p className="text-xs text-muted-foreground">{stats.pendingProjects} pending review</p>
+                    <p className="text-xs text-muted-foreground">{stats.pendingProjects} pending submissions</p>
                   </>
                 )}
               </CardContent>
@@ -194,7 +196,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 ) : (
                   <>
                     <div className="text-2xl font-bold">{stats.jobApplications}</div>
-                    <p className="text-xs text-muted-foreground">{stats.newApplications} new applications</p>
+                    <p className="text-xs text-muted-foreground">{stats.activeJobs} active jobs</p>
                   </>
                 )}
               </CardContent>
@@ -229,7 +231,7 @@ export function DashboardOverview({ user, onNavigate }: DashboardOverviewProps) 
                 ) : (
                   <>
                     <div className="text-2xl font-bold">{activeEmployees}</div>
-                    <p className="text-xs text-muted-foreground">Active employees (excluding admins)</p>
+                    <p className="text-xs text-muted-foreground">Active team members</p>
                   </>
                 )}
               </CardContent>

@@ -622,7 +622,7 @@ export function ClientProjectSubmissions() {
   ]);
 
   const pendingCount = useMemo(
-    () => submissions.filter((s) => s.status === "pending").length,
+    () => submissions.filter((s) => s.status === "pending" || s.status === "in_review" || s.status === "processing").length,
     [submissions]
   );
 
@@ -1069,9 +1069,9 @@ export function ClientProjectSubmissions() {
             Review incoming client requests and convert into projects
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
-          {pendingCount} pending
-        </div>
+        <Badge variant={pendingCount > 0 ? "destructive" : "secondary"} className="text-sm px-3 py-1">
+          {pendingCount} Pending {pendingCount === 1 ? "Submission" : "Submissions"}
+        </Badge>
       </div>
 
       {/* Inline preview panel */}
